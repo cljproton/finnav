@@ -1,0 +1,210 @@
+{% load static %}
+{% load dashboard_lte %}
+<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>数据看板 · FinNav</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --bg-soft: #111a2c;
+            --card: rgba(148, 163, 184, 0.06);
+            --card-border: rgba(99, 102, 241, 0.22);
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --text-faint: #64748b;
+            --accent: #6366f1;
+            --accent-2: #22d3ee;
+            --glow: rgba(99, 102, 241, 0.35);
+            --ok: #34d399;
+            --warn: #fbbf24;
+            --danger: #f87171;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Source Sans Pro", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+            background:
+                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.12), transparent 55%),
+                var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .wrap { max-width: 1400px; margin: 0 auto; }
+
+        /* 页头 */
+        .page-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        .page-head h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #c7d2fe, #67e8f9);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .page-head .sub { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+
+        /* 统计卡片 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 18px 20px;
+            backdrop-filter: blur(8px);
+        }
+        .stat-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            opacity: 0.7;
+        }
+        .stat-card .stat-label {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-card .stat-label i { color: var(--accent-2); width: 16px; text-align: center; }
+        .stat-card .stat-number {
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 18px var(--glow);
+        }
+
+        /* 面板 */
+        .panels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .panel {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            overflow: hidden;
+            backdrop-filter: blur(8px);
+        }
+        .panel-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 18px;
+            font-size: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+            color: #c7d2fe;
+        }
+        .panel-title i { color: var(--accent-2); }
+        .panel-body { padding: 6px 12px 12px; }
+
+        /* 表格 */
+        .d-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .d-table th {
+            text-align: left;
+            padding: 10px 8px;
+            color: var(--text-faint);
+            font-weight: 600;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+            white-space: nowrap;
+        }
+        .d-table td {
+            padding: 9px 8px;
+            color: var(--text);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+        }
+        .d-table tr:last-child td { border-bottom: none; }
+        .d-table tbody tr:hover { background: rgba(99, 102, 241, 0.07); }
+        .rank-badge {
+            display: inline-block;
+            min-width: 22px;
+            text-align: center;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+            background: rgba(99, 102, 241, 0.18);
+            color: #a5b4fc;
+        }
+        .rank-badge.top { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #0b1220; }
+        .chip {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(34, 211, 238, 0.14);
+            color: #67e8f9;
+            border: 1px solid rgba(34, 211, 238, 0.25);
+        }
+        .chip-dim { background: rgba(148, 163, 184, 0.12); color: var(--text-dim); border-color: rgba(148, 163, 184, 0.2); }
+        .muted { color: var(--text-faint); }
+        .empty { text-align: center; color: var(--text-faint); padding: 24px 0; }
+
+        /* 趋势图 */
+        .trend-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            gap: 16px;
+        }
+        .trend-box .chart-title {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+        .trend-box .chart { height: 280px; }
+
+        @media (max-width: 900px) {
+            body { padding: 14px; }
+            .panels-grid { grid-template-columns: 1fr; }
+            .trend-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+    <link rel="stylesheet"
+          href="{% static 'admin/simpleui-x/fontawesome-free-6.2.0-web/css/all.min.css' %}">
+    <script src="{% static 'navigation/vendor/echarts.min.js' %}"></script>
+</head>
+<body>
+<div class="wrap">
+    <div class="page-head">
+        <div>
+            <h1><i class="fas fa-chart-line"></i> 数据看板</h1>
+            <div class="sub">金融导航站点访问与评分总览</div>
+        </div>
+    </div>
+
+    {% site_overview %}
+    {% visit_trends %}
+    {% app_downloads %}
+</div>
+</body>
+</html>

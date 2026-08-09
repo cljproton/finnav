@@ -1,0 +1,145 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>数据备份与恢复 · FinNav</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --bg-soft: #111a2c;
+            --card: rgba(148, 163, 184, 0.06);
+            --card-border: rgba(99, 102, 241, 0.22);
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --text-faint: #64748b;
+            --accent: #6366f1;
+            --accent-2: #22d3ee;
+            --ok: #34d399;
+            --warn: #fbbf24;
+            --danger: #f87171;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Source Sans Pro", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+            background:
+                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.12), transparent 55%),
+                var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .wrap { max-width: 900px; margin: 0 auto; }
+        h1 { font-size: 22px; margin-bottom: 6px; }
+        .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent-2); }
+        .card p { font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 14px; }
+        .btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #0b1220;
+            text-decoration: none;
+        }
+        .btn-primary { background: var(--accent-2); }
+        .btn-danger { background: var(--warn); color: #111a2c; }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+        .stat {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .stat b { color: var(--accent-2); font-size: 18px; display: block; }
+        .msg {
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+        .msg.success { background: rgba(52, 211, 153, .12); border: 1px solid rgba(52,211,153,.35); color: var(--ok); }
+        .msg.error { background: rgba(248, 113, 113, .12); border: 1px solid rgba(248,113,113,.35); color: var(--danger); }
+        .restore-box { margin-top: 10px; }
+        .restore-box input[type="file"] {
+            display: block;
+            width: 100%;
+            margin-bottom: 12px;
+            color: var(--text-dim);
+            font-size: 13px;
+        }
+        .restore-box label { font-size: 13px; color: var(--warn); display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+        .restore-box label input { width: 16px; height: 16px; }
+        .note { margin-top: 20px; font-size: 12px; color: var(--text-faint); line-height: 1.7; }
+        .link-back { color: var(--accent-2); font-size: 13px; text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>数据备份与恢复</h1>
+    <div class="sub">备份 = 业务数据（JSON）+ 上传媒体文件，打包为一个 zip。</div>
+
+    {% if messages %}
+        {% for m in messages %}
+            <div class="msg {{ m.tags }}">{{ m }}</div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="stats">
+        <div class="stat"><b>{{ stats.categories }}</b>分类</div>
+        <div class="stat"><b>{{ stats.sites }}</b>站点</div>
+        <div class="stat"><b>{{ stats.tags }}</b>标签</div>
+        <div class="stat"><b>{{ stats.users }}</b>用户</div>
+        <div class="stat"><b>{{ stats.ratings }}</b>评分</div>
+        <div class="stat"><b>{{ stats.invites }}</b>邀请码</div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>下载备份</h2>
+            <p>生成包含全部业务数据与上传文件的 zip 归档，并下载到本地。</p>
+            <form method="post" action="{{ request.path }}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="download">
+                <button type="submit" class="btn btn-primary">立即备份并下载</button>
+            </form>
+            <div class="note">备份会排除媒体缓存目录（app_cache，可重建），其余 logos 等全部打包。</div>
+        </div>
+
+        <div class="card">
+            <h2>恢复数据</h2>
+            <p>从备份 zip 恢复。恢复会<strong style="color:var(--danger)">清空并覆盖</strong>现有业务数据与媒体文件，请谨慎操作。</p>
+            <form method="post" action="{{ request.path }}" enctype="multipart/form-data" class="restore-box">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="restore">
+                <input type="file" name="backup_file" accept=".zip,application/zip" required>
+                <label><input type="checkbox" name="confirm" value="1" required> 我确认将覆盖现有数据</label>
+                <button type="submit" class="btn btn-danger">上传并恢复</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="note">
+        媒体目录：{{ media_root }}<br>
+        也可通过命令行操作：<code>python manage.py backup -o backup.zip</code>、<code>python manage.py restore backup.zip</code><br>
+        <a class="link-back" href="{% url 'admin:index' %}">← 返回管理后台</a>
+    </div>
+</div>
+</body>
+</html>

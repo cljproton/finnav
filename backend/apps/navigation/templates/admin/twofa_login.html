@@ -1,0 +1,165 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>登录 · {{ site_header|default:'金融导航管理后台' }}</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --bg-soft: #111a2c;
+            --card: rgba(148, 163, 184, 0.06);
+            --card-border: rgba(99, 102, 241, 0.22);
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --text-faint: #64748b;
+            --accent: #6366f1;
+            --accent-2: #22d3ee;
+            --danger: #f87171;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Source Sans Pro", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+            background:
+                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.12), transparent 55%),
+                var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 400px;
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            padding: 32px 28px;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+        }
+
+        .brand {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .brand h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            background: linear-gradient(90deg, #c7d2fe, #67e8f9);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .brand p { color: var(--text-faint); font-size: 13px; margin-top: 6px; }
+
+        .field { margin-bottom: 16px; }
+        .field label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+        .field input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+        .field input:focus { border-color: var(--accent); }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 11px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #0b1220;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            margin-top: 4px;
+        }
+        .btn:hover { filter: brightness(1.08); }
+
+        .errors {
+            margin-bottom: 16px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.35);
+            color: var(--danger);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .errors ul { list-style: none; }
+
+        .hint { text-align: center; color: var(--text-faint); font-size: 12px; margin-top: 18px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="brand">
+            <h1>{{ site_header|default:'金融导航管理后台' }}</h1>
+            <p>请输入管理员凭据登录</p>
+        </div>
+
+        {% if form.non_field_errors %}
+            <div class="errors">
+                <ul>
+                    {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+        {% if form.errors and not form.non_field_errors %}
+            <div class="errors">请检查填写内容后重试。</div>
+        {% endif %}
+
+        <form action="{{ app_path }}" method="post" id="login-form">
+            {% csrf_token %}
+
+            <div class="field">
+                <label for="id_username">用户名</label>
+                <input type="text" name="username" id="id_username" value="{{ form.username.value|default:'' }}" autofocus autocomplete="username" required>
+                {% if form.username.errors %}
+                    <div class="errors">{{ form.username.errors }}</div>
+                {% endif %}
+            </div>
+
+            <div class="field">
+                <label for="id_password">密码</label>
+                <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+                {% if form.password.errors %}
+                    <div class="errors">{{ form.password.errors }}</div>
+                {% endif %}
+            </div>
+
+            <div class="field{% if not form.totp_code %} hidden{% endif %}">
+                <label for="id_totp_code">动态验证码</label>
+                <input
+                    type="text" name="totp_code" id="id_totp_code"
+                    maxlength="6" autocomplete="one-time-code"
+                    inputmode="numeric" pattern="[0-9]*" placeholder="6 位动态验证码">
+                {% if form.totp_code.errors %}
+                    <div class="errors">{{ form.totp_code.errors }}</div>
+                {% endif %}
+            </div>
+
+            <input type="hidden" name="next" value="{{ next }}">
+            <button type="submit" class="btn">登 录</button>
+        </form>
+
+        <div class="hint">登录即表示你同意在本平台上使用的相关约定</div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+Django>=5.2,<6.0
+djangorestframework>=3.15
+djangorestframework-simplejwt
+django-cors-headers
+Pillow
+#django-adminlte4
+django-simpleui
+django-anymail
+gunicorn
+whitenoise
+
+pyotp
+qrcode
+
+# 数据库驱动：默认 SQLite（Django 内置，无需驱动）。
+# MySQL / PostgreSQL 需安装对应驱动（pip 会自动安装，不影响默认 SQLite 使用）：
+#   MySQL       -> pymysql + cryptography
+#   PostgreSQL  -> psycopg2-binary
+pymysql>=1.1.0
+cryptography>=42.0.0
+psycopg2-binary>=2.9.9

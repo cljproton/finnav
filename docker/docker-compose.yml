@@ -1,0 +1,47 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    image: finnav-backend
+    restart: unless-stopped
+    environment:
+      # 生产环境建议关闭 DEBUG
+      DEBUG: "${DEBUG:-False}"
+      SECRET_KEY: "${SECRET_KEY:-please-change-this-secret-key}"
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      # Email（可选）：设置 RESEND_API_KEY 才启用邮件，否则验证码打印到后端日志
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+      DEFAULT_FROM_EMAIL: "${DEFAULT_FROM_EMAIL:-onboarding@resend.dev}"
+      # 数据目录（SQLite + media），挂载自 docker/data
+      DB_ENGINE: "${DB_ENGINE:-sqlite}"
+      DB_NAME: "${DB_NAME:-/srv/data/db.sqlite3}"
+      DB_USER: "${DB_USER:-}"
+      DB_PASSWORD: "${DB_PASSWORD:-}"
+      DB_HOST: "${DB_HOST:-}"
+      DB_PORT: "${DB_PORT:-}"
+      DB_CHARSET: "${DB_CHARSET:-utf8mb4}"
+      DB_CONN_MAX_AGE: "${DB_CONN_MAX_AGE:-60}"
+      MEDIA_ROOT: "/srv/data/media"
+    volumes:
+      - ./data:/srv/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+    image: finnav-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # 与后端共享同一 data 目录，nginx 直读 /media/ 上传文件
+    volumes:
+      - ./data:/srv/data
+    ports:
+      - "${PORT:-80}:80"

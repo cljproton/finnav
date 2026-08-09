@@ -1,0 +1,202 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block search %}{% include "admin/sitesubmission_search_form.html" %}{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .submission-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 0 0 18px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 0;
+        }
+        .submission-tabs .tab {
+            padding: 8px 16px;
+            font-size: 14px;
+            color: #6b7280;
+            text-decoration: none;
+            border-radius: 8px 8px 0 0;
+            border: 1px solid transparent;
+            border-bottom: none;
+            transition: all .15s ease;
+        }
+        .submission-tabs .tab:hover { background: #f3f4f6; color: #111827; }
+        .submission-tabs .tab.active {
+            background: #fff;
+            color: #2563eb;
+            border-color: #e5e7eb;
+            border-bottom: 2px solid #2563eb;
+            font-weight: 600;
+        }
+        .submission-tabs .tab .count {
+            display: inline-block;
+            min-width: 18px;
+            padding: 0 6px;
+            margin-left: 6px;
+            border-radius: 10px;
+            background: #e5e7eb;
+            color: #4b5563;
+            font-size: 12px;
+            line-height: 18px;
+            text-align: center;
+        }
+        .submission-tabs .tab.active .count { background: #dbeafe; color: #2563eb; }
+        .submission-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 16px;
+            padding: 4px 0 8px;
+        }
+        .submission-card {
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+            transition: box-shadow .18s ease, transform .18s ease;
+        }
+        .submission-card:hover { box-shadow: 0 6px 16px rgba(15, 23, 42, .10); transform: translateY(-2px); }
+        .submission-card .card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .submission-card .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            text-decoration: none;
+        }
+        .submission-card .card-title:hover { color: #2563eb; text-decoration: underline; }
+        .submission-card .status-badge {
+            flex-shrink: 0;
+            font-size: 12px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-weight: 500;
+        }
+        .status-pending { background: #fef3c7; color: #b45309; }
+        .status-approved { background: #d1fae5; color: #047857; }
+        .status-rejected { background: #fee2e2; color: #b91c1c; }
+        .submission-card .url { font-size: 12px; color: #2563eb; word-break: break-all; }
+        .submission-card .desc {
+            font-size: 13px;
+            color: #4b5563;
+            line-height: 1.55;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .submission-card .meta { font-size: 12px; color: #6b7280; display: flex; flex-wrap: wrap; gap: 12px; }
+        .submission-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .submission-card .chip {
+            font-size: 12px; padding: 2px 10px; border-radius: 999px; background: #eef2ff; color: #4f46e5;
+        }
+        .submission-card .chip-cat { background: #ecfdf5; color: #047857; }
+        .submission-card .admin-note {
+            font-size: 12px; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+            border-radius: 8px; padding: 8px 10px; line-height: 1.5;
+        }
+        .submission-card .card-actions {
+            display: flex; gap: 8px; margin-top: auto; padding-top: 2px;
+        }
+        .submission-card .btn {
+            border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+            font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+            transition: filter .15s ease; color: #fff;
+        }
+        .submission-card .btn:hover { filter: brightness(.95); }
+        .btn-approve { background: #16a34a; }
+        .btn-reject { background: #dc2626; }
+        .btn-link { background: #2563eb; }
+        .submission-empty {
+            text-align: center; padding: 48px 0; color: #9ca3af; font-size: 14px; border: 1px dashed #e5e7eb;
+            border-radius: 10px; background: #fafafa;
+        }
+    </style>
+{% endblock %}
+
+{% block result_list %}
+    <div class="submission-tabs" style="margin-top:18px;">
+        <a class="tab{% if not current_status %} active{% endif %}" href="{{ submission_tab_urls.all }}">全部</a>
+        <a class="tab{% if current_status == 'pending' %} active{% endif %}" href="{{ submission_tab_urls.pending }}">待审核</a>
+        <a class="tab{% if current_status == 'approved' %} active{% endif %}" href="{{ submission_tab_urls.approved }}">已通过</a>
+        <a class="tab{% if current_status == 'rejected' %} active{% endif %}" href="{{ submission_tab_urls.rejected }}">已驳回</a>
+    </div>
+
+    {% if cl.result_list %}
+    <div class="submission-grid">
+        {% for sub in cl.result_list %}
+        <div class="submission-card" data-submission-id="{{ sub.pk }}">
+            <div class="card-head">
+                <a class="card-title"
+                   href="{% url 'admin:navigation_sitesubmission_change' sub.pk %}">{{ sub.name }}</a>
+                <span class="status-badge status-{{ sub.status }}">{{ sub.get_status_display }}</span>
+            </div>
+            <a class="url" href="{{ sub.url }}" target="_blank" rel="noopener noreferrer">{{ sub.url }}</a>
+            {% if sub.description %}<div class="desc">{{ sub.description }}</div>{% endif %}
+            <div class="chips">
+                {% if sub.category %}<span class="chip chip-cat">{{ sub.category }}</span>{% endif %}
+                {% for t in sub.tags.all %}<span class="chip">{{ t.name }}</span>{% endfor %}
+            </div>
+            <div class="meta">
+                <span>提交人：{{ sub.user }}</span>
+                <span>{{ sub.created_at|date:"Y-m-d H:i" }}</span>
+            </div>
+            {% if sub.status == "rejected" and sub.admin_note %}
+                <div class="admin-note">驳回意见：{{ sub.admin_note }}</div>
+            {% endif %}
+            <div class="card-actions">
+                {% if sub.status == "pending" %}
+                    <button type="button" class="btn btn-approve" onclick="submissionApprove({{ sub.pk }});">✓ 通过并创建</button>
+                    <button type="button" class="btn btn-reject" onclick="submissionReject({{ sub.pk }});">✗ 驳回</button>
+                {% elif sub.status == "approved" and sub.approved_site_id %}
+                    <a class="btn btn-link" href="{% url 'admin:navigation_site_change' sub.approved_site_id %}">查看已建站点</a>
+                {% elif sub.status == "rejected" %}
+                    <a class="btn btn-link" href="{% url 'admin:navigation_sitesubmission_change' sub.pk %}">修改意见</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="submission-empty">暂无提交记录</div>
+    {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <script>
+        (function () {
+            function getCookie(name) {
+                var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+                return m ? decodeURIComponent(m[2]) : '';
+            }
+            var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+
+            function baseUrl(subId) {
+                return '{% url 'admin:index' %}navigation/sitesubmission/' + subId;
+            }
+
+            window.submissionApprove = function (subId) {
+                if (!confirm('确认通过并创建站点吗？')) return;
+                fetch(baseUrl(subId) + '/approve/', {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: '{}'})
+                    .then(function () { window.location.reload(); });
+            };
+            window.submissionReject = function (subId) {
+                var note = prompt('驳回意见（可选）：', '');
+                if (note === null) return;
+                fetch(baseUrl(subId) + '/reject/', {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: JSON.stringify({note: note})})
+                    .then(function () { window.location.reload(); });
+            };
+        })();
+    </script>
+{% endblock %}

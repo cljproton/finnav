@@ -1,0 +1,49 @@
+<div class="panels-grid" style="margin-top:20px;">
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-download"></i> APP 下载（通过本站各入口）</div>
+        <div class="panel-body">
+            <div class="stats-grid" style="margin-bottom:12px;">
+                <div class="stat-card" style="grid-column: span 2;">
+                    <div class="stat-label"><i class="fas fa-download"></i> 累计下载</div>
+                    <div class="stat-number">{{ downloads.total }}</div>
+                </div>
+            </div>
+            <table class="d-table">
+                <thead>
+                    <tr><th>入口/平台</th><th>次数</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in downloads.by_platform %}
+                        <tr>
+                            <td>{{ p.label }}</td>
+                            <td>{{ p.count }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="2" class="empty">暂无下载记录</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-ranking-star"></i> 下载 Top 站点</div>
+        <div class="panel-body">
+            <table class="d-table">
+                <thead>
+                    <tr><th>#</th><th>站点</th><th>下载</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in downloads.top_sites %}
+                        <tr>
+                            <td><span class="rank-badge{% if forloop.counter <= 3 %} top{% endif %}">{{ forloop.counter }}</span></td>
+                            <td><a href="/admin/navigation/site/{{ s.id }}/change/" style="color:#a5b4fc;">{{ s.name }}</a></td>
+                            <td>{{ s.count }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3" class="empty">暂无下载记录</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

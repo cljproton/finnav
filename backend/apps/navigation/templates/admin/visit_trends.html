@@ -1,0 +1,102 @@
+{% load static %}
+{% if visit_trends %}
+{{ visit_trends|json_script:"visit-trends-data" }}
+<div class="trend-grid">
+    <div class="panel trend-box">
+        <div class="panel-title"><i class="fas fa-chart-area"></i> 访问趋势（按分类堆叠）</div>
+        <div class="panel-body">
+            <div class="chart-title">每日趋势（近 30 天）</div>
+            <div id="trend-daily" class="chart"></div>
+        </div>
+    </div>
+    <div class="panel trend-box">
+        <div class="panel-title"><i class="fas fa-calendar-week"></i> 每周趋势（近 12 周）</div>
+        <div class="panel-body">
+            <div class="chart-title">按周汇总</div>
+            <div id="trend-weekly" class="chart"></div>
+        </div>
+    </div>
+    <div class="panel trend-box">
+        <div class="panel-title"><i class="fas fa-calendar-alt"></i> 每月趋势（近 12 个月）</div>
+        <div class="panel-body">
+            <div class="chart-title">按月汇总</div>
+            <div id="trend-monthly" class="chart"></div>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var raw = document.getElementById('visit-trends-data');
+    if (!raw || typeof echarts === 'undefined') return;
+    var data = JSON.parse(raw.textContent);
+    var palette = [
+        '#6366f1', '#22d3ee', '#f59e0b', '#f87171',
+        '#a78bfa', '#34d399', '#f472b6', '#38bdf8',
+    ];
+    var axisLine = { lineStyle: { color: 'rgba(148,163,184,0.35)' } };
+    var splitLine = { lineStyle: { color: 'rgba(148,163,184,0.12)' } };
+    var labelStyle = { color: '#94a3b8', fontSize: 11 };
+
+    function build(id, d, type) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var chart = echarts.init(el);
+        var series = (d.series || []).map(function (s, i) {
+            var c = palette[i % palette.length];
+            var item = {
+                name: s.name,
+                type: type,
+                stack: 'total',
+                data: s.data,
+                emphasis: { focus: 'series' },
+                itemStyle: { color: c },
+            };
+            if (type === 'line') {
+                item.smooth = true;
+                item.showSymbol = false;
+                item.lineStyle = { width: 2, color: c };
+                item.areaStyle = { opacity: 0.15, color: c };
+            } else {
+                item.itemStyle.borderRadius = [3, 3, 0, 0];
+            }
+            return item;
+        });
+        chart.setOption({
+            color: palette,
+            backgroundColor: 'transparent',
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'shadow' },
+                backgroundColor: 'rgba(15,23,42,0.92)',
+                borderColor: 'rgba(99,102,241,0.35)',
+                textStyle: { color: '#e2e8f0', fontSize: 12 },
+            },
+            legend: {
+                bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8,
+                textStyle: { fontSize: 11, color: '#94a3b8' },
+            },
+            grid: { left: 8, right: 16, top: 24, bottom: 34, containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: d.labels,
+                axisTick: { show: false },
+                axisLine: axisLine,
+                axisLabel: Object.assign({}, labelStyle, { interval: type === 'line' ? 2 : 0 }),
+            },
+            yAxis: {
+                type: 'value',
+                minInterval: 1,
+                splitLine: splitLine,
+                axisLabel: labelStyle,
+            },
+            series: series,
+        });
+        window.addEventListener('resize', function () { chart.resize(); });
+    }
+
+    build('trend-daily', data.daily, 'line');
+    build('trend-weekly', data.weekly, 'bar');
+    build('trend-monthly', data.monthly, 'bar');
+})();
+</script>
+{% endif %}

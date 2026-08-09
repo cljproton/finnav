@@ -1,0 +1,624 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls admin_modify %}
+
+{% block object-tools-items %}
+    <li>
+        {% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}
+        <a href="{% add_preserved_filters history_url %}" class="historylink">{% trans "历史" %}</a>
+    </li>
+    {% if has_absolute_url %}
+        <li><a href="{{ absolute_url }}" class="viewsitelink">{% trans "在网站中查看" %}</a></li>
+    {% endif %}
+{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        .sf-wrap {
+            padding: 14px 16px;
+            margin-bottom: 16px;
+            border: 1px solid #d9dee3;
+            border-radius: 6px;
+            background: #fff;
+        }
+        .sf-wrap h2 {
+            margin: 0 0 12px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .sf-row {
+            margin-bottom: 12px;
+        }
+        .sf-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 4px;
+        }
+        .sf-hint {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+        .sf-input-wrap {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .sf-input {
+            flex: 1;
+            padding: 7px 10px;
+            font-size: 14px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        textarea.sf-input {
+            min-height: 68px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            line-height: 1.5;
+        }
+        .sf-btn {
+            padding: 7px 16px;
+            font-size: 14px;
+            border: 1px solid #4F46E5;
+            border-radius: 4px;
+            background: #4F46E5;
+            color: #fff;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .sf-btn:active { opacity: .85; }
+        .sf-fb {
+            display: block;
+            min-height: 16px;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .sf-fb.ok { color: #059669; }
+        .sf-fb.err { color: #b02a37; }
+        .sf-tags-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .sf-tag-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 20px;
+            background: #fff;
+            font-size: 13px;
+            color: #374151;
+            cursor: pointer;
+        }
+        .sf-tag-item input { margin: 0; cursor: pointer; }
+        .sf-tag-item:has(input:checked) {
+            border-color: #4F46E5;
+            background: #eef2ff;
+            color: #4F46E5;
+        }
+        .sf-inline { display: inline-flex; align-items: center; gap: 8px; }
+        .sf-check {
+            width: 18px; height: 18px;
+        }
+        .sf-logo-img { max-height: 60px; margin-bottom: 8px; display: block; }
+        #app-pull-area {
+            padding: 10px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: #f8f9fa;
+            margin-bottom: 12px;
+            display: none;
+        }
+        #app-pull-area .app-pull-status { font-size: 13px; margin-bottom: 8px; }
+        #app-pull-bar { height: 10px; background: #e9ecef; border-radius: 5px; overflow: hidden; }
+        #app-pull-fill { height: 100%; width: 0; background: #4F46E5; transition: width .3s; }
+        .sf-pull-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            border: 1px solid #059669;
+            border-radius: 4px;
+            background: #059669;
+            color: #fff;
+            cursor: pointer;
+        }
+        .sf-ghost {
+            padding: 8px 16px;
+            font-size: 14px;
+            border: 1px solid #b02a37;
+            border-radius: 4px;
+            background: #fff;
+            color: #b02a37;
+            cursor: pointer;
+        }
+    </style>
+    {% if original %}<script>
+        (function () {
+            var SITE_ID = {{ original.pk }};
+            var statusUrl = '{% url "admin:navigation_site_app_pull_status" original.pk %}';
+            var startUrl = '{% url "admin:navigation_site_app_pull_start" original.pk %}';
+            var cancelUrl = '{% url "admin:navigation_site_app_pull_cancel" original.pk %}';
+            var fieldSaveUrl = '{% url "admin:navigation_site_field_save" original.pk %}';
+            var cacheDeleteUrl = '{% url "admin:navigation_site_app_cache_delete" original.pk %}';
+            var pollTimer = null;
+            var bar, area, statusText, cancelBtn;
+
+            function getCookie(name) {
+                var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+                return m ? decodeURIComponent(m[2]) : '';
+            }
+
+            function jsonOrHttpGet(r) {
+                return r.json().catch(function () { return {httpError: r.status}; });
+            }
+
+            function show(status, state) {
+                area.style.display = 'block';
+                if (state.percent) {
+                    bar.style.width = Math.min(state.percent, 100) + '%';
+                } else if (state.status === 'running') {
+                    bar.style.width = '100%';
+                }
+                statusText.textContent = (state.message || state.status || '') + (status ? '…' : '');
+                cancelBtn.style.display = state.status === 'running' ? 'inline-block' : 'none';
+            }
+
+            function render(state) {
+                if (!state || typeof state.status === 'undefined') {
+                    return;
+                }
+                show(false, state);
+                if (state.status === 'running') {
+                    pollTimer = setTimeout(poll, 800);
+                } else {
+                    cancelBtn.style.display = 'none';
+                    setTimeout(function () {
+                        location.reload();
+                    }, state.status === 'done' ? 1200 : 2500);
+                }
+            }
+
+            function poll() {
+                fetch(statusUrl, {headers: {'Accept': 'application/json'}})
+                    .then(function (r) { return r.json(); })
+                    .then(render)
+                    .catch(function () { pollTimer = setTimeout(poll, 2000); });
+            }
+
+            /* ------------ 自动保存 ------------ */
+
+            var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+            var saveTimers = {};
+
+            function feedbackFor(input, mode, msg) {
+                var row = input && input.closest ? input.closest('.sf-row') : null;
+                var fb = row ? row.querySelector('.sf-fb') : null;
+                if (!fb) return;
+                fb.textContent = msg;
+                fb.className = 'sf-fb ' + mode;
+                if (mode === 'ok' || mode === 'err') {
+                    clearTimeout(fb._hideTimer);
+                    fb._hideTimer = setTimeout(function () {
+                        fb.textContent = '';
+                        fb.className = 'sf-fb';
+                    }, 3000);
+                }
+            }
+
+            function parseErrors(res) {
+                var msgs = [];
+                if (res && res.errors) {
+                    Object.values(res.errors).forEach(function (v) {
+                        (Array.isArray(v) ? v : [v]).forEach(function (m) {
+                            msgs.push(typeof m === 'object' ? m.message : m);
+                        });
+                    });
+                }
+                return msgs.join('；');
+            }
+
+            function postJSON(payload) {
+                return fetch(fieldSaveUrl, {
+                    method: 'POST',
+                    headers: Object.assign({'Content-Type': 'application/json'}, CSRF),
+                    body: JSON.stringify(payload)
+                }).then(jsonOrHttpGet);
+            }
+
+            function doSave(field, value, input) {
+                feedbackFor(input, '', '保存中…');
+                return postJSON({field: field, value: value})
+                    .then(function (res) {
+                        if (res && res.ok) { feedbackFor(input, 'ok', '已自动保存 ✓'); return; }
+                        var err = parseErrors(res);
+                        feedbackFor(input, 'err', err || ('保存失败（HTTP ' + (res && res.httpError ? res.httpError : '?') + '）'));
+                    })
+                    .catch(function () { feedbackFor(input, 'err', '网络错误，请重试'); });
+            }
+
+            // 文本/数字输入：输入结束后（防抖 700ms）自动保存
+            function debounceSave(field, input) {
+                if (saveTimers[field]) clearTimeout(saveTimers[field]);
+                saveTimers[field] = setTimeout(function () {
+                    doSave(field, input.value, input);
+                }, 700);
+            }
+
+            function saveTags(autoCreated) {
+                var names = [];
+                var boxes = document.querySelectorAll('#sf-tags-list .sf-tag-cb');
+                for (var i = 0; i < boxes.length; i++) {
+                    if (boxes[i].checked) names.push(boxes[i].value);
+                }
+                var newInput = document.getElementById('sf-tags-new');
+                var addedNew = false;
+                if (newInput && newInput.value.trim()) {
+                    newInput.value.split(/[,，、\n]+/).forEach(function (s) {
+                        s = s.trim();
+                        if (s && names.indexOf(s) === -1) { names.push(s); addedNew = true; }
+                    });
+                }
+                var fbEl = (newInput && 'sf-tags-new') ? newInput : null;
+                if (autoCreated) { newInput.value = ''; }
+                doSave('tags', names, fbEl || document.getElementById('sf-name'))
+                    .then(function () {
+                        // 新建了标签时刷新页面，让新标签出现在「已有标签」列表中
+                        if (addedNew || autoCreated) { location.reload(); }
+                    });
+            }
+
+            function saveLogo(input) {
+                var file = input.files[0];
+                if (!file) { feedbackFor(input, 'err', '请先选择 Logo 文件'); return; }
+                feedbackFor(input, '', '上传中…');
+                var fd = new FormData();
+                fd.append('field', 'logo');
+                fd.append('file', file);
+                fetch(fieldSaveUrl, {method: 'POST', headers: CSRF, body: fd})
+                    .then(jsonOrHttpGet)
+                    .then(function (res) {
+                        if (res && res.ok) { feedbackFor(input, 'ok', '已上传 ✓'); location.reload(); return; }
+                        feedbackFor(input, 'err', '上传失败');
+                    })
+                    .catch(function () { feedbackFor(input, 'err', '网络错误'); });
+            }
+
+            function bindAutoSave() {
+                document.querySelectorAll('[data-save]').forEach(function (input) {
+                    var field = input.getAttribute('data-save');
+                    var type = input.getAttribute('type') || '';
+                    if (input.tagName === 'SELECT') {
+                        input.addEventListener('change', function () {
+                            doSave(field, input.value, input);
+                        });
+                    } else if (type === 'checkbox') {
+                        input.addEventListener('change', function () {
+                            doSave(field, input.checked ? 'true' : 'false', input);
+                        });
+                    } else if (type === 'file') {
+                        input.addEventListener('change', function () { saveLogo(input); });
+                    } else {
+                        input.addEventListener('input', function () { debounceSave(field, input); });
+                        input.addEventListener('change', function () { debounceSave(field, input); });
+                    }
+                });
+                // 标签：勾选或输入新标签后自动保存
+                document.querySelectorAll('#sf-tags-list .sf-tag-cb').forEach(function (cb) {
+                    cb.addEventListener('change', function () { saveTags(false); });
+                });
+                var newInput = document.getElementById('sf-tags-new');
+                if (newInput) {
+                    var tagTimer = null;
+                    newInput.addEventListener('input', function () {
+                        if (tagTimer) clearTimeout(tagTimer);
+                        tagTimer = setTimeout(function () { saveTags(true); }, 800);
+                    });
+                    newInput.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter') { e.preventDefault(); saveTags(true); }
+                    });
+                }
+            }
+
+            function startPull(btn) {
+                var urlInput = document.getElementById('sf-app_android_url');
+                if (!urlInput || !urlInput.value.trim()) {
+                    alert('请先填写「安卓 APP 下载链接(原始)」并保存后再拉取。');
+                    return;
+                }
+                show(true, {status: 'running', message: '正在连接原始链接'});
+                fetch(startUrl, {
+                    method: 'POST',
+                    headers: Object.assign({'Content-Type': 'application/json'}, CSRF),
+                    body: JSON.stringify({url: urlInput.value.trim()})
+                })
+                    .then(jsonOrHttpGet)
+                    .then(function (state) {
+                        if (!state || typeof state.status === 'undefined') {
+                            if (state && state.httpError === 302) {
+                                statusText.textContent = '登录已过期，请先重新登录后后台。';
+                            } else {
+                                statusText.textContent = '启动失败（HTTP ' + (state && state.httpError ? state.httpError : '?') + '），请重试。';
+                            }
+                            return;
+                        }
+                        render(state);
+                    })
+                    .catch(function () {
+                        statusText.textContent = '网络错误，请重试…';
+                        setTimeout(poll, 1500);
+                    });
+            }
+
+            function cancelPull() {
+                statusText.textContent = '正在取消…';
+                fetch(cancelUrl, {method: 'POST', headers: CSRF})
+                    .then(function () { statusText.textContent = '已请求取消'; });
+            }
+
+            function deleteCache(btn) {
+                if (!confirm('确认删除本地缓存的安卓 APP 文件？')) return;
+                var box = btn.closest('.sf-row');
+                var fb = box.querySelector('.sf-fb');
+                fb.textContent = '删除中…';
+                fb.className = 'sf-fb';
+                fetch(cacheDeleteUrl, {method: 'POST', headers: CSRF})
+                    .then(jsonOrHttpGet)
+                    .then(function (res) {
+                        if (res && res.ok) { fb.textContent = '已删除'; location.reload(); return; }
+                        fb.textContent = '删除失败';
+                    })
+                    .catch(function () { fb.textContent = '网络错误'; });
+            }
+
+            function init() {
+                bar = document.getElementById('app-pull-fill');
+                area = document.getElementById('app-pull-area');
+                statusText = document.getElementById('app-pull-status-text');
+                cancelBtn = document.getElementById('app-pull-cancel');
+                window.pullStart = startPull;
+                window.pullCancel = cancelPull;
+                bindAutoSave();
+                setTimeout(poll, 300);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if original %}
+
+<div id="content" class="flex">
+
+    <div id="content-header" style="margin-bottom:14px;">
+        <h1 style="font-size:20px;margin:0 0 6px;">编辑站点：{{ original.name }}</h1>
+        <p style="margin:0;color:#6b7280;font-size:13px;">
+            <a href="{% url 'admin:navigation_site_changelist' %}">站点</a> ›
+            <a href="{% url 'admin:navigation_site_change' original.pk %}">{{ original.name }}</a>
+        </p>
+    </div>
+
+    {% block object-tools %}{{ block.super }}{% endblock %}
+
+    <div id="content-main">
+
+        <div class="sf-wrap">
+            <h2>基本信息（输入完成后自动保存）</h2>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-name">站点名称</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-name" class="sf-input" type="text" value="{{ original.name }}" data-save="name">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-url">网址</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-url" class="sf-input" type="text" value="{{ original.url }}" data-save="url">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-description">站点描述</label>
+                <div class="sf-input-wrap">
+                    <textarea id="sf-description" class="sf-input" data-save="description">{{ original.description }}</textarea>
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-category">分类</label>
+                <div class="sf-input-wrap">
+                    <select id="sf-category" class="sf-input" data-save="category">
+                        {% for c in categories %}
+                            <option value="{{ c.pk }}" {% if c.pk == original.category_id %}selected{% endif %}>
+                                {{ c.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-sort_order">排序（数值越小越靠前）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-sort_order" class="sf-input" type="number" value="{{ original.sort_order }}" data-save="sort_order">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label">是否启用</label>
+                <div class="sf-input-wrap sf-inline">
+                    <input id="sf-is_active" class="sf-check" type="checkbox" {% if original.is_active %}checked{% endif %} data-save="is_active">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>标签（勾选已有标签复用，或在下方输入新标签，自动保存）</h2>
+            <div class="sf-row">
+                <label class="sf-label">已有标签</label>
+                <div id="sf-tags-list" class="sf-tags-list">
+                    {% for tag in available_tags %}
+                        <label class="sf-tag-item">
+                            <input type="checkbox" class="sf-tag-cb" value="{{ tag.name }}"
+                                   {% if tag.name in site_tags %}checked{% endif %}>
+                            {{ tag.name }}
+                        </label>
+                    {% empty %}
+                        <span class="sf-hint">还没有标签，可在下方直接新建。</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="sf-row">
+                <label class="sf-label" for="sf-tags-new">新建标签（多个用逗号/顿号分隔，输入完成后自动保存）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-tags-new" class="sf-input" type="text" placeholder="例如：交易所, 钱包">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>文字教程链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
+            <div class="sf-row">
+                <label class="sf-label" for="sf-text_tutorials">文字教程</label>
+                <div class="sf-input-wrap">
+                    <textarea id="sf-text_tutorials" class="sf-input" placeholder="新手入门|https://example.com/guide" data-save="text_tutorials">{{ links_text.text_tutorials }}</textarea>
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>视频教程链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
+            <div class="sf-row">
+                <label class="sf-label" for="sf-video_tutorials">视频教程</label>
+                <div class="sf-input-wrap">
+                    <textarea id="sf-video_tutorials" class="sf-input" placeholder="操作演示|https://youtube.com/watch?v=xxx" data-save="video_tutorials">{{ links_text.video_tutorials }}</textarea>
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>辅助/代办申请链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
+            <div class="sf-row">
+                <label class="sf-label" for="sf-agent_links">辅助/代办申请</label>
+                <div class="sf-input-wrap">
+                    <textarea id="sf-agent_links" class="sf-input" placeholder="代申请账号|https://example.com/apply" data-save="agent_links">{{ links_text.agent_links }}</textarea>
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>Logo</h2>
+            <div class="sf-row">
+                {% if original.logo %}
+                    <img class="sf-logo-img" src="{{ original.logo.url }}" alt="logo">
+                {% endif %}
+                <label class="sf-label" for="sf-logo">上传 / 替换 Logo（选择文件后自动上传）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-logo" class="sf-input" type="file" accept="image/*" data-save="logo">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>APP 下载</h2>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-app_android_url">安卓 APP 下载链接（原始）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-app_android_url" class="sf-input" type="text" value="{{ original.app_android_url }}" placeholder="https://..." data-save="app_android_url">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-app_google_play_url">Google Play 链接</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-app_google_play_url" class="sf-input" type="text" value="{{ original.app_google_play_url }}" placeholder="https://play.google.com/store/apps/details?id=..." data-save="app_google_play_url">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-app_ios_url">iOS App Store 链接</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-app_ios_url" class="sf-input" type="text" value="{{ original.app_ios_url }}" placeholder="https://apps.apple.com/..." data-save="app_ios_url">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div id="app-pull-area">
+                <div class="app-pull-status">
+                    <span id="app-pull-status-text">准备开始</span>
+                    <button type="button" id="app-pull-cancel" style="float:right;display:none"
+                            onclick="window.pullCancel()">取消</button>
+                </div>
+                <div id="app-pull-bar"><div id="app-pull-fill"></div></div>
+            </div>
+
+            <div class="sf-row">
+                <div class="sf-input-wrap">
+                    <button type="button" class="sf-pull-btn" onclick="window.pullStart(this)">拉取安卓 APP 并保存到本站</button>
+                    {% if original.app_android_file %}
+                        <button type="button" class="sf-ghost" onclick="deleteCache(this)">删除安卓本地缓存</button>
+                    {% endif %}
+                </div>
+                {% if original.app_android_file %}
+                    <label class="sf-hint" style="margin-top:6px;">
+                        当前缓存：{{ original.app_android_file.name }} · {{ original.app_android_cached_at|date:"Y-m-d H:i" }}
+                    </label>
+                {% endif %}
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+        <div class="sf-wrap">
+            <h2>邀请</h2>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-invite_code">邀请码（可填）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-invite_code" class="sf-input" type="text" value="{{ original.invite_code }}" placeholder="如 FJ20260808" data-save="invite_code">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+
+            <div class="sf-row">
+                <label class="sf-label" for="sf-invite_link">邀请链接（可填，填写后前端「访问官网」将跳转到该链接）</label>
+                <div class="sf-input-wrap">
+                    <input id="sf-invite_link" class="sf-input" type="text" value="{{ original.invite_link }}" placeholder="https://..." data-save="invite_link">
+                </div>
+                <span class="sf-fb"></span>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% else %}
+    {{ block.super }}
+{% endif %}
+{% endblock %}
