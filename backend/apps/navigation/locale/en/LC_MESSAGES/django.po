@@ -1,0 +1,91 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: finnav\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-08 00:00+0000\n"
+"PO-Revision-Date: 2026-08-08 00:00+0000\n"
+"Last-Translator: FinNav\n"
+"Language-Team: English (FinNav)\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "发送太频繁，请 %s 秒后再试"
+msgstr "Too many requests, please try again in %s seconds."
+
+msgid "未知下载平台"
+msgstr "Unknown download platform"
+
+msgid "请输入 6 位动态码。"
+msgstr "Please enter the 6-digit verification code."
+
+msgid "动态码错误，请重试。"
+msgstr "Incorrect verification code, please try again."
+
+msgid "缺少挑战令牌或验证码。"
+msgstr "Missing challenge token or verification code."
+
+msgid "登录凭据已过期，请重新登录。"
+msgstr "Login credentials have expired, please sign in again."
+
+msgid "%(field)s 必须是数组"
+msgstr "%(field)s must be an array"
+
+msgid "%(field)s 第 %(index)s 项必须是对象（含 name 与 url）"
+msgstr "%(field)s item %(index)s must be an object (with name and url)"
+
+msgid "%(field)s 第 %(index)s 项缺少非空的 name"
+msgstr "%(field)s item %(index)s must have a non-empty name"
+
+msgid "%(field)s 第 %(index)s 项缺少非空的 url"
+msgstr "%(field)s item %(index)s must have a non-empty url"
+
+msgid "评分必须为 0.5 的倍数（0-10）。"
+msgstr "Rating must be a multiple of 0.5 (0-10)."
+
+msgid "站点不存在或未启用: %(missing)s"
+msgstr "Site does not exist or is disabled: %(missing)s"
+
+msgid "邀请码与邀请链接至少填一项。"
+msgstr "Provide at least one of an invite code or an invite link."
+
+msgid "该分类已停用，无法提交。"
+msgstr "This category is disabled and cannot be submitted."
+
+msgid "操作过于频繁，请稍后再试"
+msgstr "Too many requests, please try again later"
+
+msgid "需要二次验证。"
+msgstr "Two-factor verification is required."
+
+msgid "请完成图形验证码。"
+msgstr "Please complete the captcha."
+
+msgid "验证码错误或已失效，请刷新后重试。"
+msgstr "The verification code is incorrect or expired, please refresh and try again."
+
+msgid "该邮箱已被注册。"
+msgstr "This email is already registered."
+
+msgid "该邮箱已注册，请直接登录。"
+msgstr "This email is already registered, please sign in directly."
+
+msgid "验证码不存在或已失效，请重新获取。"
+msgstr "The verification code does not exist or has expired, please request a new one."
+
+msgid "验证码错误或已过期，请重新获取。"
+msgstr "Incorrect or expired verification code, please request a new one."
+
+msgid "该邮箱未注册。"
+msgstr "This email is not registered."
+
+msgid "验证码已发送到邮箱，请查收。"
+msgstr "The verification code has been sent to your email."
+
+msgid "验证码已发送，请查收邮件。"
+msgstr "The verification code has been sent, please check your email."
+
+msgid "密码已重置，请使用新密码登录。"
+msgstr "Password reset successful, please sign in with your new password."

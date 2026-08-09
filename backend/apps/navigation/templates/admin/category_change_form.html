@@ -1,0 +1,416 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        .cm-wrap {
+            padding: 14px 16px;
+            margin-top: 16px;
+            border: 1px solid #d9dee3;
+            border-radius: 6px;
+            background: #fff;
+        }
+        .cm-wrap h2 {
+            margin: 0 0 4px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .cm-sub {
+            margin: 0 0 12px;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .cm-row {
+            margin-bottom: 10px;
+        }
+        .cm-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 4px;
+        }
+        .cm-select {
+            width: 100%;
+            max-width: 460px;
+            padding: 7px 10px;
+            font-size: 14px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background: #fff;
+        }
+        .cm-search {
+            width: 100%;
+            max-width: 460px;
+            padding: 7px 10px;
+            font-size: 14px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .cm-btn {
+            padding: 7px 16px;
+            font-size: 14px;
+            border: 1px solid #4F46E5;
+            border-radius: 4px;
+            background: #4F46E5;
+            color: #fff;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .cm-btn:active { opacity: .85; }
+        .cm-btn.danger {
+            border-color: #b02a37;
+            background: #fff;
+            color: #b02a37;
+        }
+        .cm-btn.ok {
+            border-color: #059669;
+            background: #fff;
+            color: #059669;
+        }
+        .cm-fb {
+            display: block;
+            min-height: 16px;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .cm-fb.ok { color: #059669; }
+        .cm-fb.err { color: #b02a37; }
+        table.cm-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        table.cm-table th, table.cm-table td {
+            padding: 6px 10px;
+            border: 1px solid #e5e7eb;
+            font-size: 13px;
+            text-align: left;
+        }
+        table.cm-table th { background: #f8f9fa; font-weight: 600; }
+        .cm-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .cm-empty { color: #6b7280; font-size: 13px; padding: 6px 0; }
+        .cm-badge {
+            display: inline-block;
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            background: #eef2ff;
+            color: #4F46E5;
+        }
+    </style>
+    <script>
+        (function () {
+            var addUrl = '{% url "admin:navigation_category_site_add" original.pk %}';
+            var addBatchUrl = '{% url "admin:navigation_category_site_add_batch" original.pk %}';
+            var removeUrl = '{% url "admin:navigation_category_site_remove" original.pk %}';
+            var restoreUrl = '{% url "admin:navigation_category_site_restore" original.pk %}';
+            var fieldSaveUrl = '{% url "admin:navigation_category_field_save" original.pk %}';
+
+            function getCookie(name) {
+                var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+                return m ? decodeURIComponent(m[2]) : '';
+            }
+            var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+
+            function post(url, body, box, okText) {
+                var fb = box.querySelector('.cm-fb');
+                if (!fb) return;
+                fb.textContent = '处理中…';
+                fb.className = 'cm-fb';
+                fetch(url, {
+                    method: 'POST',
+                    headers: Object.assign({'Content-Type': 'application/json'}, CSRF),
+                    body: JSON.stringify(body)
+                })
+                    .then(function (r) {
+                        return r.json().catch(function () { return {httpError: r.status}; });
+                    })
+                    .then(function (res) {
+                        if (res && res.ok) {
+                            fb.textContent = okText;
+                            fb.className = 'cm-fb ok';
+                            setTimeout(function () { location.reload(); }, 600);
+                            return;
+                        }
+                        fb.textContent = '操作失败：' + (res && res.error ? res.error : '请重试');
+                        fb.className = 'cm-fb err';
+                    })
+                    .catch(function () {
+                        fb.textContent = '网络错误，请重试';
+                        fb.className = 'cm-fb err';
+                    });
+            }
+
+            window.cmAddSite = function (btn) {
+                var box = btn.closest('.cm-row');
+                var sel = document.getElementById('cm-site-select');
+                if (!sel || !sel.value) {
+                    var fb = box.querySelector('.cm-fb');
+                    fb.textContent = '请先在下方选择要添加的站点';
+                    fb.className = 'cm-fb err';
+                    return;
+                }
+                post(addUrl, {site_id: Number(sel.value)}, box, '已添加 ✓');
+            };
+            window.cmRemoveSite = function (btn, siteId, name) {
+                if (!confirm('确认将「' + name + '」从该分类移除（停用隐藏）？')) return;
+                post(removeUrl, {site_id: siteId}, btn.closest('.cm-row'), '已移除 ✓');
+            };
+            window.cmRestoreSite = function (btn, siteId) {
+                post(restoreUrl, {site_id: siteId}, btn.closest('.cm-row'), '已恢复 ✓');
+            };
+            window.cmFilterSites = function (input) {
+                var q = (input.value || '').toLowerCase();
+                var list = document.getElementById('cm-site-list');
+                if (!list) return;
+                var items = list.querySelectorAll('li[data-name]');
+                for (var i = 0; i < items.length; i++) {
+                    var li = items[i];
+                    li.style.display = li.getAttribute('data-name').toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+                }
+            };
+
+            window.cmToggleAll = function (btn) {
+                var list = document.getElementById('cm-site-list');
+                if (!list) return;
+                var boxes = list.querySelectorAll('input[type="checkbox"]');
+                var all = true;
+                for (var i = 0; i < boxes.length; i++) {
+                    if (boxes[i].offsetParent !== null && !boxes[i].checked) { all = false; break; }
+                }
+                for (var j = 0; j < boxes.length; j++) {
+                    if (boxes[j].offsetParent !== null) boxes[j].checked = !all;
+                }
+            };
+
+            window.cmBatchAdd = function (btn) {
+                var box = btn.closest('.cm-row');
+                var fb = box.querySelector('.cm-fb');
+                var list = document.getElementById('cm-site-list');
+                var sel = [];
+                if (list) {
+                    var boxes = list.querySelectorAll('input[type="checkbox"]:checked');
+                    for (var i = 0; i < boxes.length; i++) sel.push(Number(boxes[i].value));
+                }
+                if (!sel.length) {
+                    fb.textContent = '请至少勾选一个站点';
+                    fb.className = 'cm-fb err';
+                    return;
+                }
+                fb.textContent = '批量添加中…';
+                fb.className = 'cm-fb';
+                fetch(addBatchUrl, {
+                    method: 'POST',
+                    headers: Object.assign({'Content-Type': 'application/json'}, CSRF),
+                    body: JSON.stringify({site_ids: sel})
+                })
+                    .then(function (r) { return r.json().catch(function () { return {httpError: r.status}; }); })
+                    .then(function (res) {
+                        if (res && res.ok) {
+                            fb.textContent = '已加入 ' + res.added + ' 个站点 ✓';
+                            fb.className = 'cm-fb ok';
+                            setTimeout(function () { location.reload(); }, 600);
+                            return;
+                        }
+                        fb.textContent = '操作失败：' + (res && res.error ? res.error : '请重试');
+                        fb.className = 'cm-fb err';
+                    })
+                    .catch(function () {
+                        fb.textContent = '网络错误，请重试';
+                        fb.className = 'cm-fb err';
+                    });
+            };
+
+            /* ------------ 分类设置自动保存 ------------ */
+            var saveTimers = {};
+            function fbFor(input, mode, msg) {
+                var row = input.closest('.cm-row');
+                var fb = row ? row.querySelector('.cm-fb') : null;
+                if (!fb) return;
+                fb.textContent = msg;
+                fb.className = 'cm-fb ' + mode;
+                if (mode === 'ok' || mode === 'err') {
+                    clearTimeout(fb._t);
+                    fb._t = setTimeout(function () { fb.textContent = ''; fb.className = 'cm-fb'; }, 3000);
+                }
+            }
+            function postField(field, value, input) {
+                fbFor(input, '', '保存中…');
+                return fetch(fieldSaveUrl, {
+                    method: 'POST',
+                    headers: Object.assign({'Content-Type': 'application/json'}, CSRF),
+                    body: JSON.stringify({field: field, value: value})
+                })
+                    .then(function (r) { return r.json().catch(function () { return {httpError: r.status}; }); })
+                    .then(function (res) {
+                        if (res && res.ok) { fbFor(input, 'ok', '已自动保存 ✓'); return; }
+                        var msgs = [];
+                        if (res && res.errors) {
+                            Object.values(res.errors).forEach(function (v) {
+                                (Array.isArray(v) ? v : [v]).forEach(function (m) {
+                                    msgs.push(typeof m === 'object' ? m.message : m);
+                                });
+                            });
+                        }
+                        fbFor(input, 'err', msgs.join('；') || ('保存失败（HTTP ' + (res && res.httpError ? res.httpError : '?') + '）'));
+                    })
+                    .catch(function () { fbFor(input, 'err', '网络错误，请重试'); });
+            }
+            function debounceSave(field, input) {
+                if (saveTimers[field]) clearTimeout(saveTimers[field]);
+                saveTimers[field] = setTimeout(function () { postField(field, input.value, input); }, 700);
+            }
+            window.cmBindAutoSave = function () {
+                document.querySelectorAll('[data-save]').forEach(function (input) {
+                    var field = input.getAttribute('data-save');
+                    var type = input.getAttribute('type') || '';
+                    if (type === 'checkbox') {
+                        input.addEventListener('change', function () {
+                            postField(field, input.checked ? 'true' : 'false', input);
+                        });
+                    } else if (input.tagName === 'SELECT') {
+                        input.addEventListener('change', function () { postField(field, input.value, input); });
+                    } else {
+                        input.addEventListener('input', function () { debounceSave(field, input); });
+                        input.addEventListener('change', function () { debounceSave(field, input); });
+                    }
+                });
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', window.cmBindAutoSave);
+            } else {
+                window.cmBindAutoSave();
+            }
+        })();
+    </script>
+{% endblock %}
+
+{% block after_related_objects %}
+{% if original %}
+<div class="cm-wrap">
+    <h2>分类设置（输入完成后自动保存）</h2>
+    <p class="cm-sub">名称/Slug/图标/排序/启用状态在下方填写或切换后自动保存，无需手动提交。</p>
+
+    <div class="cm-row">
+        <label class="cm-label" for="cm-name">分类名称</label>
+        <input id="cm-name" class="cm-select" type="text" value="{{ original.name }}" data-save="name">
+        <span class="cm-fb"></span>
+    </div>
+    <div class="cm-row">
+        <label class="cm-label" for="cm-slug">Slug（用于网址，字母/数字/短横线）</label>
+        <input id="cm-slug" class="cm-select" type="text" value="{{ original.slug }}" data-save="slug">
+        <span class="cm-fb"></span>
+    </div>
+    <div class="cm-row">
+        <label class="cm-label" for="cm-icon">图标（emoji）</label>
+        <input id="cm-icon" class="cm-select" type="text" value="{{ original.icon|default:'' }}" data-save="icon" placeholder="例如 🪙">
+        <span class="cm-fb"></span>
+    </div>
+    <div class="cm-row">
+        <label class="cm-label" for="cm-sort_order">排序（数值越小越靠前）</label>
+        <input id="cm-sort_order" class="cm-select" type="number" value="{{ original.sort_order }}" data-save="sort_order">
+        <span class="cm-fb"></span>
+    </div>
+    <div class="cm-row">
+        <label class="cm-label">是否启用</label>
+        <label class="cm-inline">
+            <input id="cm-is_active" type="checkbox" {% if original.is_active %}checked{% endif %} data-save="is_active">
+            <span>启用（勾选后自动保存）</span>
+        </label>
+        <span class="cm-fb"></span>
+    </div>
+</div>
+
+<div class="cm-wrap">
+    <h2>分类下的站点</h2>
+    <p class="cm-sub">此处仅管理该分类包含哪些站点；站点信息（名称/教程/APP 等）请在「站点」中编辑。</p>
+
+    <h3 style="font-size:13px;margin:12px 0 6px;">当前显示中的站点（{{ category_sites|length }}）</h3>
+    {% if category_sites %}
+        <table class="cm-table">
+            <thead>
+                <tr><th>名称</th><th>网址</th><th style="width:140px;">操作</th></tr>
+            </thead>
+            <tbody>
+                {% for site in category_sites %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'admin:navigation_site_change' site.pk %}" target="_blank">{{ site.name }}</a>
+                            {% if not site.is_active %}<span class="cm-badge">停用</span>{% endif %}
+                        </td>
+                        <td><a href="{{ site.url }}" target="_blank" rel="noopener">{{ site.url }}</a></td>
+                        <td>
+                            <div class="cm-row" style="margin-bottom:0;">
+                                <button type="button" class="cm-btn danger"
+                                        onclick="cmRemoveSite(this, {{ site.pk }}, '{{ site.name|escapejs }}')">移除（停用）</button>
+                                <span class="cm-fb"></span>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="cm-empty">该分类下暂无启用的站点。</p>
+    {% endif %}
+
+    {% if hidden_sites %}
+        <h3 style="font-size:13px;margin:14px 0 6px;">已停用（可恢复）</h3>
+        <table class="cm-table">
+            <tbody>
+                {% for site in hidden_sites %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'admin:navigation_site_change' site.pk %}" target="_blank">{{ site.name }}</a>
+                        </td>
+                        <td>
+                            <div class="cm-row" style="margin-bottom:0;">
+                                <button type="button" class="cm-btn ok"
+                                        onclick="cmRestoreSite(this, {{ site.pk }})">恢复显示</button>
+                                <span class="cm-fb"></span>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+
+    <h3 style="font-size:13px;margin:14px 0 6px;">添加站点（可多选批量添加）</h3>
+    <p class="cm-sub">勾选多个站点后点击「批量加入该分类」，完成后列表自动刷新。</p>
+    <div class="cm-row">
+        <label class="cm-label" for="cm-site-search">搜索已有站点</label>
+        <input id="cm-site-search" class="cm-search" type="text" placeholder="输入名称过滤…"
+               oninput="cmFilterSites(this)">
+        <span class="cm-fb"></span>
+    </div>
+    <div class="cm-row">
+        <label class="cm-label">选择站点（可多选）</label>
+        <div class="cm-inline">
+            <ul id="cm-site-list" style="list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;flex:1;max-width:560px;">
+                {% for site in addable_sites %}
+                    <li data-name="{{ site.name|lower }}"
+                        style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" value="{{ site.pk }}">
+                            <span>{{ site.name }}（{{ site.category.name }}）</span>
+                        </label>
+                    </li>
+                {% empty %}
+                    <li style="padding:10px;color:#6b7280;">暂无其它可添加的站点。</li>
+                {% endfor %}
+            </ul>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <button type="button" class="cm-btn" onclick="cmBatchAdd(this)">批量加入该分类</button>
+                <button type="button" class="cm-btn ok" onclick="cmToggleAll(this)">全选 / 取消全选</button>
+            </div>
+        </div>
+        <span class="cm-fb"></span>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

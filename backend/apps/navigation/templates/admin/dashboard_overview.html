@@ -1,0 +1,92 @@
+{% comment %}
+概览：统计卡片 + 分类访问统计 + 站点综合排行 TOP10
+（综合得分 = 0.5*访问量归一 + 0.3*平均星级 + 0.2*评分人数归一）
+{% endcomment %}
+{% if overview %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label"><i class="fas fa-globe"></i> 站点总数</div>
+        <div class="stat-number">{{ overview.total_sites }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><i class="fas fa-eye"></i> 总访问量</div>
+        <div class="stat-number">{{ overview.total_visits }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><i class="fas fa-star"></i> 总评分次数</div>
+        <div class="stat-number">{{ overview.total_ratings }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label"><i class="fas fa-chart-line"></i> 全局平均星级</div>
+        <div class="stat-number">{% if overview.total_ratings %}{{ overview.global_avg }}{% else %}—{% endif %}</div>
+    </div>
+</div>
+
+<div class="panels-grid">
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-chart-pie"></i> 分类访问统计</div>
+        <div class="panel-body">
+            {% if overview_categories %}
+            <table class="d-table">
+                <thead>
+                    <tr>
+                        <th>分类</th>
+                        <th>站点数</th>
+                        <th>总访问量</th>
+                        <th>评分数</th>
+                        <th>平均星级</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in overview_categories %}
+                    <tr>
+                        <td><span class="chip">{{ c.icon }} {{ c.name }}</span></td>
+                        <td>{{ c.site_count }}</td>
+                        <td>{{ c.total_visits }}</td>
+                        <td>{{ c.rating_count }}</td>
+                        <td>{% if c.rating_count %}{{ c.rating_avg }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">暂无数据</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-title"><i class="fas fa-trophy"></i> 站点综合排行 TOP 10</div>
+        <div class="panel-body">
+            {% if overview_top_sites %}
+            <table class="d-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>站点</th>
+                        <th>分类</th>
+                        <th>访问量</th>
+                        <th>平均星</th>
+                        <th>综合分</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in overview_top_sites %}
+                    <tr>
+                        <td><span class="rank-badge {% if forloop.counter <= 3 %}top{% endif %}">{{ forloop.counter }}</span></td>
+                        <td>{{ s.name }}</td>
+                        <td><span class="chip chip-dim">{{ s.category_name }}</span></td>
+                        <td>{{ s.visit_count }}</td>
+                        <td>{% if s.rating_count %}{{ s.rating_avg }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                        <td><span class="chip">{{ s.composite }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty">暂无数据</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}

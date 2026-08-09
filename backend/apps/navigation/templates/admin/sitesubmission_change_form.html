@@ -1,0 +1,66 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls admin_modify %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <script>
+        (function () {
+            var approveUrl = '{% url "admin:navigation_sitesubmission_approve" original.pk %}';
+            var rejectUrl = '{% url "admin:navigation_sitesubmission_reject" original.pk %}';
+            function getCookie(name) {
+                var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+                return m ? decodeURIComponent(m[2]) : '';
+            }
+            var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+
+            window.submitApprove = function () {
+                if (!confirm('确认通过并创建站点「{{ submission.name|escapejs }}」吗？')) return;
+                fetch(approveUrl, {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: '{}'})
+                    .then(function () { window.location.reload(); });
+            };
+            window.submitReject = function () {
+                var note = prompt('驳回意见（可选）：', '');
+                if (note === null) return;
+                fetch(rejectUrl, {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: JSON.stringify({note: note})})
+                    .then(function () { window.location.reload(); });
+            };
+        })();
+    </script>
+{% endblock %}
+
+{% block object-tools-items %}
+    <li>{% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}<a href="{% add_preserved_filters history_url %}" class="historylink">{% trans "历史" %}</a></li>
+    {% if submission %}
+        {% if submission.status == "pending" %}
+            <li><button type="button" class="btn btn-success" onclick="submitApprove()">✓ 通过并创建站点</button></li>
+            <li><button type="button" class="btn btn-danger" onclick="submitReject()">✗ 驳回</button></li>
+        {% elif submission.status == "approved" %}
+            <li><span class="sidebar-panel-accent" style="color:#059669;">已通过</span></li>
+            <li><a href="{% url 'admin:navigation_site_change' submission.approved_site_id %}" >查看已建站点</a></li>
+        {% else %}
+            <li><span style="color:#b02a37;">已驳回</span></li>
+        {% endif %}
+    {% endif %}
+    {% if has_absolute_url %}
+        <li><a href="{{ absolute_url }}" class="viewsitelink">{% trans "在网站中查看" %}</a></li>
+    {% endif %}
+{% endblock %}
+
+{% block after_related_objects %}
+{% if submission %}
+<div class="module" style="margin-top:16px;padding:16px;border:1px solid #d9dee3;border-radius:6px;background:#fff;">
+    <h2 style="margin:0 0 12px;font-size:15px;">提交信息</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr><th style="text-align:left;width:140px;padding:8px;">站点名称</th><td>{{ submission.name }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">网址</th><td><a href="{{ submission.url }}" target="_blank" rel="noopener">{{ submission.url }}</a></td></tr>
+        <tr><th style="text-align:left;padding:8px;">描述</th><td>{{ submission.description|default:"—" }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">分类</th><td>{{ submission.category }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">标签</th><td>
+            {% for t in tag_names %}<span style="display:inline-block;padding:1px 8px;border-radius:10px;background:#eef2ff;color:#4F46E5;margin-right:4px;">{{ t }}</span>{% empty %}—{% endfor %}
+        </td></tr>
+        <tr><th style="text-align:left;padding:8px;">提交人</th><td>{{ submission.user }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">提交时间</th><td>{{ submission.created_at }}</td></tr>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
