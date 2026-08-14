@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { Logo } from "../components/Logo";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
@@ -7,66 +8,7 @@ import type { Site } from "../lib/types";
 import { useFavorites } from "../lib/favorites";
 import { useThemeColors } from "../constants/colors";
 
-function getInitialColor(name: string): string {
-  const palette = [
-    "#4F46E5",
-    "#7C3AED",
-    "#2563EB",
-    "#0891B2",
-    "#059669",
-    "#D97706",
-    "#DC2626",
-    "#DB2777",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
 
-function Logo({ uri, name, size = 48 }: { uri: string | null; name: string; size?: number }) {
-  if (uri) {
-    return (
-      <View
-        style={[
-          styles.logoWrap,
-          {
-            width: size,
-            height: size,
-            borderRadius: size * 0.22,
-            backgroundColor: "rgba(79,70,229,0.08)",
-          },
-        ]}
-      >
-        <Image
-          source={{ uri }}
-          style={{ width: size, height: size, borderRadius: size * 0.22 }}
-          resizeMode="cover"
-        />
-      </View>
-    );
-  }
-
-  const bg = getInitialColor(name);
-  const initial = name.charAt(0).toUpperCase();
-
-  return (
-    <View
-      style={[
-        styles.logoWrap,
-        {
-          width: size,
-          height: size,
-          borderRadius: size * 0.22,
-          backgroundColor: bg,
-        },
-      ]}
-    >
-      <Text style={[styles.logoText, { fontSize: size * 0.42 }]}>{initial}</Text>
-    </View>
-  );
-}
 
 interface SiteCardProps {
   site: Site;

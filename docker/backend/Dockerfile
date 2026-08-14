@@ -3,8 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# curl 供 healthcheck 使用
-RUN apt-get update && apt-get install -y --no-install-recommends curl gettext\
+# curl 供 healthcheck 使用；libcairo2/pango 等供 cairosvg（SVG→PNG）编译使用
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl gettext \
+    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv/backend

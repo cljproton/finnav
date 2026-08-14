@@ -18,7 +18,9 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.finnav.app",
+      "versionCode": 10000
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -28,6 +30,13 @@
       "expo-router",
       "expo-font",
       "expo-localization"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "26d10eab-f8cf-4994-bf26-f9cc6b98f21e"
+      }
+    },
+    "owner": "cljprotons-team"
   }
 }

@@ -242,6 +242,7 @@ class AppSettingSerializer(serializers.ModelSerializer):
             'require_email_verification',
             'head_scripts',
             'sites_per_page',
+            'share_base_url',
         )
         read_only_fields = fields
 

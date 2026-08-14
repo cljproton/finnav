@@ -1,0 +1,198 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: 版本号（如 1.0.0，留空用 app.json / 标签版本）
+        required: false
+        type: string
+      version_code:
+        description: Android versionCode（数字，留空由版本号自动推导）
+        required: false
+        type: string
+      android_package:
+        description: Android applicationId
+        required: false
+        type: string
+        default: com.finnav.app
+      api_base_url:
+        description: 后端 API 地址（如 https://api.example.com，留空用前端默认）
+        required: false
+        type: string
+      build_type:
+        description: Gradle 构建类型
+        required: false
+        type: choice
+        options:
+          - release
+          - debug
+        default: release
+      artifact_type:
+        description: 产物类型（apk=直接安装 / aab=上架商店）
+        required: false
+        type: choice
+        options:
+          - apk
+          - aab
+        default: apk
+      allow_cleartext:
+        description: 允许明文 HTTP（仅调试/内网 http://IP 后端，Android 9+ 默认拦截）
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 解析版本号
+        working-directory: frontend
+        run: |
+          if [ -n "$APP_VERSION_INPUT" ]; then
+            echo "APP_VERSION=$APP_VERSION_INPUT" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF_NAME" == v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_ENV"
+          fi
+        env:
+          APP_VERSION_INPUT: ${{ inputs.app_version }}
+
+      - name: 解析 versionCode
+        run: |
+          if [ -n "$VERSION_CODE_INPUT" ]; then
+            echo "ANDROID_VERSION_CODE=$VERSION_CODE_INPUT" >> "$GITHUB_ENV"
+          else
+            echo "ANDROID_VERSION_CODE=$(echo "${APP_VERSION:-1.0.0}" | awk -F. '{printf "%d%02d%02d", $1, $2, $3}')" >> "$GITHUB_ENV"
+          fi
+        env:
+          VERSION_CODE_INPUT: ${{ inputs.version_code }}
+
+      - name: 写入 app.json 构建参数
+        working-directory: frontend
+        env:
+          ANDROID_PACKAGE: ${{ inputs.android_package }}
+          ANDROID_VERSION_CODE: ${{ env.ANDROID_VERSION_CODE }}
+          APP_VERSION: ${{ env.APP_VERSION }}
+          ALLOW_CLEARTEXT: ${{ inputs.allow_cleartext }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          const expo = cfg.expo;
+          if (process.env.APP_VERSION) expo.version = process.env.APP_VERSION;
+          expo.android = expo.android || {};
+          if (process.env.ANDROID_PACKAGE) expo.android.package = process.env.ANDROID_PACKAGE;
+          if (process.env.ANDROID_VERSION_CODE) expo.android.versionCode = Number(process.env.ANDROID_VERSION_CODE);
+          if (process.env.ALLOW_CLEARTEXT === 'true') {
+            expo.plugins = expo.plugins || [];
+            if (!expo.plugins.some(p => Array.isArray(p) && p[0] === 'expo-build-properties')) {
+              expo.plugins.push(['expo-build-properties', { android: { usesCleartextTraffic: true } }]);
+            }
+          }
+          fs.writeFileSync('app.json', JSON.stringify(cfg, null, 2) + '\n');
+          NODE
+
+      - name: Expo prebuild（生成原生工程）
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          CI=1 npx expo prebuild --platform android --no-install
+
+      - name: 配置 Android 正式签名（可选）
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: frontend/android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > finnav.jks
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'app/build.gradle';
+          let s = fs.readFileSync(path, 'utf8');
+          const rel = '\n' +
+            '        release {\n' +
+            "            storeFile file('../finnav.jks')\n" +
+            "            storePassword '" + process.env.ANDROID_KEYSTORE_PASSWORD + "'\n" +
+            "            keyAlias '" + process.env.ANDROID_KEY_ALIAS + "'\n" +
+            "            keyPassword '" + process.env.ANDROID_KEY_PASSWORD + "'\n" +
+            '        }\n';
+          s = s.replace(/(signingConfigs\s*\{)([^}]*\}\s*)(\})/, '$1$2' + rel + '$3');
+          s = s.replace(/(release\s*\{[^}]*?signingConfig\s+)signingConfigs\.debug/, '$1signingConfigs.release');
+          fs.writeFileSync(path, s);
+          NODE
+
+      - name: 构建 Android 产物
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url }}
+          APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          set -euo pipefail
+          BT="${{ inputs.build_type }}"
+          AT="${{ inputs.artifact_type }}"
+          BL="$(echo "$BT" | tr '[:upper:]' '[:lower:]')"
+          UC="$(echo "$BT" | sed 's/./\U&/')"
+          if [ "$AT" = "aab" ]; then
+            GRADLE_TASK="bundle${UC}"
+            SRC="android/app/build/outputs/bundle/${BL}/app-${BL}.aab"
+          else
+            GRADLE_TASK="assemble${UC}"
+            SRC="android/app/build/outputs/apk/${BL}/app-${BL}.apk"
+          fi
+          (cd android && ./gradlew "$GRADLE_TASK" --no-daemon)
+          mkdir -p build/android
+          cp "$SRC" "build/android/finnav-${APP_VERSION}-${BL}.${AT}"
+          ls -lh build/android
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: finnav-android
+          path: frontend/build/android/*
+
+      - name: 发布草稿 Release
+        if: ${{ success() }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: v${{ env.APP_VERSION }}
+          draft: true
+          body: |
+            Android ${{ inputs.build_type }} 构建产物
+            - 版本：${{ env.APP_VERSION }}
+            - versionCode：${{ env.ANDROID_VERSION_CODE }}
+            - applicationId：${{ inputs.android_package }}
+            - 后端 API：${{ inputs.api_base_url || '前端默认逻辑' }}
+            - 产物类型：${{ inputs.artifact_type }}
+          files: |
+            frontend/build/android/*.apk
+            frontend/build/android/*.aab

@@ -1,0 +1,174 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_version:
+        description: 版本号（如 1.0.0，留空用 app.json / 标签版本）
+        required: false
+        type: string
+      build_number:
+        description: iOS build 号
+        required: false
+        type: string
+        default: '1'
+      ios_bundle_identifier:
+        description: iOS bundleIdentifier
+        required: false
+        type: string
+        default: com.finnav.app
+      api_base_url:
+        description: 后端 API 地址（如 https://api.example.com，留空用前端默认）
+        required: false
+        type: string
+      ios_sdk:
+        description: 目标 SDK（iphonesimulator=模拟器包，免签名（默认）/ iphoneos=真机包，需配置签名）
+        required: false
+        type: choice
+        options:
+          - iphonesimulator
+          - iphoneos
+        default: iphonesimulator
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 解析版本号
+        working-directory: frontend
+        run: |
+          if [ -n "$APP_VERSION_INPUT" ]; then
+            echo "APP_VERSION=$APP_VERSION_INPUT" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF_NAME" == v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=$(node -p "require('./app.json').expo.version")" >> "$GITHUB_ENV"
+          fi
+        env:
+          APP_VERSION_INPUT: ${{ inputs.app_version }}
+
+      - name: 写入 app.json 构建参数
+        working-directory: frontend
+        env:
+          IOS_BUNDLE_IDENTIFIER: ${{ inputs.ios_bundle_identifier }}
+          IOS_BUILD_NUMBER: ${{ inputs.build_number }}
+          APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          const expo = cfg.expo;
+          if (process.env.APP_VERSION) expo.version = process.env.APP_VERSION;
+          expo.ios = expo.ios || {};
+          if (process.env.IOS_BUNDLE_IDENTIFIER) expo.ios.bundleIdentifier = process.env.IOS_BUNDLE_IDENTIFIER;
+          if (process.env.IOS_BUILD_NUMBER) expo.ios.buildNumber = process.env.IOS_BUILD_NUMBER;
+          fs.writeFileSync('app.json', JSON.stringify(cfg, null, 2) + '\n');
+          NODE
+
+      - name: Expo prebuild（生成原生工程）
+        working-directory: frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          CI=1 npx expo prebuild --platform ios --no-install
+
+      - name: 安装 CocoaPods 依赖
+        working-directory: frontend/ios
+        run: pod install
+
+      - name: 构建 iOS 产物
+        working-directory: frontend/ios
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ inputs.api_base_url }}
+          IOS_SDK: ${{ inputs.ios_sdk }}
+          IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
+          APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          set -euo pipefail
+          SCHEME="$(xcodebuild -list -workspace finnav.xcworkspace -json | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); console.log((d.workspace.schemes||[]).find(s=>s!=='Pods')||'')")"
+          [ -n "$SCHEME" ] || { echo "未能在 finnav.xcworkspace 中找到 scheme" >&2; exit 1; }
+          echo "使用 scheme: $SCHEME"
+
+          mkdir -p ../build/ios
+
+          if [ "$IOS_SDK" = "iphonesimulator" ]; then
+            # 模拟器包：免签名，zip .app 为 .ipa（可安装到模拟器，不能装真机）
+            xcodebuild -workspace finnav.xcworkspace -scheme "$SCHEME" \
+              -configuration Release -sdk iphonesimulator \
+              -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+            APP="build/Build/Products/Release-iphonesimulator/${SCHEME}.app"
+            rm -rf Payload
+            mkdir -p Payload
+            cp -R "$APP" Payload/
+            zip -r -q "finnav-${APP_VERSION}-${IOS_SDK}.ipa" Payload/
+            mv "finnav-${APP_VERSION}-${IOS_SDK}.ipa" ../build/ios/
+          else
+            # 真机包：自动签名，需 IOS_DEVELOPMENT_TEAM + 在 EAS/Apple 侧配置证书（或本 runner 已有证书）
+            [ -n "$IOS_DEVELOPMENT_TEAM" ] || { echo "真机包需要配置 IOS_DEVELOPMENT_TEAM secret（自动签名）" >&2; exit 1; }
+            xcodebuild -workspace finnav.xcworkspace -scheme "$SCHEME" \
+              -configuration Release -sdk iphoneos \
+              -archivePath build/finnav.xcarchive \
+              -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$IOS_DEVELOPMENT_TEAM" \
+              archive
+            cat > exportOptions.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>development</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+            xcodebuild -exportArchive -archivePath build/finnav.xcarchive \
+              -exportPath build/export -exportOptionsPlist exportOptions.plist \
+              -allowProvisioningUpdates
+            IPA_SRC="$(ls -t build/export/*.ipa | head -1)"
+            [ -n "$IPA_SRC" ] || { echo "导出 IPA 失败" >&2; exit 1; }
+            cp "$IPA_SRC" "../build/ios/finnav-${APP_VERSION}-${IOS_SDK}.ipa"
+          fi
+
+          ls -lh ../build/ios
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: finnav-ios
+          path: frontend/build/ios/*.ipa
+
+      - name: 发布草稿 Release
+        if: ${{ success() }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          name: v${{ env.APP_VERSION }}
+          draft: true
+          body: |
+            iOS ${{ inputs.ios_sdk }} 构建产物
+            - 版本：${{ env.APP_VERSION }}
+            - buildNumber：${{ inputs.build_number }}
+            - bundleIdentifier：${{ inputs.ios_bundle_identifier }}
+            - 后端 API：${{ inputs.api_base_url || '前端默认逻辑' }}
+          files: frontend/build/ios/*.ipa

@@ -45,6 +45,7 @@ export interface SiteSettings {
   require_email_verification: boolean;
   head_scripts: string;
   sites_per_page: number;
+  share_base_url: string;
 }
 
 export interface UserSiteInvite {

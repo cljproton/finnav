@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -556,6 +557,15 @@ class AppSetting(models.Model):
         default=20, verbose_name='站点每页数量'
     )
 
+    # 转发来源域名/地址：App 分享站点详情时用「该地址/site/站点ID」，
+    # 留空则保持 finnav:///site/xx 深链接格式。
+    share_base_url = models.CharField(
+        max_length=200, blank=True, default='',
+        verbose_name='转发来源域名/地址',
+        help_text='如 https://finnav.app 或 http://192.168.1.70:8000（须为网页版前端可访问的地址，'
+                  '而非后端 API 地址）；填写后 App 分享的站点链接为「该地址/site/站点ID」，留空保持 finnav:///site/xx 格式。',
+    )
+
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
     class Meta:
@@ -570,6 +580,18 @@ class AppSetting(models.Model):
         """返回单例设置对象，不存在则创建。"""
         obj, _ = cls.objects.get_or_create(id=1)
         return obj
+
+    def clean(self):
+        """表单校验：share_base_url 非空时需带 http(s):// 前缀，并去掉结尾斜杠。"""
+        import re
+
+        url = (self.share_base_url or '').strip()
+        if url:
+            if not re.match(r'^https?://', url):
+                raise ValidationError('转发来源域名需以 http:// 或 https:// 开头。')
+            self.share_base_url = url.rstrip('/')
+        else:
+            self.share_base_url = ''
 
 
 class TwoFactor(models.Model):

@@ -1,0 +1,15 @@
+# 前端独立部署（不包含后端，nginx 反代到任意后端地址）
+# 用法: docker compose -f docker-compose.frontend.yml up -d --build
+# 对外端口: docker/.env 中的 PORT（默认 80）
+# 必填: docker/.env 中的 BACKEND_URL，如 http://192.168.1.10:8000（可指向远端后端）
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+    image: finnav-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: "${BACKEND_URL:?请在 docker/.env 中设置 BACKEND_URL，如 http://192.168.1.10:8000}"
+    ports:
+      - "${PORT:-80}:80"

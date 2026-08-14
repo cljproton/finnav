@@ -24,14 +24,15 @@ A finance / Web3 website navigation app. One frontend codebase ships to Web / An
 
 - Home: category filter + site cards (logo / name / description / tags); tap into site detail; pull-to-refresh
 - Site detail: text tutorials, video tutorials, application (e.g. Xianyu) links (multiple of each), APP download (with version), visit the official site
-- One-tap share: share site name/description/link from the detail page (native share sheet / Web `navigator.share`)
+- One-tap share: share site name/description/link from the detail page (native share sheet / Web `navigator.share`); the shared site-link format is controlled by the "share base URL" admin setting — when set it becomes `<base>/site/<site-id>` (so users without the app can open the web version), otherwise it stays the `finnav:///site/xx` deep link
 - Star rating: email-registered users can rate sites (0-5 stars, half-star steps), optional comment; each site shows average rating and rating count, one vote per user
 - Visit stats: opening a site detail page counts one visit
 - Search: real-time search by name / description / tag
 - Favorites: persisted locally (AsyncStorage); auto-sync with the server once logged in for cross-device consistency
 - Account: email-code registration (Resend; without a key the code is printed to the backend log), login, forgot password; sign out from the "My" page; search history and favorites stay in sync across devices
 - UI: Ant Design theme, indigo finance palette, dark/light mode follows the system; bottom tabs, search, cards, modals all use AntD components (sub-path imports)
-- Admin: Simpleui theme. Overview page aggregates per-site visits and ranks TOP10 by visits + average rating + rating count; freely manage categories and sites, upload logos and APP packages, maintain tutorials/videos/application links
+- Admin: Simpleui theme. Overview page aggregates per-site visits and ranks TOP10 by visits + average rating + rating count; freely manage categories and sites, upload logos and APP packages, maintain tutorials/videos/application links; site settings include a "share base URL" global option
+- Logo: supports PNG / JPG / WebP / SVG upload; SVG is auto-converted to PNG before saving (backend converts via cairosvg, falling back to the original file on failure)
 
 ## Project structure
 
@@ -39,7 +40,9 @@ A finance / Web3 website navigation app. One frontend codebase ships to Web / An
 finnav/
 ├── backend/     # Django + DRF backend (API + admin)
 ├── frontend/    # Expo (React Native) cross-platform frontend
-├── scripts/     # start/stop/status scripts for dev servers
+├── scripts/     # dev-server & mobile packaging scripts (start/stop/build_android/build_ios)
+├── .github/
+│   └── workflows/  # Android APK / iOS IPA packaging workflows
 ├── docs/
 │   ├── api.md   # frontend/backend API contract
 │   └── screenshots/  # screenshot
@@ -69,7 +72,7 @@ Start / stop / restart / check the dev servers with one command:
 
 - Frontend: Expo SDK 57 (React Native 0.86) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native (Ant Design theme) + i18next / react-i18next / expo-localization
   - Note: always import AntD components via sub-paths (e.g. `@ant-design/react-native/es/button`), never `from "@ant-design/react-native"` — the barrel entry cannot be bundled under RNGH v3 (it depends on the removed `DrawerLayout`)
-- Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow
+- Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg (SVG logo → PNG)
 
 ## Backend (backend/)
 
@@ -97,8 +100,8 @@ python3 -m venv .venv
 cd frontend
 npm install
 npm run web        # Web (browser)
-npm run android    # Android (Expo Go or emulator)
-npm run ios        # iOS (Expo Go or emulator)
+npm run android    # Android (expo run:android, local native build)
+npm run ios        # iOS (expo run:ios, local native build)
 ```
 
 - API base: `http://localhost:8000` for web/iOS, `http://10.0.2.2:8000` for the Android emulator; override with `EXPO_PUBLIC_API_BASE_URL` (e.g. a LAN IP for real-device debugging)
@@ -106,6 +109,105 @@ npm run ios        # iOS (Expo Go or emulator)
 - Run: `./scripts/start_frontend.sh` (or `npm run web`)
 - Checks: `npx tsc --noEmit`, `npx expo export --platform web`
 - Note: `react` and `react-dom` must stay on the exact same version (currently 19.2.3, aligned with Expo SDK 57); adjust via `npx expo install react react-dom`, not by editing `package.json` directly
+
+## Android / iOS Packaging (local EAS scripts + GitHub Actions Release)
+
+The same frontend codebase can produce **Android APK** and **iOS IPA** packages. Two packaging paths are provided:
+
+1. **Local packaging (EAS cloud build)**: `scripts/build_android.sh` / `scripts/build_ios.sh` upload the code to EAS cloud for compilation (no local Android SDK / Xcode / macOS needed), requires an Expo account.
+2. **GitHub Actions packaging + Release publishing**: builds directly on GitHub runners ("Expo prebuild to generate native projects + Gradle / Xcode build"), no EAS required; both manual runs and `v*` tag pushes build and publish a **draft Release**, with configurable inputs.
+
+### 1. Local packaging (EAS cloud build)
+
+No local Android SDK / JDK / Xcode needed, and no macOS required to build the iOS package.
+
+#### One-time prerequisites
+
+```bash
+npx eas-cli login                        # log in to Expo (CI: use EXPO_TOKEN env var)
+cd frontend && npx eas-cli init          # link the EAS project (generates eas.json + projectId)
+npx eas-cli credentials                  # iOS signing credentials (Apple developer account); Android keystore is auto-generated on first build
+```
+
+#### Config variables
+
+Resolved by priority **environment variables > `scripts/build.env` (copy from `scripts/build.env.example`) > defaults**:
+
+| Variable | Default | Description |
+|---|---|---|
+| `APP_NAME` | app.json `name` | App display name |
+| `APP_VERSION` | app.json `version` | Version (e.g. `1.0.0`) |
+| `ANDROID_PACKAGE` | `com.finnav.app` | Android applicationId |
+| `ANDROID_VERSION_CODE` | derived from version | Android versionCode (e.g. 1.0.0 → 10000) |
+| `IOS_BUNDLE_IDENTIFIER` | `com.finnav.app` | iOS bundleIdentifier |
+| `IOS_BUILD_NUMBER` | `1` | iOS build number |
+| `EAS_PROFILE` | `preview` | Build profile: `preview`=installable APK (daily debugging) / `production`=AAB for store |
+| `EAS_CLI` | `npx --yes eas-cli@latest` | eas-cli invocation (pin a version in CI) |
+| `EXPO_PUBLIC_API_BASE_URL` | empty | **Backend API URL baked into the app** |
+| `ANDROID_ALLOW_CLEARTEXT` | empty | Set to `1` to allow cleartext HTTP (debugging/LAN backend only; use HTTPS for release) |
+| `EXPO_TOKEN` | empty | Expo access token for CI / non-interactive environments (skips `eas-cli login`) |
+| `BUILD_OUTPUT_DIR` | `frontend/build` | Output directory |
+
+#### Packaging
+
+```bash
+cd frontend && npm install
+
+# Android (EAS_PROFILE=preview → installable APK; production → AAB for store)
+./scripts/build_android.sh
+# Output: frontend/build/android/finnav-<version>-<EAS_PROFILE>-android.{apk,aab}
+
+# iOS (configure EAS signing credentials first)
+./scripts/build_ios.sh
+# Output: frontend/build/ios/finnav-<version>-<EAS_PROFILE>-ios.ipa
+```
+
+`EXPO_PUBLIC_API_BASE_URL` is temporarily written into the `env` of the matching profile in `frontend/eas.json`, inlined by the cloud Metro bundle, and the files are restored after the build. If empty, the built-in defaults apply (web/real devices follow the host being accessed; Android emulator uses `10.0.2.2:8000`).
+
+### 2. GitHub Actions packaging + Release publishing
+
+Two workflows are included (`.github/workflows/`), **building directly on the runners, no EAS / Expo account needed**:
+
+- **`build-android.yml`**: `expo prebuild` + Gradle build of the APK/AAB on `ubuntu-latest`
+- **`build-ios.yml`**: `expo prebuild` + `xcodebuild` build of the IPA on `macos-14` (default simulator build, unsigned)
+
+Triggers:
+
+- **Manual**: Actions page → workflow → `Run workflow`, with inputs for version, package/bundle id, backend API URL, etc.
+- **Tag push**: push a `v*` tag (e.g. `v1.0.0`) to build automatically with the tag version
+
+Every successful build publishes a **draft Release** (`v<version>`, the tag is created automatically); go to the Releases page to review and publish. Artifacts are also uploaded via `actions/upload-artifact` to the workflow run page.
+
+#### Configurable inputs (manual runs)
+
+Combined inputs of the two workflows (Android ones live in `build-android.yml`, iOS ones in `build-ios.yml`):
+
+| Input | Default | Description |
+|---|---|---|
+| `app_version` | empty | Version (empty → app.json / tag version) |
+| `version_code` | derived from version | Android versionCode |
+| `android_package` | `com.finnav.app` | Android applicationId |
+| `build_type` | `release` | Android Gradle build type release / debug |
+| `artifact_type` | `apk` | Android artifact apk (installable) / aab (store) |
+| `build_number` | `1` | iOS build number |
+| `ios_bundle_identifier` | `com.finnav.app` | iOS bundleIdentifier |
+| `ios_sdk` | `iphonesimulator` | iOS SDK (simulator build unsigned / `iphoneos` device build) |
+| `api_base_url` | empty | **Backend API URL baked into the app** |
+| `allow_cleartext` | `false` | Allow cleartext HTTP (debugging/LAN backend only) |
+
+#### Secrets (optional)
+
+| Secret | Description |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | base64 content of the keystore file (release builds use real signing once set) |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROID_KEY_ALIAS` | key alias |
+| `ANDROID_KEY_PASSWORD` | key password |
+| `IOS_DEVELOPMENT_TEAM` | Apple developer Team ID (automatic signing for the iOS `iphoneos` device build) |
+
+- Android builds without a keystore use the debug signature (the APK is still directly installable)
+- iOS defaults to `iphonesimulator`, unsigned (installable on the simulator, not a real device); the `iphoneos` device build needs `IOS_DEVELOPMENT_TEAM` + automatic signing
+- On a manual run, if the version tag already exists the draft Release is updated; the auto-created tag also triggers one more tag build (producing the same draft) — this is expected
 
 ## One‑Click Deployment Script (Linux)
 
@@ -169,6 +271,39 @@ The project includes a Docker‑Compose based one‑click deployment for product
    | Frontend Web | http://localhost/ |
    | Admin panel | http://localhost/admin/ |
    | API | http://localhost/api/ |
+
+### Deploying backend and frontend separately
+
+By default everything is deployed together. To deploy **backend and frontend independently** (e.g. on different hosts), two standalone compose files are included:
+
+```bash
+# Backend only (public port BACKEND_PORT, default 8000; serves API/admin/static/media)
+docker compose -f docker-compose.backend.yml up -d --build
+
+# Frontend only (public port PORT, default 80; reverse-proxies /api /admin /static /media to a remote backend)
+# First set BACKEND_URL=http://<backend-ip>:8000 in docker/.env
+docker compose -f docker-compose.frontend.yml up -d --build
+```
+
+- The standalone frontend needs no shared data directory; `BACKEND_URL` can point at any backend (same host or remote)
+- `/media/` is reverse-proxied by the frontend nginx to the backend, which also serves `/media/` in production (cache headers preserved)
+- See [`docker/README.md`](docker/README.md) for details
+
+### Mobile apps connecting to a backend-only deployment
+
+The Android/iOS apps are independent of the web frontend and only call the backend API, so they work fine with a **backend-only deployment**:
+
+```bash
+# 1. Deploy backend only (public port BACKEND_PORT, default 8000)
+docker compose -f docker-compose.backend.yml up -d --build
+# 2. Build the app pointing at the backend
+EXPO_PUBLIC_API_BASE_URL=http://<backend-ip-or-domain>:8000 ./scripts/build_android.sh   # or build_ios.sh
+```
+
+- Open `BACKEND_PORT` in the firewall/security group; `ALLOWED_HOSTS=*` accepts any Host by default (set it to the real domain/IP in production)
+- Media is served by the backend in production; absolute media URLs in the API are generated from the access address automatically
+- **iOS**: connecting to an HTTP backend works out of the box (Expo allows arbitrary loads by default)
+- **Android**: release builds block cleartext HTTP by default (Android 9+). For a non‑TLS `http://IP:8000` backend, enable `ANDROID_ALLOW_CLEARTEXT=1` and rebuild for local/LAN debugging; **for production, put the backend behind HTTPS** (no flag needed)
 
 4. **Common management commands**  
 

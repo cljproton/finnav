@@ -40,5 +40,12 @@ urlpatterns = [
     path('api/', include('apps.navigation.urls')),
 ]
 
+from django.views.static import serve as serve_media
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+else:
+    # 生产环境也由 Django 提供 /media/（供前端独立部署时反代；WhiteNoise 只处理静态文件）
+    urlpatterns += [
+        path('media/<path:path>', serve_media, {'document_root': settings.MEDIA_ROOT}),
+    ]

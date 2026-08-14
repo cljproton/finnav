@@ -1321,6 +1321,44 @@ class SettingsTestCase(TestCase):
         self.assertEqual(data['announcement'], '重要公告')
         self.assertEqual(data['footer_copyright'], '© 2026 MySite')
 
+    def test_settings_exposes_share_base_url_default_empty(self):
+        resp = self.client.get('/api/settings/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['share_base_url'], '')
+
+    def test_settings_reflects_share_base_url(self):
+        from .models import AppSetting
+
+        AppSetting.get()
+        AppSetting.objects.filter(id=1).update(
+            share_base_url='https://finnav.app',
+        )
+        resp = self.client.get('/api/settings/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['share_base_url'], 'https://finnav.app')
+
+    def test_share_base_url_clean_normalizes(self):
+        from django.core.exceptions import ValidationError
+
+        from .models import AppSetting
+
+        setting = AppSetting.get()
+        setting.share_base_url = 'https://finnav.app/'
+        setting.full_clean()
+        self.assertEqual(setting.share_base_url, 'https://finnav.app')
+
+        setting.share_base_url = 'http://192.168.1.70:8000//'
+        setting.full_clean()
+        self.assertEqual(setting.share_base_url, 'http://192.168.1.70:8000')
+
+        setting.share_base_url = '  '
+        setting.full_clean()
+        self.assertEqual(setting.share_base_url, '')
+
+        setting.share_base_url = 'finnav.app'
+        with self.assertRaises(ValidationError):
+            setting.full_clean()
+
 
 class AppDownloadTestCase(TestCase):
     """安卓 APP 拉取缓存（专用目录、刷新覆盖）+ 序列化字段。"""
