@@ -14,6 +14,9 @@ RUN npx expo export --platform web
 
 # ---- 运行阶段：Nginx 托管静态站 ----
 FROM nginx:1.27-alpine
-COPY docker/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# envsubst 仅替换 BACKEND_URL（避免误替换 $host/$uri 等 nginx 变量）
+ENV NGINX_ENVSUBST_FILTER="BACKEND_URL" \
+    BACKEND_URL="http://backend:8000"
+COPY docker/frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /src/dist /usr/share/nginx/html
-EXPOSE 8080
+EXPOSE 80

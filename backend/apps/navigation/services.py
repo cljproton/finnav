@@ -130,12 +130,39 @@ def _icon_candidates(site, html=None):
 
 
 def _validate_and_save(site, data, content_type):
-    """用 PIL 验证图片有效性，规范化后写入 site.logo 并返回。"""
+    """用 PIL 验证图片有效性，规范化后写入 site.logo 并返回。
+
+    SVG 图标会先经 cairosvg 转为 PNG，保证站点仅保存可被前端直接渲染的
+    PNG 文件；转换失败则回退保存原始 SVG。
+    """
     from io import BytesIO
 
     from django.core.files.base import ContentFile
 
     from PIL import Image
+
+    is_svg = (
+        content_type in ('image/svg+xml', 'image/svg',
+                         'application/xml', 'text/xml',
+                         'application/svg+xml')
+        or b'<svg' in data[:2048].lower()
+    )
+
+    if is_svg:
+        try:
+            import cairosvg
+            data = cairosvg.svg2png(bytestring=data)
+            content_type = 'image/png'
+        except Exception:
+            # 转换失败：保存原 SVG 兜底（前端已做错误兜底，不会白屏）。
+            site.logo.save(
+                f'logo-{site.pk}.svg',
+                ContentFile(data),
+                save=False,
+            )
+            site.logo_fetched_at = timezone.now()
+            site.save(update_fields=['logo', 'logo_fetched_at', 'updated_at'])
+            return site.logo.url
 
     img = Image.open(BytesIO(data))
     img.load()
@@ -147,20 +174,9 @@ def _validate_and_save(site, data, content_type):
         'image/webp': 'WEBP',
         'image/x-icon': 'PNG',
         'image/vnd.microsoft.icon': 'PNG',
-        'image/svg+xml': 'SVG',
     }
     fmt = ext_map.get(content_type, img.format or 'PNG')
-    safe_fmt = fmt if fmt in ('PNG', 'JPEG', 'GIF', 'WEBP', 'SVG') else 'PNG'
-
-    if safe_fmt == 'SVG':
-        site.logo.save(
-            f'logo-{site.pk}.svg',
-            ContentFile(data),
-            save=False,
-        )
-        site.logo_fetched_at = timezone.now()
-        site.save(update_fields=['logo', 'logo_fetched_at', 'updated_at'])
-        return site.logo.url
+    safe_fmt = fmt if fmt in ('PNG', 'JPEG', 'GIF', 'WEBP') else 'PNG'
 
     buffer = BytesIO()
     if img.mode not in ('RGB', 'RGBA'):

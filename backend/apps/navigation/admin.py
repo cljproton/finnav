@@ -653,6 +653,14 @@ class AppSettingAdmin(admin.ModelAdmin):
             {'fields': ('footer_copyright',)},
         ),
         (
+            '转发链接',
+            {
+                'fields': ('share_base_url',),
+                'description': 'App 分享站点详情时使用的链接前缀。填写如 https://finnav.app（网页版前端地址），'
+                               '分享链接变为「该地址/site/站点ID」；留空保持 finnav:///site/xx 深链接格式。',
+            },
+        ),
+        (
             '账号与安全',
             {
                 'fields': ('require_email_verification', 'twofa_enabled'),

@@ -6,7 +6,6 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
-  Image,
   ActivityIndicator,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -23,6 +22,7 @@ import EmptyState from "../../components/EmptyState";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
+import { Logo } from "../../components/Logo";
 
 export default function HomeScreen() {
   const { t } = useTranslation();
@@ -84,19 +84,7 @@ export default function HomeScreen() {
       <View>
         {/* Hero title area */}
         <View style={styles.heroSection}>
-          {settings?.logo ? (
-            <Image
-              source={{ uri: settings.logo }}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          ) : (
-            <Image
-              source={require("../../assets/icon.png")}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-          )}
+          <Logo uri={settings?.logo ?? null} size={64} />
           <Text style={[styles.greeting, { color: colors.text }]}>
             {settings?.site_title || t("探索好站")}
           </Text>

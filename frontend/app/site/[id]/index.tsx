@@ -1,16 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Image,
-  TextInput,
-  useColorScheme,
-  Share,
-  Platform,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, useColorScheme, Share, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -31,6 +20,7 @@ import {
   useSiteInvite,
   reportAppDownload,
   saveSiteInvite,
+  useSettings,
 } from "../../../lib/api";
 import { useFavorites } from "../../../lib/favorites";
 import { useAuth } from "../../../lib/auth";
@@ -38,26 +28,11 @@ import type { CaptchaPayload } from "../../../lib/auth";
 import { useThemeColors } from "../../../constants/colors";
 import type { Site, UserSiteInvite } from "../../../lib/types";
 import AuthModal from "../../../components/AuthModal";
+import { Logo } from "../../../components/Logo";
 
 /* ---------- helpers ---------- */
 
-function getInitialColor(name: string): string {
-  const palette = [
-    "#4F46E5",
-    "#7C3AED",
-    "#2563EB",
-    "#0891B2",
-    "#059669",
-    "#D97706",
-    "#DC2626",
-    "#DB2777",
-  ];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return palette[Math.abs(hash) % palette.length];
-}
+
 
 function formatBytes(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return "";
@@ -74,13 +49,17 @@ function formatCachedAt(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function siteDetailUrl(id: number): string {
+function siteDetailUrl(id: number, shareBaseUrl?: string | null): string {
   if (
     Platform.OS === "web" &&
     typeof window !== "undefined" &&
     window.location?.origin
   ) {
     return `${window.location.origin}/site/${id}`;
+  }
+  // 后端配置了转发来源域名时用 https/http 链接（装了 App 打开网页版、没装也能看）；否则保持 finnav 深链。
+  if (shareBaseUrl) {
+    return `${shareBaseUrl.replace(/\/+$/, "")}/site/${id}`;
   }
   return Linking.createURL(`/site/${id}`);
 }
@@ -120,11 +99,11 @@ async function copyText(text: string): Promise<boolean> {
   return false;
 }
 
-async function shareSite(site: Site, invite?: UserSiteInvite | null) {
+async function shareSite(site: Site, invite: UserSiteInvite | null | undefined, shareBaseUrl?: string | null) {
   const lines: string[] = [site.name];
   if (invite?.invite_code) lines.push(i18n.t("邀请码: {{code}}", { code: invite.invite_code }));
   if (invite?.invite_link) lines.push(i18n.t("邀请链接: {{link}}", { link: invite.invite_link }));
-  const detailUrl = siteDetailUrl(site.id);
+  const detailUrl = siteDetailUrl(site.id, shareBaseUrl);
   lines.push(i18n.t("来源：{{url}}", { url: detailUrl }));
   const message = lines.join("\n");
   const shareUrl = detailUrl;
@@ -191,33 +170,27 @@ function HeroLogo({ site, colors }: { site: Site; colors: any }) {
           },
         ]}
       >
-        <Image
-          source={{ uri: site.logo }}
-          style={{ width: size, height: size, borderRadius: size * 0.22 }}
-          resizeMode="cover"
-        />
+        <Logo uri={site.logo} name={site.name} size={size} />
       </View>
     );
   }
 
-  const bg = getInitialColor(site.name);
-  return (
-    <View
-      style={[
-        styles.heroLogo,
-        {
-          width: size,
-          height: size,
-          borderRadius: size * 0.22,
-          backgroundColor: bg,
-        },
-      ]}
-    >
-      <Text style={[styles.heroLogoText, { fontSize: 36 }]}>
-        {site.name.charAt(0).toUpperCase()}
-      </Text>
-    </View>
-  );
+
+    return (
+      <View
+        style={[
+          styles.heroLogo,
+          {
+            width: size,
+            height: size,
+            borderRadius: size * 0.22,
+            backgroundColor: colors.primaryLight,
+          },
+        ]}
+      >
+        <Logo uri={null} name={site.name} size={size} />
+      </View>
+    );
 }
 
 function LinkSection({
@@ -813,6 +786,7 @@ export default function SiteDetailScreen() {
   const siteId = Number(id);
 
   const queryClient = useQueryClient();
+  const { data: settings } = useSettings();
   let cachedSite: Site | undefined;
 
   // 站点列表已改为分页形状（{pages:{results}|同 key 的任意数组}），
@@ -958,7 +932,7 @@ export default function SiteDetailScreen() {
           </Pressable>
           <View style={styles.topBarRight}>
             <Pressable
-              onPress={() => shareSite(site, invite)}
+              onPress={() => shareSite(site, invite, settings?.share_base_url)}
               hitSlop={12}
               style={styles.shareBtn}
             >

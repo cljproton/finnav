@@ -5,9 +5,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # 反向代理到后端（内网 gunicorn）
+    # 反向代理到后端（默认 http://backend:8000 一体化；独立部署时由 BACKEND_URL 覆盖）
     location ^~ /api/ {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -15,7 +15,7 @@ server {
     }
 
     location ^~ /admin/ {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -25,14 +25,16 @@ server {
 
     # 后端静态文件（Django WhiteNoise 提供）
     location ^~ /static/ {
-        proxy_pass http://backend:8000;
+        proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 上传的媒体文件：直读共享数据卷（后端 DEBUG 关闭时 Django 不提供 /media/）
+    # 上传的媒体文件：反代到后端（后端生产环境也会提供 /media/），缓存头保留
     location ^~ /media/ {
-        alias /srv/data/media/;
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
         access_log off;
         expires 30d;
         add_header Cache-Control "public";

@@ -24,15 +24,16 @@
 
 - 首页：分类筛选 + 站点卡片（logo / 名称 / 描述 / 标签），点击进入站点详情，下拉刷新
 - 站点详情页：文字教程、视频教程、代办申请（如黄鱼）链接（每种可多条），APP 下载（含版本号）、访问官网
-- 一键转发：详情页分享站点名称/描述/链接（原生系统分享 / Web `navigator.share`）
+- 一键转发：详情页分享站点名称/描述/链接（原生系统分享 / Web `navigator.share`）；分享的站点链接格式由后台「转发来源域名」设置控制——配置后为「该地址/site/站点ID」（便于未装 App 的用户打开网页版），留空则为 `finnav:///site/xx` 深链接
 - 打星评分：邮箱注册用户可对站点打星（最低 0 星、最高 5 星），评论可选；每个站点汇总平均星级与评分人数，一人>一票
 - 访问统计：打开站点详情页计一次访问
 - 搜索：按名称/描述/标签实时搜索
 - 收藏：本地持久化（AsyncStorage）；登录后自动与服务器同步，支持跨设备保持一致
 - 账号：邮箱验证码注册（Resend，本地无密钥时验证码打印到后端日志）、登录、忘记密码；「我的」页可退出登录；搜索历史、收藏
 随账号同步保持个性化
-- 界面：Ant Design (蚂蚁) 主题外观，靛蓝金融配色，深色/浅色模式跟随系统；底部 Tab、搜索、卡片、弹窗等均为 AntD 组件（子>路径引用）
-- 管理后台：Simpleui 主题。概览页分类统计各站点访问情况，并按「访问量 + 平均星级 + 评分数」综合排序 TOP10；自由增删改分>类与站点，上传 logo 与 APP 安装包，维护教程/视频/代办链接
+- 界面：Ant Design (蚂蚁) 主题外观，靛蓝金融配色，深色/浅色模式跟随系统；底部 Tab、搜索、卡片、弹窗等均为 AntD 组件（子路径引用）
+- 管理后台：Simpleui 主题。概览页分类统计各站点访问情况，并按「访问量 + 平均星级 + 评分数」综合排序 TOP10；自由增删改分类与站点，上传 logo 与 APP 安装包，维护教程/视频/代办链接；站点设置可配置「转发来源域名」等全局项
+- Logo：支持上传 PNG / JPG / WebP / SVG，SVG 会自动转为 PNG 再保存（后端经 cairosvg 转换，失败则回退保存原文件）
 
 ## 项目结构
 
@@ -40,7 +41,9 @@
 finnav/
 ├── backend/     # Django + DRF 后端（API + 管理后台）
 ├── frontend/    # Expo (React Native) 跨端前端
-├── scripts/     # 前后端开发服务的启动/停止/状态脚本
+├── scripts/     # 开发服务与移动端打包脚本（start/stop/build_android/build_ios）
+├── .github/
+│   └── workflows/  # Android APK / iOS IPA 打包工作流
 ├── docs/
 │   ├── api.md   # 前后端 API 契约
 │   └── screenshots/  # 截图
@@ -70,7 +73,7 @@ finnav/
 
 - 前端：Expo SDK 57 (React Native 0.86) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native（Ant Design 主题）+ i18next / react-i18next / expo-localization
   - 注意：必须用子路径引入 AntD 组件（如 `@ant-design/react-native/es/button`），不可 `from "@ant-design/react-native"`——该 barrel 入口在 RNGH v3 下无法打包（依赖已移除的 `DrawerLayout`）
-- 后端：Django 5.2 LTS（含 `gettext` 国际化） + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow
+- 后端：Django 5.2 LTS（含 `gettext` 国际化） + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg（SVG 图标转 PNG）
 
 ## 后端（backend/）
 
@@ -98,8 +101,8 @@ python3 -m venv .venv
 cd frontend
 npm install
 npm run web        # Web（浏览器访问）
-npm run android    # Android（Expo Go 或模拟器）
-npm run ios        # iOS（Expo Go 或模拟器）
+npm run android    # Android（expo run:android，本地原生构建）
+npm run ios        # iOS（expo run:ios，本地原生构建）
 ```
 
 - API 地址默认：web/iOS 用 `http://localhost:8000`，Android 模拟器用 `http://10.0.2.2:8000`；可用环境变量 `EXPO_PUBLIC_API_BASE_URL` 覆盖（如指向局域网 IP 供真机联调）
@@ -107,6 +110,105 @@ npm run ios        # iOS（Expo Go 或模拟器）
 - 运行：`./scripts/start_frontend.sh`（或 `npm run web`）
 - 校验：`npx tsc --noEmit`、`npx expo export --platform web`
 - 注意：`react` 与 `react-dom` 必须保持完全相同的版本（当前为 19.2.3，与 Expo SDK 57 对齐）；如需调整请用 `npx expo install react react-dom` 而非直接改 package.json
+
+## Android / iOS 打包（本地 EAS 脚本 + GitHub Actions 发布 Release）
+
+同一套前端代码可打出 **Android APK** 与 **iOS IPA** 安装包。项目提供两条打包路径：
+
+1. **本地打包（EAS 云端构建）**：`scripts/build_android.sh` / `scripts/build_ios.sh` 把代码上传到 EAS 云端编译（本地无需 Android SDK / Xcode / macOS），需 Expo 账号。
+2. **GitHub Actions 打包 + 发布 Release**：直接在 GitHub runner 上「Expo prebuild 生成原生工程 + Gradle / Xcode 构建」，无需 EAS；手动运行或打 `v*` 标签都会构建并发布**草稿 Release**，可配置各项参数。
+
+### 一、本地打包（EAS 云端构建）
+
+本地无需安装 Android SDK / JDK / Xcode，也无需 macOS 即可打 iOS 包。
+
+#### 一次性前置（仅需一次）
+
+```bash
+npx eas-cli login                        # 登录 Expo 账号（CI 用 EXPO_TOKEN 环境变量）
+cd frontend && npx eas-cli init          # 关联 EAS 项目（生成 eas.json 与 projectId）
+npx eas-cli credentials                  # iOS 签名凭据（Apple 开发者账号）；Android keystore 首次构建自动生成
+```
+
+#### 配置变量
+
+按优先级 **环境变量 > `scripts/build.env`（复制自 `scripts/build.env.example`）> 默认值**：
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `APP_NAME` | app.json 的 `name` | 应用显示名 |
+| `APP_VERSION` | app.json 的 `version` | 版本号（如 `1.0.0`） |
+| `ANDROID_PACKAGE` | `com.finnav.app` | Android applicationId |
+| `ANDROID_VERSION_CODE` | 由版本号推导 | Android versionCode（如 1.0.0 → 10000） |
+| `IOS_BUNDLE_IDENTIFIER` | `com.finnav.app` | iOS bundleIdentifier |
+| `IOS_BUILD_NUMBER` | `1` | iOS build 号 |
+| `EAS_PROFILE` | `preview` | 构建 profile：`preview`=APK 直装（日常调试）/ `production`=AAB 上架 |
+| `EAS_CLI` | `npx --yes eas-cli@latest` | eas-cli 调用方式（CI 可固定版本） |
+| `EXPO_PUBLIC_API_BASE_URL` | 空 | **打进包的后端 API 地址** |
+| `ANDROID_ALLOW_CLEARTEXT` | 空 | 设为 `1` 允许明文 HTTP（仅调试/内网后端，正式上架请用 HTTPS） |
+| `EXPO_TOKEN` | 空 | CI / 无交互环境的 Expo 访问令牌（跳过 `eas-cli login`） |
+| `BUILD_OUTPUT_DIR` | `frontend/build` | 产物目录 |
+
+#### 打包
+
+```bash
+cd frontend && npm install
+
+# Android（EAS_PROFILE=preview 出 APK 可直装；production 出 AAB 上架）
+./scripts/build_android.sh
+# 产物: frontend/build/android/finnav-<版本>-<EAS_PROFILE>-android.{apk,aab}
+
+# iOS（需先在 EAS 配置签名凭据）
+./scripts/build_ios.sh
+# 产物: frontend/build/ios/finnav-<版本>-<EAS_PROFILE>-ios.ipa
+```
+
+`EXPO_PUBLIC_API_BASE_URL` 会在构建时临时写入 `frontend/eas.json` 对应 profile 的 `env`，云端 Metro 打包内联进 App，构建结束后自动还原文件。留空则用前端内置默认逻辑（web/真机跟随访问主机，Android 模拟器 `10.0.2.2:8000`）。
+
+### 二、GitHub Actions 打包 + 发布 Release
+
+仓库内置两个工作流（`.github/workflows/`），**在 runner 上直接构建，无需 EAS / Expo 账号**：
+
+- **`build-android.yml`**：`ubuntu-latest` 上 `expo prebuild` + Gradle 构建 APK/AAB
+- **`build-ios.yml`**：`macos-14` 上 `expo prebuild` + `xcodebuild` 构建 IPA（默认模拟器包免签名）
+
+触发方式：
+
+- **手动**：Actions 页面 → 对应 Workflow → `Run workflow`，填写版本号、包名、后端 API 地址等参数
+- **打 tag**：推送 `v*` 标签（如 `v1.0.0`），自动以标签版本号构建
+
+每次构建成功都会**发布一个草稿 Release**（`v<版本>`，自动创建对应 tag），到 Releases 页面人工确认后即可发布。产物同时通过 `actions/upload-artifact` 上传到工作流运行页面。
+
+#### 可配置参数（手动运行时）
+
+以下为两个工作流的输入合并（Android 相关在 `build-android.yml`，iOS 相关在 `build-ios.yml`）：
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| `app_version` | 空 | 版本号（留空用 app.json / 标签版本） |
+| `version_code` | 由版本号推导 | Android versionCode |
+| `android_package` | `com.finnav.app` | Android applicationId |
+| `build_type` | `release` | Android Gradle 构建类型 release / debug |
+| `artifact_type` | `apk` | Android 产物 apk（直装）/ aab（上架） |
+| `build_number` | `1` | iOS build 号 |
+| `ios_bundle_identifier` | `com.finnav.app` | iOS bundleIdentifier |
+| `ios_sdk` | `iphonesimulator` | iOS SDK（模拟器包免签名 / `iphoneos` 真机包） |
+| `api_base_url` | 空 | **打进包的后端 API 地址** |
+| `allow_cleartext` | `false` | 是否允许明文 HTTP（仅调试/内网后端） |
+
+#### Secrets（可选）
+
+| Secret | 说明 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | keystore 文件的 base64 内容（配置后 release 包用正式签名） |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 密码 |
+| `ANDROID_KEY_ALIAS` | key 别名 |
+| `ANDROID_KEY_PASSWORD` | key 密码 |
+| `IOS_DEVELOPMENT_TEAM` | Apple 开发者 Team ID（iOS `iphoneos` 真机包自动签名用） |
+
+- Android 未配置 keystore 时用 debug 签名（APK 仍可直接安装）
+- iOS 默认 `iphonesimulator` 免签名（可装模拟器，不可装真机）；`iphoneos` 真机包需 `IOS_DEVELOPMENT_TEAM` + 自动签名
+- 手动运行时若版本 tag 已存在，草稿 Release 会被更新；自动生成的 tag 会再触发一次 tag 构建（产出相同草稿），属正常行为
 
 ## 一键部署脚本（适用于主流 Linux）
 
@@ -170,6 +272,40 @@ sudo ./deploy_finnav.sh
    | 前端 Web | http://localhost/ |
    | 管理后台 | http://localhost/admin/ |
    | API | http://localhost/api/ |
+
+### 前后端分开部署
+
+默认一体化部署；如需**前后端分别独立部署**（例如不同主机），仓库附带两个独立 compose 文件：
+
+```bash
+# 后端独立（对外端口 BACKEND_PORT，默认 8000；提供 API/管理后台/静态/媒体）
+docker compose -f docker-compose.backend.yml up -d --build
+
+# 前端独立（对外端口 PORT 默认 80；把 /api /admin /static /media 反代到远端后端）
+# 需先在 docker/.env 中设置 BACKEND_URL=http://<后端IP>:8000
+docker compose -f docker-compose.frontend.yml up -d --build
+```
+
+- 前端独立部署无需共享数据目录，`BACKEND_URL` 可指向任意后端（同机或远端）
+- 媒体 `/media/` 由前端 nginx 反代到后端，后端在生产环境也会提供 `/media/`（缓存头保留）
+- 详见 [`docker/README.md`](docker/README.md)
+
+### 移动端 App 直连后端（仅部署后端时）
+
+Android / iOS App 与 Web 前端无关，只调用后端 API，因此**只部署后端时 App 也能正常使用**：
+
+```bash
+# 1. 仅部署后端（对外端口 BACKEND_PORT，默认 8000）
+docker compose -f docker-compose.backend.yml up -d --build
+# 2. 打包 App 时指定后端地址
+EXPO_PUBLIC_API_BASE_URL=http://<后端IP或域名>:8000 ./scripts/build_android.sh   # 或 build_ios.sh
+```
+
+- 需在防火墙/安全组放行 `BACKEND_PORT`；`ALLOWED_HOSTS=*` 默认接受任意 Host（生产建议改为实际域名/IP）
+- 媒体已由后端在生产环境提供，API 返回的绝对媒体 URL 自动基于访问地址生成
+- **iOS**：直连 HTTP 后端开箱即用（Expo 默认放行明文请求）
+- **Android**：release 包默认拦截明文 HTTP（Android 9+）。若后端为无 TLS 的 `http://IP:8000`，
+  本地/内网联调可设 `ANDROID_ALLOW_CLEARTEXT=1` 重新打包；**正式上架请让后端走 HTTPS**（无需该开关）
 
 4. **常用运维命令**  
 

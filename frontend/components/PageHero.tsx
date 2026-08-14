@@ -1,7 +1,8 @@
 import React from "react";
-import { View, Text, StyleSheet, Image } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useSettings } from "../lib/api";
 import { useThemeColors } from "../constants/colors";
+import { Logo } from "./Logo";
 
 export default function PageHero({ title }: { title: string }) {
   const colors = useThemeColors();
@@ -12,19 +13,9 @@ export default function PageHero({ title }: { title: string }) {
 
   return (
     <View style={styles.heroSection}>
-      {settings?.logo ? (
-        <Image
-          source={{ uri: settings.logo }}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      ) : (
-        <Image
-          source={require("../assets/icon.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      )}
+      <View style={styles.logo}>
+        <Logo uri={settings?.logo ?? null} size={48} />
+      </View>
       <Text style={[styles.greeting, { color: colors.text }]}>
         {displayTitle}
       </Text>
