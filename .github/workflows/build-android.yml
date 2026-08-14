@@ -41,9 +41,6 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    tags:
-      - 'v*'
 
 jobs:
   build-android:
