@@ -33,7 +33,7 @@ on:
 jobs:
   build-ios:
     name: Build iOS IPA
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: write
     steps:
@@ -45,10 +45,10 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: 切换 Xcode 26.0.1（Expo SDK 57 需要 Swift 6.2）
+      - name: 切换 Xcode 26.4.1（Expo SDK 57 需要 Xcode 26.4+ / Swift 6.3）
         run: |
           set -euo pipefail
-          sudo xcode-select -s /Applications/Xcode_26.0.1.app
+          sudo xcode-select -s /Applications/Xcode_26.4.1.app
           xcodebuild -version
           swift --version
 
