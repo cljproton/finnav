@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Modal, TextInput, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import Toast from "@ant-design/react-native/es/toast";
 import { useThemeColors } from "../constants/colors";
 import { fetchTFAStatus, fetchTFASetup, confirmTFA, disableTFA } from "../lib/api";
@@ -129,8 +130,11 @@ export default function TwoFactorManager() {
                 </Text>
                 {setup.qr ? (
                   <View style={[styles.qrWrap, { borderColor: colors.border }]}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={setup.qr} alt="2FA QR" style={{ width: 180, height: 180 }} />
+                    <Image
+                      source={{ uri: setup.qr }}
+                      style={{ width: 180, height: 180 }}
+                      contentFit="contain"
+                    />
                   </View>
                 ) : (
                   <View style={[styles.secretBox, { backgroundColor: colors.chipBg, borderColor: colors.border }]}>
