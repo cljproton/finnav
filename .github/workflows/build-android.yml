@@ -125,7 +125,6 @@ jobs:
           CI=1 npx expo prebuild --platform android --no-install
 
       - name: 配置 Android 正式签名（可选）
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         working-directory: frontend/android
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -133,6 +132,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > finnav.jks
           node <<'NODE'
           const fs = require('fs');
@@ -149,6 +149,7 @@ jobs:
           s = s.replace(/(release\s*\{[^}]*?signingConfig\s+)signingConfigs\.debug/, '$1signingConfigs.release');
           fs.writeFileSync(path, s);
           NODE
+          fi
 
       - name: 构建 Android 产物
         working-directory: frontend
