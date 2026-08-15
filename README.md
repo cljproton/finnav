@@ -305,7 +305,7 @@ EXPO_PUBLIC_API_BASE_URL=http://<后端IP或域名>:8000 ./scripts/build_android
 
 - 需在防火墙/安全组放行 `BACKEND_PORT`；`ALLOWED_HOSTS=*` 默认接受任意 Host（生产建议改为实际域名/IP）
 - 媒体已由后端在生产环境提供，API 返回的绝对媒体 URL 自动基于访问地址生成
-- **iOS**：直连 HTTP 后端开箱即用（Expo 默认放行明文请求）
+- **iOS**：直连 HTTP 后端可用（项目已通过 `ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads` 开启明文放行，见 `frontend/app.json`）。注意：RN 0.83 模板默认只放行本地网络，若移除该配置，对**公网 IP 的明文 HTTP 会被 ATS 拦截**报 "Network request failed"，此时应改用 HTTPS 或加回 ATS 例外
 - **Android**：release 包默认拦截明文 HTTP（Android 9+）。若后端为无 TLS 的 `http://IP:8000`，
   本地/内网联调可设 `ANDROID_ALLOW_CLEARTEXT=1` 重新打包；**正式上架请让后端走 HTTPS**（无需该开关）
 

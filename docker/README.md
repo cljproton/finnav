@@ -50,8 +50,8 @@ docker compose -f docker-compose.backend.yml up -d --build
 适合：后端单独跑在一台服务器（或数据库/媒体集中管理），前端再独立部署或由 App 直接连该地址。
 
 > 移动端 App 直连：Android / iOS App 只需调用后端 API，打包时设
-> `EXPO_PUBLIC_API_BASE_URL=http://<本机IP>:8000` 即可使用（iOS 直连 HTTP 可用；
-> Android release 包需 HTTPS 或 `ANDROID_ALLOW_CLEARTEXT=1`，详见根目录 README「移动端 App 直连后端」）。
+> `EXPO_PUBLIC_API_BASE_URL=http://<本机IP>:8000` 即可使用（iOS 直连 HTTP 可用——项目已开
+> ATS 明文例外；Android release 包需 HTTPS 或 `ANDROID_ALLOW_CLEARTEXT=1`，详见根目录 README「移动端 App 直连后端」）。
 
 ## 四、前端独立部署
 
