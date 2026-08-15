@@ -22,12 +22,13 @@ on:
         required: false
         type: string
       ios_sdk:
-        description: 目标 SDK（iphonesimulator=模拟器包，免签名（默认）/ iphoneos=真机包，需配置签名）
+        description: 目标 SDK（iphonesimulator=模拟器包，免签名（默认）/ iphoneos=真机包，需配置签名 / iphoneos-unsigned=真机免签名包，供爱思助手自签安装）
         required: false
         type: choice
         options:
           - iphonesimulator
           - iphoneos
+          - iphoneos-unsigned
         default: iphonesimulator
 
 jobs:
@@ -45,7 +46,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: 切换 Xcode 26.4.1（Expo SDK 57 需要 Xcode 26.4+ / Swift 6.3）
+      - name: 切换 Xcode 26.4.1（Expo SDK 55 需要 Xcode 26.2+）
         run: |
           set -euo pipefail
           sudo xcode-select -s /Applications/Xcode_26.4.1.app
@@ -133,6 +134,17 @@ jobs:
             cp -R "$APP" Payload/
             zip -r -q "finnav-${APP_VERSION}-${IOS_SDK}.ipa" Payload/
             mv "finnav-${APP_VERSION}-${IOS_SDK}.ipa" ../build/ios/
+          elif [ "$IOS_SDK" = "iphoneos-unsigned" ]; then
+            # 真机免签名包：供爱思助手等自签工具安装（无需 Apple 开发者账号/证书）
+            xcodebuild -workspace finnav.xcworkspace -scheme "$SCHEME" \
+              -configuration Release -sdk iphoneos \
+              -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+            APP="build/Build/Products/Release-iphoneos/${SCHEME}.app"
+            rm -rf Payload
+            mkdir -p Payload
+            cp -R "$APP" Payload/
+            zip -r -q "finnav-${APP_VERSION}-iphoneos-unsigned.ipa" Payload/
+            mv "finnav-${APP_VERSION}-iphoneos-unsigned.ipa" ../build/ios/
           else
             # 真机包：自动签名，需 IOS_DEVELOPMENT_TEAM + 在 EAS/Apple 侧配置证书（或本 runner 已有证书）
             [ -n "$IOS_DEVELOPMENT_TEAM" ] || { echo "真机包需要配置 IOS_DEVELOPMENT_TEAM secret（自动签名）" >&2; exit 1; }

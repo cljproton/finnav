@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 构建 iOS 设备包 (.ipa)（EAS 云端构建，本地无需 macOS / Xcode / CocoaPods）。
+# Expo SDK 55 / React Native 0.83，最低 iOS 15.1（兼容 iPhone 6s Plus iOS 15.8.8 与 iPadOS 26.2）。
 # 用法: ./scripts/build_ios.sh
 # 配置: scripts/build.env 或环境变量（详见 scripts/build.env.example）。
 # 前提: 首次需在 EAS 配置 Apple 签名凭据（npx eas-cli credentials）。

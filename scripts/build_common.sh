@@ -46,6 +46,8 @@ esac
 # iOS
 IOS_BUNDLE_IDENTIFIER="${IOS_BUNDLE_IDENTIFIER:-com.finnav.app}"
 IOS_BUILD_NUMBER="${IOS_BUILD_NUMBER:-1}"
+# iOS 最低部署版本（SDK 55 最低 15.1；兼容 iPhone 6s Plus iOS 15.8.8 / iPadOS 26.2）
+IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-15.1}"
 
 # 打进包的后端 API 地址（留空则用前端内置默认逻辑）
 EXPO_PUBLIC_API_BASE_URL="${EXPO_PUBLIC_API_BASE_URL:-}"
@@ -85,6 +87,7 @@ print_build_summary() {
   else
     echo " bundleId     : $IOS_BUNDLE_IDENTIFIER"
     echo " buildNumber  : $IOS_BUILD_NUMBER"
+    echo " 最低 iOS     : $IOS_DEPLOYMENT_TARGET"
   fi
   echo " API 地址    : ${EXPO_PUBLIC_API_BASE_URL:-<前端默认逻辑>}"
   echo " 产物目录    : $BUILD_OUTPUT_DIR"
@@ -120,6 +123,7 @@ patch_app_config() {
   APP_NAME="$APP_NAME" APP_VERSION="$APP_VERSION" \
   ANDROID_PACKAGE="$ANDROID_PACKAGE" ANDROID_VERSION_CODE="$ANDROID_VERSION_CODE" \
   IOS_BUNDLE_IDENTIFIER="$IOS_BUNDLE_IDENTIFIER" IOS_BUILD_NUMBER="$IOS_BUILD_NUMBER" \
+  IOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
   ANDROID_ALLOW_CLEARTEXT="${ANDROID_ALLOW_CLEARTEXT:-}" \
   node <<'NODE'
 const fs = require('fs');
@@ -143,6 +147,21 @@ if (process.env.APP_PLATFORM === 'ios') {
   expo.ios = expo.ios || {};
   if (process.env.IOS_BUNDLE_IDENTIFIER) expo.ios.bundleIdentifier = process.env.IOS_BUNDLE_IDENTIFIER;
   if (process.env.IOS_BUILD_NUMBER) expo.ios.buildNumber = String(process.env.IOS_BUILD_NUMBER);
+  if (process.env.IOS_DEPLOYMENT_TARGET) {
+    // SDK 55 的 ios.deploymentTarget 内建属性未开放，需经 expo-build-properties 插件注入
+    expo.plugins = expo.plugins || [];
+    const idx = expo.plugins.findIndex(p => Array.isArray(p) && p[0] === 'expo-build-properties');
+    let bp;
+    if (idx >= 0) {
+      bp = expo.plugins[idx];
+      bp[1] = (bp[1] && typeof bp[1] === 'object') ? bp[1] : {};
+    } else {
+      bp = ['expo-build-properties', {}];
+      expo.plugins.push(bp);
+    }
+    bp[1].ios = bp[1].ios || {};
+    bp[1].ios.deploymentTarget = process.env.IOS_DEPLOYMENT_TARGET;
+  }
 }
 fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n');
 NODE

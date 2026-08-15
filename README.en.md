@@ -70,7 +70,7 @@ Start / stop / restart / check the dev servers with one command:
 
 ## Tech stack
 
-- Frontend: Expo SDK 57 (React Native 0.86) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native (Ant Design theme) + i18next / react-i18next / expo-localization
+- Frontend: Expo SDK 55 (React Native 0.83) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native (Ant Design theme) + i18next / react-i18next / expo-localization
   - Note: always import AntD components via sub-paths (e.g. `@ant-design/react-native/es/button`), never `from "@ant-design/react-native"` — the barrel entry cannot be bundled under RNGH v3 (it depends on the removed `DrawerLayout`)
 - Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg (SVG logo → PNG)
 
@@ -108,7 +108,7 @@ npm run ios        # iOS (expo run:ios, local native build)
 - Real-device debugging: backend on `runserver 0.0.0.0:8000`, frontend `EXPO_PUBLIC_API_BASE_URL=http://<LAN_IP>:8000`
 - Run: `./scripts/start_frontend.sh` (or `npm run web`)
 - Checks: `npx tsc --noEmit`, `npx expo export --platform web`
-- Note: `react` and `react-dom` must stay on the exact same version (currently 19.2.3, aligned with Expo SDK 57); adjust via `npx expo install react react-dom`, not by editing `package.json` directly
+- Note: `react` and `react-dom` must stay on the exact same version (currently 19.2.0, aligned with Expo SDK 55); adjust via `npx expo install react react-dom`, not by editing `package.json` directly
 
 ## Android / iOS Packaging (local EAS scripts + GitHub Actions Release)
 
@@ -141,6 +141,7 @@ Resolved by priority **environment variables > `scripts/build.env` (copy from `s
 | `ANDROID_VERSION_CODE` | derived from version | Android versionCode (e.g. 1.0.0 → 10000) |
 | `IOS_BUNDLE_IDENTIFIER` | `com.finnav.app` | iOS bundleIdentifier |
 | `IOS_BUILD_NUMBER` | `1` | iOS build number |
+| `IOS_DEPLOYMENT_TARGET` | `15.1` | iOS minimum deployment version (fixed default 15.1, the SDK 55 minimum; supports iPhone 6s Plus iOS 15.8.8 and iPadOS 26.2) |
 | `EAS_PROFILE` | `preview` | Build profile: `preview`=installable APK (daily debugging) / `production`=AAB for store |
 | `EAS_CLI` | `npx --yes eas-cli@latest` | eas-cli invocation (pin a version in CI) |
 | `EXPO_PUBLIC_API_BASE_URL` | empty | **Backend API URL baked into the app** |
@@ -169,7 +170,7 @@ cd frontend && npm install
 Two workflows are included (`.github/workflows/`), **building directly on the runners, no EAS / Expo account needed**:
 
 - **`build-android.yml`**: `expo prebuild` + Gradle build of the APK/AAB on `ubuntu-latest`
-- **`build-ios.yml`**: `expo prebuild` + `xcodebuild` build of the IPA on `macos-14` (default simulator build, unsigned)
+- **`build-ios.yml`**: `expo prebuild` + `xcodebuild` build of the IPA on `macos-26` (Xcode 26.4.1) (default simulator build, unsigned; `iphoneos-unsigned` device build without signing for self-signing tools like 爱思助手)
 
 Triggers:
 
@@ -191,7 +192,7 @@ Combined inputs of the two workflows (Android ones live in `build-android.yml`, 
 | `artifact_type` | `apk` | Android artifact apk (installable) / aab (store) |
 | `build_number` | `1` | iOS build number |
 | `ios_bundle_identifier` | `com.finnav.app` | iOS bundleIdentifier |
-| `ios_sdk` | `iphonesimulator` | iOS SDK (simulator build unsigned / `iphoneos` device build) |
+| `ios_sdk` | `iphonesimulator` | iOS SDK (`iphonesimulator` simulator build unsigned / `iphoneos-unsigned` device build unsigned for self-signing / `iphoneos` device build with automatic signing) |
 | `api_base_url` | empty | **Backend API URL baked into the app** |
 | `allow_cleartext` | `false` | Allow cleartext HTTP (debugging/LAN backend only) |
 
@@ -206,7 +207,8 @@ Combined inputs of the two workflows (Android ones live in `build-android.yml`, 
 | `IOS_DEVELOPMENT_TEAM` | Apple developer Team ID (automatic signing for the iOS `iphoneos` device build) |
 
 - Android builds without a keystore use the debug signature (the APK is still directly installable)
-- iOS defaults to `iphonesimulator`, unsigned (installable on the simulator, not a real device); the `iphoneos` device build needs `IOS_DEVELOPMENT_TEAM` + automatic signing
+- iOS defaults to `iphonesimulator`, unsigned (installable on the simulator, not a real device); `iphoneos-unsigned` produces an unsigned device build for self-signing installers (e.g. 爱思助手, no Apple developer account needed); `iphoneos` device builds need `IOS_DEVELOPMENT_TEAM` + automatic signing
+- iOS minimum deployment version is 15.1 (the Expo SDK 55 minimum); one device build runs on both iPhone 6s Plus (iOS 15.8.8) and iPadOS 26.2
 - On a manual run, if the version tag already exists the draft Release is updated; the auto-created tag also triggers one more tag build (producing the same draft) — this is expected
 
 ## One‑Click Deployment Script (Linux)
