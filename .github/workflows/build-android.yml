@@ -107,7 +107,11 @@ jobs:
           if (process.env.ANDROID_VERSION_CODE) expo.android.versionCode = Number(process.env.ANDROID_VERSION_CODE);
           if (process.env.ALLOW_CLEARTEXT === 'true') {
             expo.plugins = expo.plugins || [];
-            if (!expo.plugins.some(p => Array.isArray(p) && p[0] === 'expo-build-properties')) {
+            const existing = expo.plugins.find(p => Array.isArray(p) && p[0] === 'expo-build-properties');
+            if (existing) {
+              existing[1] = existing[1] || {};
+              existing[1].android = { ...(existing[1].android || {}), usesCleartextTraffic: true };
+            } else {
               expo.plugins.push(['expo-build-properties', { android: { usesCleartextTraffic: true } }]);
             }
           }
