@@ -71,7 +71,7 @@ finnav/
 
 ## 技术栈
 
-- 前端：Expo SDK 57 (React Native 0.86) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native（Ant Design 主题）+ i18next / react-i18next / expo-localization
+- 前端：Expo SDK 55 (React Native 0.83) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native（Ant Design 主题）+ i18next / react-i18next / expo-localization
   - 注意：必须用子路径引入 AntD 组件（如 `@ant-design/react-native/es/button`），不可 `from "@ant-design/react-native"`——该 barrel 入口在 RNGH v3 下无法打包（依赖已移除的 `DrawerLayout`）
 - 后端：Django 5.2 LTS（含 `gettext` 国际化） + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg（SVG 图标转 PNG）
 
@@ -109,7 +109,7 @@ npm run ios        # iOS（expo run:ios，本地原生构建）
 - 真机联调：后端需 `runserver 0.0.0.0:8000`，前端设置 `EXPO_PUBLIC_API_BASE_URL=http://<局域网IP>:8000`
 - 运行：`./scripts/start_frontend.sh`（或 `npm run web`）
 - 校验：`npx tsc --noEmit`、`npx expo export --platform web`
-- 注意：`react` 与 `react-dom` 必须保持完全相同的版本（当前为 19.2.3，与 Expo SDK 57 对齐）；如需调整请用 `npx expo install react react-dom` 而非直接改 package.json
+- 注意：`react` 与 `react-dom` 必须保持完全相同的版本（当前为 19.2.0，与 Expo SDK 55 对齐）；如需调整请用 `npx expo install react react-dom` 而非直接改 package.json
 
 ## Android / iOS 打包（本地 EAS 脚本 + GitHub Actions 发布 Release）
 
@@ -142,6 +142,7 @@ npx eas-cli credentials                  # iOS 签名凭据（Apple 开发者账
 | `ANDROID_VERSION_CODE` | 由版本号推导 | Android versionCode（如 1.0.0 → 10000） |
 | `IOS_BUNDLE_IDENTIFIER` | `com.finnav.app` | iOS bundleIdentifier |
 | `IOS_BUILD_NUMBER` | `1` | iOS build 号 |
+| `IOS_DEPLOYMENT_TARGET` | `15.1` | iOS 最低部署版本（默认固定 15.1，SDK 55 最低；兼容 iPhone 6s Plus iOS 15.8.8 与 iPadOS 26.2） |
 | `EAS_PROFILE` | `preview` | 构建 profile：`preview`=APK 直装（日常调试）/ `production`=AAB 上架 |
 | `EAS_CLI` | `npx --yes eas-cli@latest` | eas-cli 调用方式（CI 可固定版本） |
 | `EXPO_PUBLIC_API_BASE_URL` | 空 | **打进包的后端 API 地址** |
@@ -170,7 +171,7 @@ cd frontend && npm install
 仓库内置两个工作流（`.github/workflows/`），**在 runner 上直接构建，无需 EAS / Expo 账号**：
 
 - **`build-android.yml`**：`ubuntu-latest` 上 `expo prebuild` + Gradle 构建 APK/AAB
-- **`build-ios.yml`**：`macos-14` 上 `expo prebuild` + `xcodebuild` 构建 IPA（默认模拟器包免签名）
+- **`build-ios.yml`**：`macos-26`（Xcode 26.4.1）上 `expo prebuild` + `xcodebuild` 构建 IPA（默认模拟器包免签名；`iphoneos-unsigned` 真机免签名包供爱思助手自签安装）
 
 触发方式：
 
@@ -192,7 +193,7 @@ cd frontend && npm install
 | `artifact_type` | `apk` | Android 产物 apk（直装）/ aab（上架） |
 | `build_number` | `1` | iOS build 号 |
 | `ios_bundle_identifier` | `com.finnav.app` | iOS bundleIdentifier |
-| `ios_sdk` | `iphonesimulator` | iOS SDK（模拟器包免签名 / `iphoneos` 真机包） |
+| `ios_sdk` | `iphonesimulator` | iOS SDK（`iphonesimulator` 模拟器包免签名 / `iphoneos-unsigned` 真机免签名包供自签 / `iphoneos` 真机自动签名包） |
 | `api_base_url` | 空 | **打进包的后端 API 地址** |
 | `allow_cleartext` | `false` | 是否允许明文 HTTP（仅调试/内网后端） |
 
@@ -207,7 +208,8 @@ cd frontend && npm install
 | `IOS_DEVELOPMENT_TEAM` | Apple 开发者 Team ID（iOS `iphoneos` 真机包自动签名用） |
 
 - Android 未配置 keystore 时用 debug 签名（APK 仍可直接安装）
-- iOS 默认 `iphonesimulator` 免签名（可装模拟器，不可装真机）；`iphoneos` 真机包需 `IOS_DEVELOPMENT_TEAM` + 自动签名
+- iOS 默认 `iphonesimulator` 免签名（可装模拟器，不可装真机）；`iphoneos-unsigned` 真机免签名包（无签名，可用爱思助手等自签安装，无需 Apple 开发者账号）；`iphoneos` 真机自动签名包需 `IOS_DEVELOPMENT_TEAM` + 自动签名
+- iOS 最低部署版本 15.1（Expo SDK 55 最低支持），一套真机包可同时安装到 iPhone 6s Plus（iOS 15.8.8）与 iPadOS 26.2
 - 手动运行时若版本 tag 已存在，草稿 Release 会被更新；自动生成的 tag 会再触发一次 tag 构建（产出相同草稿），属正常行为
 
 ## 一键部署脚本（适用于主流 Linux）

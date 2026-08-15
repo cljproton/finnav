@@ -7,9 +7,9 @@
     "icon": "./assets/icon.png",
     "scheme": "finnav",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.finnav.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,7 +29,15 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {},
