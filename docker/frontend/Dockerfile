@@ -4,6 +4,7 @@ FROM node:22-alpine AS build
 WORKDIR /src
 
 COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/.npmrc ./
 RUN npm ci
 
 COPY frontend/ .
