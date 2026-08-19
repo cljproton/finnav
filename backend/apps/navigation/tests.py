@@ -3,6 +3,7 @@ import re
 import shutil
 import tempfile
 import threading
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
@@ -14,16 +15,21 @@ from rest_framework.test import APIClient
 
 from .models import (
     AppDownload,
+    AppLinkSubmission,
     Category,
+    PointRule,
+    PointTransaction,
     Rating,
+    Referral,
     Site,
     SiteSubmission,
+    SiteTutorial,
     Tag,
     TOTPChallenge,
     TwoFactor,
+    UserProfile,
 )
-from .serializers import SiteSerializer
-from .services import LogoFetchError
+from .services import LogoFetchError, fetch_page_title_info
 
 
 def _tags(*names):
@@ -226,9 +232,6 @@ class SiteExtendedFieldsTestCase(TestCase):
             url='https://uniswap.org',
             category=self.category,
             sort_order=1,
-            text_tutorials=[{'name': '新手指南', 'url': 'https://docs.uniswap.org'}],
-            video_tutorials=[{'name': '教学视频', 'url': 'https://youtube.com/watch?v=abc'}],
-            agent_links=[{'name': '闲鱼代申请', 'url': 'https://www.goofish.com'}],
             app_android_url='https://example.com/finnav.apk',
             app_ios_url='https://apps.apple.com/app/id123',
         )
@@ -240,18 +243,6 @@ class SiteExtendedFieldsTestCase(TestCase):
             resp = self.client.get(f'/api/sites/{site.id}/')
             self.assertEqual(resp.status_code, 200)
             data = resp.json()
-        self.assertEqual(
-            data['text_tutorials'],
-            [{'name': '新手指南', 'url': 'https://docs.uniswap.org'}],
-        )
-        self.assertEqual(
-            data['video_tutorials'],
-            [{'name': '教学视频', 'url': 'https://youtube.com/watch?v=abc'}],
-        )
-        self.assertEqual(
-            data['agent_links'],
-            [{'name': '闲鱼代申请', 'url': 'https://www.goofish.com'}],
-        )
         # 双平台原始链接直出
         self.assertEqual(data['app_android_url'], 'https://example.com/finnav.apk')
         self.assertEqual(data['app_ios_url'], 'https://apps.apple.com/app/id123')
@@ -364,46 +355,6 @@ class SiteExtendedFieldsTestCase(TestCase):
                 )
         finally:
             shutil.rmtree(media_root, ignore_errors=True)
-
-    def test_malformed_link_rejected(self):
-        serializer = SiteSerializer()
-        # 缺 url
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_text_tutorials([{'name': '缺 url'}])
-        # 缺 name
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_video_tutorials([{'url': 'https://x.com'}])
-        # name 为空字符串
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_agent_links([{'name': '', 'url': 'https://x.com'}])
-        # 非对象项
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_text_tutorials(['not-a-dict'])
-        # 合法数据通过
-        self.assertEqual(
-            serializer.validate_text_tutorials(
-                [{'name': 'ok', 'url': 'https://x.com'}]
-            ),
-            [{'name': 'ok', 'url': 'https://x.com'}],
-        )
-
-    def test_link_array_max_ten(self):
-        serializer = SiteSerializer()
-        many = [{'name': f'标题{i}', 'url': f'https://example.com/{i}'} for i in range(10)]
-        self.assertEqual(len(serializer.validate_text_tutorials(many)), 10)
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_text_tutorials(many + [{'name': '第11条', 'url': 'https://example.com/11'}])
-
-    def test_link_array_url_format(self):
-        serializer = SiteSerializer()
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_text_tutorials([{'name': 'ok', 'url': 'not-a-url'}])
-        with self.assertRaises(serializers.ValidationError):
-            serializer.validate_video_tutorials([{'name': 'ok', 'url': 'ftp://example.com/a.mp4'}])
-        self.assertEqual(
-            serializer.validate_text_tutorials([{'name': 'ok', 'url': 'https://x.com/a'}]),
-            [{'name': 'ok', 'url': 'https://x.com/a'}],
-        )
 
 
 def _make_site(name='Uniswap', category=None, **kwargs):
@@ -609,14 +560,18 @@ class AuthRegisterTestCase(TestCase):
             ).exists()
         )
 
-    def test_password_reset_request_unregistered_email_rejected(self):
-        resp = self.client.post(
-            '/api/auth/password-reset/request/',
-            {'email': 'nobody@example.com'},
-            format='json',
-        )
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn('未注册', resp.json()['email'])
+    def test_password_reset_request_unregistered_email_not_revealed(self):
+        # 用户枚举防护：未注册邮箱也返回同样的成功响应，不暴露邮箱存在性
+        from django.core import mail
+
+        with self.settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            resp = self.client.post(
+                '/api/auth/password-reset/request/',
+                {'email': 'nobody@example.com'},
+                format='json',
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
 
     def _reset_code(self, email=None):
         import re as _re
@@ -1399,7 +1354,7 @@ class AppDownloadTestCase(TestCase):
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with self.mock_urlopen(b'fake-apk-bytes'):
+                with self.mock_urlopen(b'fake-apk-bytes') as (_urlopen_mock, _ssrf_mock):
                     site.download_android()
                 site.refresh_from_db()
                 self.assertEqual(site.app_android_size, 14)
@@ -1417,11 +1372,11 @@ class AppDownloadTestCase(TestCase):
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with self.mock_urlopen(b'first-version'):
+                with self.mock_urlopen(b'first-version') as (_urlopen_mock, _ssrf_mock):
                     site.download_android()
                 first = site.app_android_file.name
                 # 重复调用 = 刷新覆盖
-                with self.mock_urlopen(b'second-version-newer'):
+                with self.mock_urlopen(b'second-version-newer') as (_urlopen_mock2, _ssrf_mock2):
                     site.download_android()
                 site.refresh_from_db()
                 self.assertEqual(site.app_android_size, 20)
@@ -1448,7 +1403,7 @@ class AppDownloadTestCase(TestCase):
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with self.mock_urlopen(b'fake-apk-bytes'):
+                with self.mock_urlopen(b'fake-apk-bytes') as (_urlopen_mock, _ssrf_mock):
                     site.download_android()
                 site.refresh_from_db()
                 import hashlib
@@ -1462,25 +1417,25 @@ class AppDownloadTestCase(TestCase):
         finally:
             shutil.rmtree(media_root, ignore_errors=True)
 
-    def test_serializer_sha256_login_gated(self):
+    def test_serializer_sha256_public(self):
         import hashlib
 
         media_root = tempfile.mkdtemp()
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with self.mock_urlopen(b'fake-apk-bytes'):
+                with self.mock_urlopen(b'fake-apk-bytes') as (_urlopen_mock, _ssrf_mock):
                     site.download_android()
                 site.refresh_from_db()
                 expect_sha = hashlib.sha256(b'fake-apk-bytes').hexdigest()
 
-                # 匿名：能拿到完整性状态，但拿不到校验值
+                # 匿名：可见完整性状态与校验值（真实性核验公开）
                 anon = self.client.get(f'/api/sites/{site.id}/').json()
                 self.assertTrue(anon['app_android_has_cache'])
                 self.assertTrue(anon['app_android_integrity_ok'])
-                self.assertIsNone(anon['app_android_sha256'])
+                self.assertEqual(anon['app_android_sha256'], expect_sha)
 
-                # 登录：可见 SHA-256
+                # 登录：同样可见 SHA-256
                 self.client.force_authenticate(
                     User.objects.create_user(
                         username='me@example.com', email='me@example.com', password='x'
@@ -1500,7 +1455,7 @@ class AppDownloadTestCase(TestCase):
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with self.mock_urlopen(b'genuine-apk'):
+                with self.mock_urlopen(b'genuine-apk') as (_urlopen_mock, _ssrf_mock):
                     site.download_android()
                 site.refresh_from_db()
                 disk_path = os.path.join(
@@ -1537,11 +1492,14 @@ class AppDownloadTestCase(TestCase):
             shutil.rmtree(media_root, ignore_errors=True)
 
     @staticmethod
+    @contextmanager
     def mock_urlopen(payload):
-        """以 bytes 响应替换 urllib.request.urlopen，用于下载测试。"""
+        """以 bytes 响应替换传输层，并放行 SSRF 校验，用于下载测试。"""
         import io
-        import urllib.request
+
         from unittest import mock
+
+        from . import services
 
         class FakeResp(io.BytesIO):
             def __enter__(self):
@@ -1553,11 +1511,12 @@ class AppDownloadTestCase(TestCase):
             def __del__(self):
                 pass
 
-        return mock.patch.object(
-            urllib.request,
-            'urlopen',
-            return_value=FakeResp(payload),
-        )
+        with mock.patch.object(
+            services._safe_opener, 'open', return_value=FakeResp(payload)
+        ) as opener_mock, mock.patch.object(
+            services, '_ensure_public_host'
+        ) as ssrf_mock:
+            yield opener_mock, ssrf_mock
 
 
 class SiteAdminPageTestCase(TestCase):
@@ -1668,42 +1627,6 @@ class SiteAdminPageTestCase(TestCase):
             f"'/admin/navigation/site/{self.site.id}/app-pull/status/'", page
         )
         self.assertNotIn('/change/app-pull/', page)
-
-    def test_parse_links_strict_pipe_format(self):
-        from apps.navigation.admin import SiteAdmin
-
-        # 缺少竖线 → 报错（严格标题|链接格式）
-        with self.assertRaises(Exception) as exc:
-            SiteAdmin._parse_links('text_tutorials', '新手入门 https://example.com/guide')
-        self.assertIn('文章标题|文章链接', str(exc.exception))
-        # 竖线分隔通过
-        parsed = SiteAdmin._parse_links(
-            'text_tutorials', '新手入门|https://example.com/guide'
-        )
-        self.assertEqual(parsed, [{'name': '新手入门', 'url': 'https://example.com/guide'}])
-
-    def test_parse_links_validates_url_format(self):
-        from apps.navigation.admin import SiteAdmin
-
-        with self.assertRaises(Exception):
-            SiteAdmin._parse_links('text_tutorials', '标题|not-a-url')
-        with self.assertRaises(Exception):
-            SiteAdmin._parse_links('video_tutorials', '标题|ftp://example.com/a.mp4')
-        SiteAdmin._parse_links('agent_links', '标题|https://example.com/a')
-
-    def test_parse_links_max_ten(self):
-        from apps.navigation.admin import SiteAdmin
-
-        lines = '\n'.join(
-            f'标题{i}|https://example.com/{i}' for i in range(10)
-        )
-        parsed = SiteAdmin._parse_links('text_tutorials', lines)
-        self.assertEqual(len(parsed), 10)
-        with self.assertRaises(Exception):
-            SiteAdmin._parse_links(
-                'text_tutorials',
-                lines + '\n第11条|https://example.com/11',
-            )
 
 
 class CategoryAdminTestCase(TestCase):
@@ -1850,7 +1773,7 @@ class AppPullServiceTestCase(TestCase):
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
                 seen = []
-                with AppDownloadTestCase.mock_urlopen(payload):
+                with AppDownloadTestCase.mock_urlopen(payload) as (_urlopen_mock, _ssrf_mock):
                     stream_app_to_site(site, on_progress=lambda d, t: seen.append((d, t)))
                 self.assertTrue(seen)
                 # 最后一次回调等于已写大小
@@ -1865,7 +1788,7 @@ class AppPullServiceTestCase(TestCase):
         try:
             with override_settings(MEDIA_ROOT=media_root):
                 site = self._site(app_android_url='https://example.com/finnav.apk')
-                with AppDownloadTestCase.mock_urlopen(b'fake-apk'):
+                with AppDownloadTestCase.mock_urlopen(b'fake-apk') as (_urlopen_mock, _ssrf_mock):
                     with self.assertRaises(CancelRequested):
                         stream_app_to_site(site, should_cancel=lambda: True)
                 # 中止后不残留 .part
@@ -1924,6 +1847,12 @@ class ParallelDownloadTestCase(TestCase):
         return server
 
     def setUp(self):
+        # 本地回环测试服务器绕过 SSRF 校验
+        self._ssrf_patcher = mock.patch(
+            'apps.navigation.services._ensure_public_host', return_value=None
+        )
+        self._ssrf_patcher.start()
+        self.addCleanup(self._ssrf_patcher.stop)
         self.category = Category.objects.create(name='DeFi', slug='defi')
         self.media_root = tempfile.mkdtemp()
 
@@ -2032,6 +1961,12 @@ class ResumeDownloadTestCase(TestCase):
         return server
 
     def setUp(self):
+        # 本地回环测试服务器绕过 SSRF 校验
+        self._ssrf_patcher = mock.patch(
+            'apps.navigation.services._ensure_public_host', return_value=None
+        )
+        self._ssrf_patcher.start()
+        self.addCleanup(self._ssrf_patcher.stop)
         self.category = Category.objects.create(name='DeFi', slug='defi')
         self.media_root = tempfile.mkdtemp()
 
@@ -2195,6 +2130,12 @@ class LogoFetchTestCase(TestCase):
         return server
 
     def setUp(self):
+        # 本地回环测试服务器绕过 SSRF 校验
+        self._ssrf_patcher = mock.patch(
+            'apps.navigation.services._ensure_public_host', return_value=None
+        )
+        self._ssrf_patcher.start()
+        self.addCleanup(self._ssrf_patcher.stop)
         self.client = APIClient()
         self.category = Category.objects.create(name='DeFi', slug='defi')
         self.media_root = tempfile.mkdtemp()
@@ -3064,6 +3005,118 @@ class SiteSubmissionAPITestCase(TestCase):
         self.assertEqual(sub.status, 'approved')
         self.assertEqual(sub.approved_site, site)
 
+    def test_rejected_submission_can_be_deleted(self):
+        self.client.force_authenticate(self.user)
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='RejectedSite',
+            url='https://rejected.com',
+            category=self.category,
+            status=SiteSubmission.STATUS_REJECTED,
+        )
+        resp = self.client.delete(f'/api/site-submissions/{sub.pk}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(SiteSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_pending_submission_not_deletable(self):
+        self.client.force_authenticate(self.user)
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='PendingSite',
+            url='https://pending.com',
+            category=self.category,
+        )
+        resp = self.client.delete(f'/api/site-submissions/{sub.pk}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(SiteSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_approved_submission_not_deletable(self):
+        self.client.force_authenticate(self.user)
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='ApprovedSite',
+            url='https://approved.com',
+            category=self.category,
+            status=SiteSubmission.STATUS_APPROVED,
+        )
+        resp = self.client.delete(f'/api/site-submissions/{sub.pk}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(SiteSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_cannot_delete_other_users_submission(self):
+        other = User.objects.create_user(
+            username='other@example.com',
+            email='other@example.com',
+            password='secret123',
+        )
+        self.client.force_authenticate(other)
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='OtherSite',
+            url='https://other.com',
+            category=self.category,
+            status=SiteSubmission.STATUS_REJECTED,
+        )
+        resp = self.client.delete(f'/api/site-submissions/{sub.pk}/')
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(SiteSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_rejected_submission_can_be_updated(self):
+        from django.utils import timezone
+
+        self.client.force_authenticate(self.user)
+        self.site.tags.set(_tags('tools'))
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='RejectedSite',
+            url='https://rejected.com',
+            description='old',
+            category=self.category,
+            status=SiteSubmission.STATUS_REJECTED,
+            reviewed_at=timezone.now(),
+        )
+        resp = self.client.put(
+            f'/api/site-submissions/{sub.pk}/',
+            {
+                'name': 'FixedSite',
+                'url': 'https://fixed.com',
+                'description': 'new',
+                'category': self.category.pk,
+                'tags': ['tools'],
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'pending')
+        self.assertEqual(data['name'], 'FixedSite')
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, 'pending')
+        self.assertIsNone(sub.reviewed_at)
+        self.assertEqual(list(sub.tags.values_list('name', flat=True)), ['tools'])
+
+    def test_pending_submission_not_editable(self):
+        self.client.force_authenticate(self.user)
+        sub = SiteSubmission.objects.create(
+            user=self.user,
+            name='PendingSite',
+            url='https://pending.com',
+            category=self.category,
+        )
+        resp = self.client.put(
+            f'/api/site-submissions/{sub.pk}/',
+            {
+                'name': 'Changed',
+                'url': 'https://changed.com',
+                'category': self.category.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, SiteSubmission.STATUS_PENDING)
+        self.assertEqual(sub.name, 'PendingSite')
+
 
 class SiteSubmissionAdminActionsTestCase(TestCase):
     """后台「站点提交/审核」的通过/驳回动作（回归：驳回不得因 update_fields 报错）。"""
@@ -3278,3 +3331,1588 @@ class AdminTwoFAConfigTestCase(TestCase):
         )
         self.assertEqual(resp.status_code, 302)
         self.assertFalse(TwoFactor.objects.get(user=self.user).enabled)
+
+
+class SiteTutorialTestCase(TestCase):
+    """用户分享教程：创建自动抓标题、列表/top 排序、点击计数、删除申请审核。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.category = Category.objects.create(
+            name='DeFi', slug='defi', icon='🦄', sort_order=1
+        )
+        self.site = Site.objects.create(
+            name='Uniswap',
+            description='去中心化交易所',
+            url='https://uniswap.org',
+            category=self.category,
+            sort_order=1,
+        )
+        self.user = User.objects.create_user(
+            username='u1@example.com', email='u1@example.com', password='p'
+        )
+        self.other = User.objects.create_user(
+            username='u2@example.com', email='u2@example.com', password='p'
+        )
+
+    def _tutorial(self, tutorial_type, url, view_count=0, user=None, **kwargs):
+        kwargs.setdefault('status', SiteTutorial.STATUS_APPROVED)
+        return SiteTutorial.objects.create(
+            site=self.site,
+            user=user or self.user,
+            type=tutorial_type,
+            url=url,
+            title='T',
+            view_count=view_count,
+            **kwargs,
+        )
+
+    def test_create_requires_auth(self):
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/',
+            {'type': 'text', 'url': 'https://example.com/guide'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_create_fetches_title_automatically(self):
+        self.client.force_authenticate(self.user)
+        with mock.patch(
+            'apps.navigation.services.fetch_page_title',
+            return_value='从零开始使用 Uniswap',
+        ) as fetch:
+            resp = self.client.post(
+                f'/api/sites/{self.site.id}/tutorials/',
+                {'type': 'video', 'url': 'https://example.com/watch?v=1'},
+                format='json',
+            )
+        fetch.assert_called_once_with('https://example.com/watch?v=1')
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data['title'], '从零开始使用 Uniswap')
+        self.assertEqual(data['type'], 'video')
+        self.assertEqual(data['status'], 'pending')
+        self.assertTrue(data['is_mine'])
+        self.assertFalse(data['can_delete'])
+        self.assertFalse(data['delete_pending'])
+
+    def test_create_uses_manual_title_over_auto(self):
+        self.client.force_authenticate(self.user)
+        with mock.patch(
+            'apps.navigation.services.fetch_page_title',
+            return_value='自动抓取的标题',
+        ) as fetch:
+            resp = self.client.post(
+                f'/api/sites/{self.site.id}/tutorials/',
+                {
+                    'type': 'text',
+                    'url': 'https://example.com/manual',
+                    'title': '  手动填写的标题  ',
+                },
+                format='json',
+            )
+        fetch.assert_not_called()
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()['title'], '手动填写的标题')
+
+    def test_create_ignores_blank_manual_title(self):
+        self.client.force_authenticate(self.user)
+        with mock.patch(
+            'apps.navigation.services.fetch_page_title',
+            return_value='自动抓取的标题',
+        ) as fetch:
+            resp = self.client.post(
+                f'/api/sites/{self.site.id}/tutorials/',
+                {
+                    'type': 'text',
+                    'url': 'https://example.com/blank',
+                    'title': '   ',
+                },
+                format='json',
+            )
+        fetch.assert_called_once_with('https://example.com/blank')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()['title'], '自动抓取的标题')
+
+    def test_title_preview_requires_auth(self):
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/title/',
+            {'url': 'https://example.com/x'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_title_preview_returns_title(self):
+        self.client.force_authenticate(self.user)
+        with mock.patch(
+            'apps.navigation.services.fetch_page_title_info',
+            return_value=('抓取到的标题', False),
+        ) as fetch:
+            resp = self.client.post(
+                f'/api/sites/{self.site.id}/tutorials/title/',
+                {'url': 'https://example.com/preview'},
+                format='json',
+            )
+        fetch.assert_called_once_with('https://example.com/preview')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['title'], '抓取到的标题')
+        self.assertFalse(resp.json()['fallback'])
+
+    def test_title_preview_marks_fallback(self):
+        self.client.force_authenticate(self.user)
+        with mock.patch(
+            'apps.navigation.services.fetch_page_title_info',
+            return_value=('example.com', True),
+        ):
+            resp = self.client.post(
+                f'/api/sites/{self.site.id}/tutorials/title/',
+                {'url': 'https://example.com/blocked'},
+                format='json',
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['title'], 'example.com')
+        self.assertTrue(resp.json()['fallback'])
+
+    def test_title_preview_rejects_bad_url(self):
+        self.client.force_authenticate(self.user)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/title/',
+            {'url': 'not-a-url'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_create_rejects_bad_type_and_url(self):
+        self.client.force_authenticate(self.user)
+        bad_type = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/',
+            {'type': 'book', 'url': 'https://example.com/a'},
+            format='json',
+        )
+        self.assertEqual(bad_type.status_code, 400)
+
+        bad_url = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/',
+            {'type': 'text', 'url': 'ftp://example.com/a'},
+            format='json',
+        )
+        self.assertEqual(bad_url.status_code, 400)
+
+        missing = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/',
+            {'type': 'text', 'url': ''},
+            format='json',
+        )
+        self.assertEqual(missing.status_code, 400)
+
+    def test_list_ordered_by_views_and_filter_by_type(self):
+        low = self._tutorial('text', 'https://a.example.com', view_count=1)
+        high = self._tutorial('text', 'https://b.example.com', view_count=99)
+        video = self._tutorial('video', 'https://c.example.com', view_count=50)
+
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['count'], 3)
+        ids = [r['id'] for r in data['results']]
+        self.assertEqual(ids, [high.id, video.id, low.id])
+
+        resp = self.client.get(
+            f'/api/sites/{self.site.id}/tutorials/', {'type': 'video'}
+        )
+        self.assertEqual(resp.json()['count'], 1)
+
+    def test_list_keeps_delete_pending_visible(self):
+        self._tutorial('text', 'https://a.example.com', delete_pending=True)
+        self._tutorial('text', 'https://b.example.com')
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        self.assertEqual(resp.json()['count'], 2)
+
+    def test_list_excludes_unapproved_and_rejected(self):
+        self._tutorial('text', 'https://p.example.com', status=SiteTutorial.STATUS_PENDING)
+        self._tutorial('text', 'https://r.example.com', status=SiteTutorial.STATUS_REJECTED)
+        self._tutorial('text', 'https://ok.example.com')
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        items = resp.json()['results']
+        self.assertEqual(len(items), 1)
+        self.assertEqual([r['url'] for r in items], ['https://ok.example.com'])
+
+    def test_owner_sees_own_pending_and_rejected(self):
+        self._tutorial(
+            'text', 'https://p.example.com',
+            user=self.user, status=SiteTutorial.STATUS_PENDING,
+        )
+        self._tutorial(
+            'text', 'https://r.example.com',
+            user=self.user, status=SiteTutorial.STATUS_REJECTED,
+        )
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        urls = [r['url'] for r in resp.json()['results']]
+        self.assertEqual(
+            sorted(urls), ['https://p.example.com', 'https://r.example.com']
+        )
+
+    def test_other_user_does_not_see_unapproved(self):
+        self._tutorial(
+            'text', 'https://p.example.com', status=SiteTutorial.STATUS_PENDING
+        )
+        self.client.force_authenticate(self.other)
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        self.assertEqual(resp.json()['count'], 0)
+
+    def test_top_only_includes_approved(self):
+        self._tutorial('text', 'https://p.example.com', status=SiteTutorial.STATUS_PENDING)
+        self._tutorial('text', 'https://ok.example.com')
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/top/')
+        self.assertEqual([r['url'] for r in resp.json()['text']], ['https://ok.example.com'])
+
+    def test_top_returns_per_type_top_ten(self):
+        for i in range(12):
+            self._tutorial('text', f'https://t{i}.example.com', view_count=i)
+        self._tutorial('video', 'https://v.example.com', view_count=5)
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/top/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data['text']), 10)
+        self.assertEqual(len(data['video']), 1)
+        self.assertEqual(len(data['agent']), 0)
+        # 按访问量倒序
+        counts = [r['view_count'] for r in data['text']]
+        self.assertEqual(counts, sorted(counts, reverse=True))
+        self.assertEqual(counts[0], 11)
+
+    def test_visit_increments_view_count(self):
+        t = self._tutorial('text', 'https://a.example.com', view_count=7)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/visit/'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['view_count'], 8)
+        t.refresh_from_db()
+        self.assertEqual(t.view_count, 8)
+
+    def test_delete_request_requires_owner(self):
+        t = self._tutorial('text', 'https://a.example.com', user=self.user)
+        self.client.force_authenticate(self.other)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-request/'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_delete_request_rejected_for_pending_publish(self):
+        t = self._tutorial(
+            'text', 'https://p.example.com', status=SiteTutorial.STATUS_PENDING
+        )
+        self.client.force_authenticate(self.user)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-request/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        t.refresh_from_db()
+        self.assertFalse(t.delete_pending)
+
+    def test_rejected_tutorial_can_be_deleted_directly(self):
+        t = self._tutorial(
+            'text', 'https://r.example.com', status=SiteTutorial.STATUS_REJECTED
+        )
+        self.client.force_authenticate(self.user)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-request/'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['deleted'])
+        self.assertFalse(SiteTutorial.objects.filter(pk=t.pk).exists())
+
+    def test_rejected_tutorial_delete_requires_owner(self):
+        t = self._tutorial(
+            'text', 'https://r.example.com', status=SiteTutorial.STATUS_REJECTED
+        )
+        self.client.force_authenticate(self.other)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-request/'
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(SiteTutorial.objects.filter(pk=t.pk).exists())
+
+    def test_admin_actions_approve_and_reject_publish(self):
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.backends.db import SessionStore
+        from django.http import HttpRequest
+
+        from apps.navigation.admin import SiteTutorialAdmin
+
+        admin = SiteTutorialAdmin(SiteTutorial, None)
+
+        def make_request():
+            request = HttpRequest()
+            request.META['SERVER_NAME'] = 'testserver'
+            request.META['SERVER_PORT'] = '80'
+            request.session = SessionStore()
+            request._messages = FallbackStorage(request)
+            return request
+
+        pending = self._tutorial(
+            'text', 'https://p.example.com', status=SiteTutorial.STATUS_PENDING
+        )
+        admin.approve_publish(make_request(), SiteTutorial.objects.filter(pk=pending.pk))
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, SiteTutorial.STATUS_APPROVED)
+
+        pending2 = self._tutorial(
+            'text', 'https://q.example.com', status=SiteTutorial.STATUS_PENDING
+        )
+        admin.reject_publish(make_request(), SiteTutorial.objects.filter(pk=pending2.pk))
+        pending2.refresh_from_db()
+        self.assertEqual(pending2.status, SiteTutorial.STATUS_REJECTED)
+
+    def test_delete_request_keeps_visible_until_review(self):
+        t = self._tutorial('text', 'https://a.example.com', user=self.user)
+        self.client.force_authenticate(self.user)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-request/'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['delete_pending'])
+
+        t.refresh_from_db()
+        self.assertTrue(t.delete_pending)
+        listed = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        self.assertEqual(listed.json()['count'], 1)
+
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/delete-cancel/'
+        )
+        self.assertFalse(resp.json()['delete_pending'])
+        t.refresh_from_db()
+        self.assertFalse(t.delete_pending)
+        listed = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        self.assertEqual(listed.json()['count'], 1)
+
+    def test_anonymous_reads_mask_username(self):
+        t = self._tutorial('text', 'https://a.example.com', user=self.user)
+        resp = self.client.get(f'/api/sites/{self.site.id}/tutorials/')
+        item = resp.json()['results'][0]
+        self.assertEqual(item['id'], t.id)
+        self.assertEqual(item['username_masked'], 'u***@example.com')
+        self.assertFalse(item['is_mine'])
+        self.assertFalse(item['can_delete'])
+
+    def test_rejected_tutorial_can_be_updated(self):
+        t = self._tutorial(
+            'text',
+            'https://a.example.com',
+            status=SiteTutorial.STATUS_REJECTED,
+        )
+        self.client.force_authenticate(self.user)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/',
+            {'type': 'video', 'url': 'https://example.com/watch?v=2', 'title': '新标题'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'pending')
+        self.assertEqual(data['type'], 'video')
+        self.assertEqual(data['title'], '新标题')
+        t.refresh_from_db()
+        self.assertEqual(t.status, SiteTutorial.STATUS_PENDING)
+
+    def test_pending_tutorial_not_editable(self):
+        t = self._tutorial(
+            'text', 'https://a.example.com', status=SiteTutorial.STATUS_PENDING
+        )
+        self.client.force_authenticate(self.user)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/',
+            {'type': 'video', 'url': 'https://example.com/watch?v=2', 'title': '新标题'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        t.refresh_from_db()
+        self.assertEqual(t.status, SiteTutorial.STATUS_PENDING)
+
+    def test_tutorial_update_requires_owner(self):
+        t = self._tutorial(
+            'text',
+            'https://a.example.com',
+            status=SiteTutorial.STATUS_REJECTED,
+        )
+        self.client.force_authenticate(self.other)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/tutorials/{t.id}/',
+            {'type': 'video', 'url': 'https://example.com/watch?v=2', 'title': '新标题'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        t.refresh_from_db()
+        self.assertEqual(t.status, SiteTutorial.STATUS_REJECTED)
+
+
+class FetchPageTitleTestCase(TestCase):
+    """fetch_page_title_info：真实解析逻辑（mock 传输层 requests.get）。"""
+
+    @staticmethod
+    def _fake_resp(content=b'', status_code=200, headers=None):
+        class _FakeResp:
+            def __init__(self):
+                self.status_code = status_code
+                self.headers = headers or {}
+                self.content = content
+
+            def iter_content(self, chunk_size):
+                for i in range(0, len(self.content), chunk_size):
+                    yield self.content[i:i + chunk_size]
+
+            def close(self):
+                pass
+
+        return _FakeResp()
+
+    def _fetch(self, url, resp=None, exc=None):
+        with mock.patch('apps.navigation.services.requests.get') as get, \
+                mock.patch('apps.navigation.services._ensure_public_host'):
+            if exc is not None:
+                get.side_effect = exc
+            elif resp is not None:
+                get.return_value = resp
+            return fetch_page_title_info(url)
+
+    def test_prefers_html_title(self):
+        html = '<html><head><title>从零开始使用 Uniswap</title></head><body></body></html>'
+        title, fallback = self._fetch(
+            'https://example.com/a', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(title, '从零开始使用 Uniswap')
+        self.assertFalse(fallback)
+
+    def test_og_title_attribute_order_independent(self):
+        # content 在 property 之前、单引号，旧正则无法匹配的场景
+        html = (
+            "<html><head>"
+            "<meta content='Uniswap 教程' property='og:title'>"
+            "</head><body></body></html>"
+        )
+        title, fallback = self._fetch(
+            'https://example.com/b', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(title, 'Uniswap 教程')
+        self.assertFalse(fallback)
+
+    def test_og_title_fallback_without_title_tag(self):
+        html = (
+            '<html><head>'
+            '<meta name="twitter:title" content="推特标题">'
+            '</head><body></body></html>'
+        )
+        title, fallback = self._fetch(
+            'https://example.com/c', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(title, '推特标题')
+        self.assertFalse(fallback)
+
+    def test_gbk_page_decoded_via_header_charset(self):
+        html = '<html><head><title>人民币汇率教程</title></head><body></body></html>'
+        title, fallback = self._fetch(
+            'https://example.com/d',
+            self._fake_resp(
+                html.encode('gbk'),
+                headers={'Content-Type': 'text/html; charset=GBK'},
+            ),
+        )
+        self.assertEqual(title, '人民币汇率教程')
+        self.assertFalse(fallback)
+
+    def test_gbk_page_decoded_via_fallback_without_header(self):
+        html = '<html><head><title>如何获取标题的教程</title></head><body></body></html>'
+        title, fallback = self._fetch(
+            'https://example.com/e', self._fake_resp(html.encode('gbk'))
+        )
+        self.assertEqual(title, '如何获取标题的教程')
+        self.assertFalse(fallback)
+
+    def test_h1_fallback_when_no_meta_title(self):
+        html = '<html><head></head><body><h1>  一级标题教程  </h1></body></html>'
+        title, fallback = self._fetch(
+            'https://example.com/f', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(title, '一级标题教程')
+        self.assertFalse(fallback)
+
+    def test_connection_error_returns_domain_fallback(self):
+        title, fallback = self._fetch(
+            'https://example.com/blocked', exc=ConnectionError('refused')
+        )
+        self.assertEqual(title, 'example.com')
+        self.assertTrue(fallback)
+
+    def test_http_error_status_returns_domain_fallback(self):
+        title, fallback = self._fetch(
+            'https://example.com/404', self._fake_resp(b'', status_code=404)
+        )
+        self.assertEqual(title, 'example.com')
+        self.assertTrue(fallback)
+
+    def test_invalid_scheme_returns_domain_fallback(self):
+        title, fallback = self._fetch('ftp://example.com/a')
+        self.assertEqual(title, 'example.com')
+        self.assertTrue(fallback)
+
+    def test_long_title_truncated(self):
+        long_title = '长' * 250
+        html = f'<html><head><title>{long_title}</title></head><body></body></html>'
+        title, fallback = self._fetch(
+            'https://example.com/g', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(len(title), 200)
+        self.assertFalse(fallback)
+
+    def test_strips_html_entities(self):
+        html = (
+            '<html><head>'
+            '<title>DeFi &amp; 教程 &lt;入门&gt;</title>'
+            '</head><body></body></html>'
+        )
+        title, fallback = self._fetch(
+            'https://example.com/h', self._fake_resp(html.encode('utf-8'))
+        )
+        self.assertEqual(title, 'DeFi & 教程 <入门>')
+        self.assertFalse(fallback)
+
+
+class AppLinkSubmissionTestCase(TestCase):
+    """用户提交 APP 下载链接：鉴权、平台校验、重复 pending、审核通过联动。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.category = Category.objects.create(
+            name='DeFi', slug='defi', icon='🦄', sort_order=1
+        )
+        self.site = Site.objects.create(
+            name='Uniswap',
+            description='去中心化交易所',
+            url='https://uniswap.org',
+            category=self.category,
+            sort_order=1,
+        )
+        self.user = User.objects.create_user(
+            username='u1@example.com', email='u1@example.com', password='p'
+        )
+
+    def _submit(self, platform='android', url='https://dl.example.com/app.apk'):
+        return self.client.post(
+            f'/api/sites/{self.site.id}/app-links/',
+            {'platform': platform, 'url': url},
+            format='json',
+        )
+
+    def test_post_requires_auth(self):
+        resp = self._submit()
+        self.assertEqual(resp.status_code, 401)
+
+    def test_create_validates_platform_and_url(self):
+        self.client.force_authenticate(self.user)
+        bad_platform = self._submit(platform='windows')
+        self.assertEqual(bad_platform.status_code, 400)
+        bad_url = self._submit(url='not-a-url')
+        self.assertEqual(bad_url.status_code, 400)
+
+    def test_create_duplicate_pending_rejected(self):
+        self.client.force_authenticate(self.user)
+        first = self._submit()
+        self.assertEqual(first.status_code, 201)
+        dup = self._submit(url='https://dl.example.com/other.apk')
+        self.assertEqual(dup.status_code, 400)
+
+    def test_get_returns_own_submissions(self):
+        self.client.force_authenticate(self.user)
+        self._submit(platform='ios', url='https://apps.apple.com/app/1')
+        other = User.objects.create_user(
+            username='u2@example.com', email='u2@example.com', password='p'
+        )
+        self.client.force_authenticate(other)
+        self._submit(platform='ios', url='https://apps.apple.com/app/2')
+
+        self.client.force_authenticate(self.user)
+        resp = self.client.get(f'/api/sites/{self.site.id}/app-links/')
+        data = resp.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(len(data['results']), 1)
+        self.assertEqual(data['results'][0]['status'], 'pending')
+        self.assertEqual(data['results'][0]['platform'], 'ios')
+        self.assertEqual(
+            data['results'][0]['url'], 'https://apps.apple.com/app/1'
+        )
+        self.assertIn('created_at', data['results'][0])
+
+    def test_get_paginated(self):
+        self.client.force_authenticate(self.user)
+        for i in range(12):
+            # 每次提交需不同平台或先结束上一条 pending
+            sub = self._submit(
+                platform='android', url=f'https://dl.example.com/app{i}.apk'
+            ).json()
+            AppLinkSubmission.objects.filter(pk=sub['id']).update(
+                status='approved',
+                url=f'https://dl.example.com/app{i}.apk',
+            )
+
+        resp = self.client.get(f'/api/sites/{self.site.id}/app-links/')
+        data = resp.json()
+        self.assertEqual(data['count'], 12)
+        self.assertEqual(len(data['results']), 10)
+        self.assertIsNotNone(data['next'])
+
+        resp2 = self.client.get(data['next'])
+        data2 = resp2.json()
+        self.assertEqual(data2['count'], 12)
+        self.assertEqual(len(data2['results']), 2)
+        self.assertIsNone(data2['next'])
+
+    def test_approve_android_updates_site_and_starts_pull(self):
+        self.client.force_authenticate(self.user)
+        created = self._submit().json()
+        submission = AppLinkSubmission.objects.get(pk=created['id'])
+        with mock.patch('apps.navigation.services.start_pull') as start_pull:
+            submission.approve()
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, 'approved')
+        self.site.refresh_from_db()
+        self.assertEqual(
+            self.site.app_android_url, 'https://dl.example.com/app.apk'
+        )
+        start_pull.assert_called_once_with(self.site.pk)
+
+    def test_approve_ios_and_google_play(self):
+        self.client.force_authenticate(self.user)
+        ios = AppLinkSubmission.objects.get(
+            pk=self._submit(platform='ios', url='https://apps.apple.com/app/x').json()['id']
+        )
+        ios.approve()
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.app_ios_url, 'https://apps.apple.com/app/x')
+
+        gp = AppLinkSubmission.objects.get(
+            pk=self._submit(
+                platform='google_play', url='https://play.google.com/store/apps/details?id=x'
+            ).json()['id']
+        )
+        with mock.patch('apps.navigation.services.start_pull') as start_pull:
+            gp.approve()
+        self.site.refresh_from_db()
+        self.assertEqual(
+            self.site.app_google_play_url,
+            'https://play.google.com/store/apps/details?id=x',
+        )
+        start_pull.assert_not_called()
+
+    def test_reject_sets_status(self):
+        from django.utils import timezone
+
+        self.client.force_authenticate(self.user)
+        submission = AppLinkSubmission.objects.get(
+            pk=self._submit().json()['id']
+        )
+        submission.status = 'rejected'
+        submission.admin_note = '链接不可用'
+        submission.reviewed_at = timezone.now()
+        submission.save(update_fields=['status', 'admin_note', 'reviewed_at'])
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, 'rejected')
+        self.assertEqual(submission.admin_note, '链接不可用')
+
+    def test_duplicate_after_rejection_allowed(self):
+        self.client.force_authenticate(self.user)
+        first = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        first.status = 'rejected'
+        first.save(update_fields=['status'])
+        resp = self._submit(url='https://dl.example.com/v2.apk')
+        self.assertEqual(resp.status_code, 201)
+
+    def test_rejected_app_link_can_be_deleted(self):
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        sub.status = 'rejected'
+        sub.save(update_fields=['status'])
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/'
+        )
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(AppLinkSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_pending_app_link_not_deletable(self):
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(AppLinkSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_app_link_delete_requires_owner(self):
+        other = User.objects.create_user(
+            username='u2@example.com', email='u2@example.com', password='p'
+        )
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        sub.status = 'rejected'
+        sub.save(update_fields=['status'])
+        self.client.force_authenticate(other)
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/'
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(AppLinkSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_app_link_delete_requires_auth(self):
+        sub = AppLinkSubmission.objects.create(
+            user=self.user,
+            site=self.site,
+            platform='android',
+            url='https://dl.example.com/app.apk',
+            status='rejected',
+        )
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/'
+        )
+        self.assertEqual(resp.status_code, 401)
+        self.assertTrue(AppLinkSubmission.objects.filter(pk=sub.pk).exists())
+
+    def test_rejected_app_link_can_be_updated(self):
+        from django.utils import timezone
+
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        sub.status = 'rejected'
+        sub.reviewed_at = timezone.now()
+        sub.save(update_fields=['status', 'reviewed_at'])
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/',
+            {'platform': 'ios', 'url': 'https://apps.apple.com/app/new'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['status'], 'pending')
+        self.assertEqual(data['platform'], 'ios')
+        self.assertEqual(data['url'], 'https://apps.apple.com/app/new')
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, 'pending')
+        self.assertIsNone(sub.reviewed_at)
+
+    def test_pending_app_link_not_editable(self):
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/',
+            {'platform': 'ios', 'url': 'https://apps.apple.com/app/new'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, 'pending')
+
+    def test_app_link_update_requires_owner(self):
+        from django.utils import timezone
+
+        other = User.objects.create_user(
+            username='u2@example.com', email='u2@example.com', password='p'
+        )
+        self.client.force_authenticate(self.user)
+        sub = AppLinkSubmission.objects.get(pk=self._submit().json()['id'])
+        sub.status = 'rejected'
+        sub.reviewed_at = timezone.now()
+        sub.save(update_fields=['status', 'reviewed_at'])
+        self.client.force_authenticate(other)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/app-links/{sub.pk}/',
+            {'platform': 'ios', 'url': 'https://apps.apple.com/app/new'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, 'rejected')
+
+
+class ReviewCenterTestCase(TestCase):
+    """后台「待审核」中心：计数接口 + 页面渲染 + 四类通过/驳回动作。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.category = Category.objects.create(
+            name='DeFi', slug='defi', icon='🦄', sort_order=1
+        )
+        self.site = Site.objects.create(
+            name='Uniswap',
+            description='去中心化交易所',
+            url='https://uniswap.org',
+            category=self.category,
+            sort_order=1,
+        )
+        self.admin = User.objects.create_user(
+            username='admin',
+            email='admin@example.com',
+            password='secret123',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.user = User.objects.create_user(
+            username='u1@example.com', email='u1@example.com', password='p'
+        )
+
+    def _pending_site_submission(self, **kwargs):
+        kwargs.setdefault('name', 'NewSite')
+        kwargs.setdefault('url', 'https://newsite.example.com')
+        kwargs.setdefault('description', 'desc')
+        kwargs.setdefault('category', self.category)
+        return SiteSubmission.objects.create(user=self.user, **kwargs)
+
+    def _pending_tutorial(self, **kwargs):
+        kwargs.setdefault('status', SiteTutorial.STATUS_PENDING)
+        return SiteTutorial.objects.create(
+            site=self.site,
+            user=self.user,
+            type='text',
+            url='https://example.com/guide',
+            title='Tutorial',
+            **kwargs,
+        )
+
+    def _pending_app_link(self, **kwargs):
+        kwargs.setdefault('platform', 'android')
+        kwargs.setdefault('url', 'https://dl.example.com/app.apk')
+        return AppLinkSubmission.objects.create(
+            user=self.user, site=self.site, **kwargs
+        )
+
+    def _post_action(self, model, pk, action, note=''):
+        return self.client.post(
+            '/admin/review/',
+            {'model': model, 'id': pk, 'action': action, 'note': note, 'tab': 'sites'},
+        )
+
+    def test_count_endpoint_requires_staff(self):
+        resp = self.client.get('/admin/review/count/')
+        self.assertEqual(resp.status_code, 302)
+
+    def test_count_endpoint_returns_totals(self):
+        self._pending_site_submission()
+        self._pending_tutorial()
+        self._pending_tutorial(
+            delete_pending=True, status=SiteTutorial.STATUS_APPROVED
+        )
+        self._pending_app_link()
+        self.client.force_login(self.admin)
+        resp = self.client.get('/admin/review/count/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['sites'], 1)
+        self.assertEqual(data['tutorials'], 1)
+        self.assertEqual(data['tutorial_deletes'], 1)
+        self.assertEqual(data['app_links'], 1)
+        self.assertEqual(data['total'], 4)
+
+    def test_review_page_requires_staff(self):
+        resp = self.client.get('/admin/review/')
+        self.assertEqual(resp.status_code, 302)
+
+    def test_review_page_renders_with_pending(self):
+        sub = self._pending_site_submission()
+        self.client.force_login(self.admin)
+        resp = self.client.get('/admin/review/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, sub.name)
+        self.assertContains(resp, '通过并创建')
+
+    def test_approve_site_submission(self):
+        sub = self._pending_site_submission()
+        self.client.force_login(self.admin)
+        with mock.patch('apps.navigation.services.ensure_logo_async'):
+            resp = self._post_action('site', sub.pk, 'approve')
+        self.assertEqual(resp.status_code, 302)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, SiteSubmission.STATUS_APPROVED)
+        self.assertIsNotNone(sub.approved_site)
+        self.assertTrue(sub.approved_site.is_active)
+
+    def test_reject_site_submission_with_note(self):
+        sub = self._pending_site_submission()
+        self.client.force_login(self.admin)
+        resp = self._post_action('site', sub.pk, 'reject', note='重复提交')
+        self.assertEqual(resp.status_code, 302)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, SiteSubmission.STATUS_REJECTED)
+        self.assertEqual(sub.admin_note, '重复提交')
+
+    def test_approve_tutorial_publish(self):
+        t = self._pending_tutorial()
+        self.client.force_login(self.admin)
+        resp = self._post_action('tutorial', t.pk, 'approve')
+        self.assertEqual(resp.status_code, 302)
+        t.refresh_from_db()
+        self.assertEqual(t.status, SiteTutorial.STATUS_APPROVED)
+
+    def test_reject_tutorial_publish(self):
+        t = self._pending_tutorial()
+        self.client.force_login(self.admin)
+        resp = self._post_action('tutorial', t.pk, 'reject')
+        self.assertEqual(resp.status_code, 302)
+        t.refresh_from_db()
+        self.assertEqual(t.status, SiteTutorial.STATUS_REJECTED)
+
+    def test_approve_tutorial_delete(self):
+        t = self._pending_tutorial(
+            delete_pending=True, status=SiteTutorial.STATUS_APPROVED
+        )
+        self.client.force_login(self.admin)
+        resp = self._post_action('tutorial_delete', t.pk, 'approve')
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(SiteTutorial.objects.filter(pk=t.pk).exists())
+
+    def test_reject_tutorial_delete(self):
+        t = self._pending_tutorial(
+            delete_pending=True, status=SiteTutorial.STATUS_APPROVED
+        )
+        self.client.force_login(self.admin)
+        resp = self._post_action('tutorial_delete', t.pk, 'reject')
+        self.assertEqual(resp.status_code, 302)
+        t.refresh_from_db()
+        self.assertFalse(t.delete_pending)
+        self.assertIsNone(t.delete_requested_at)
+
+    def test_approve_app_link(self):
+        sub = self._pending_app_link()
+        self.client.force_login(self.admin)
+        with mock.patch('apps.navigation.services.start_pull') as start_pull:
+            resp = self._post_action('app_link', sub.pk, 'approve')
+        self.assertEqual(resp.status_code, 302)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, AppLinkSubmission.STATUS_APPROVED)
+        self.site.refresh_from_db()
+        self.assertEqual(
+            self.site.app_android_url, 'https://dl.example.com/app.apk'
+        )
+        start_pull.assert_called_once_with(self.site.pk)
+
+    def test_reject_app_link_with_note(self):
+        sub = self._pending_app_link()
+        self.client.force_login(self.admin)
+        resp = self._post_action('app_link', sub.pk, 'reject', note='链接失效')
+        self.assertEqual(resp.status_code, 302)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, AppLinkSubmission.STATUS_REJECTED)
+        self.assertEqual(sub.admin_note, '链接失效')
+
+    def test_action_idempotent_on_already_processed(self):
+        sub = self._pending_site_submission()
+        self.client.force_login(self.admin)
+        with mock.patch('apps.navigation.services.ensure_logo_async'):
+            self._post_action('site', sub.pk, 'approve')
+        before = Site.objects.count()
+        resp = self._post_action('site', sub.pk, 'approve')
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Site.objects.count(), before)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, SiteSubmission.STATUS_APPROVED)
+
+
+class SecurityRegressionTestCase(TestCase):
+    """安全修复回归：zip-slip / SSRF / 2FA 防爆破 / 票据清理与限流 / 枚举防护。"""
+
+    def setUp(self):
+        from .models import AppSetting
+
+        self.client = APIClient()
+        self.setting = AppSetting.objects.create(require_email_verification=True)
+        self.category = Category.objects.create(name='DeFi', slug='defi')
+
+    def _captcha_token(self, answer='SECU'):
+        from django.utils import timezone
+
+        from .captcha import _hash
+        from .models import Captcha
+
+        obj = Captcha.objects.create(
+            token='tok-%s' % answer,
+            answer_hash=_hash(answer),
+            expires_at=timezone.now() + timezone.timedelta(minutes=5),
+        )
+        return obj.token
+
+    def _zip_with_media(self, media_entries):
+        """构造含 data.json 与若干 media 条目的 zip 字节流。"""
+        from io import BytesIO
+        import zipfile as zf
+
+        buf = BytesIO()
+        with zf.ZipFile(buf, 'w') as z:
+            z.writestr('data.json', '[]')
+            for name, content in media_entries.items():
+                z.writestr(name, content)
+        buf.seek(0)
+        return buf
+
+    # ---------- zip-slip ----------
+
+    def test_restore_rejects_path_traversal(self):
+        from django.core.management.base import CommandError
+
+        from .backup import restore_archive
+
+        media_root = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=media_root):
+                evil = self._zip_with_media({'media/../../evil.txt': b'pwned'})
+                with self.assertRaises(CommandError):
+                    restore_archive(evil)
+                # 越界文件绝不能写盘
+                self.assertFalse(
+                    os.path.exists(os.path.join(os.path.dirname(media_root), 'evil.txt'))
+                )
+                # 合法媒体仍可正常恢复
+                good = self._zip_with_media({'media/logos/ok.png': b'png'})
+                stats = restore_archive(good)
+                self.assertEqual(stats['media_files'], 1)
+                self.assertTrue(
+                    os.path.exists(os.path.join(media_root, 'logos', 'ok.png'))
+                )
+        finally:
+            shutil.rmtree(media_root, ignore_errors=True)
+
+    def test_admin_backup_restore_post_rejects_traversal(self):
+        from django.contrib.auth.models import User
+
+        staff = User.objects.create_user(
+            username='ops@example.com', email='ops@example.com',
+            password='opspass123', is_staff=True,
+        )
+        self.client.force_login(staff)
+        media_root = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=media_root):
+                evil = self._zip_with_media({'media/../../evil2.txt': b'pwned'})
+                resp = self.client.post(
+                    '/admin/backup/',
+                    {'action': 'restore', 'confirm': '1', 'backup_file': evil},
+                )
+                self.assertEqual(resp.status_code, 302)
+                self.assertFalse(
+                    os.path.exists(os.path.join(os.path.dirname(media_root), 'evil2.txt'))
+                )
+        finally:
+            shutil.rmtree(media_root, ignore_errors=True)
+
+    def test_admin_backup_requires_staff(self):
+        resp = self.client.get('/admin/backup/')
+        self.assertIn(resp.status_code, (302, 403))
+
+    # ---------- SSRF ----------
+
+    def test_ensure_public_host_blocks_private_targets(self):
+        from .services import SSRFBlocked, _ensure_public_host
+
+        for url in (
+            'http://127.0.0.1:8000/x',
+            'http://10.0.0.1/',
+            'http://172.16.5.5/',
+            'http://192.168.1.1/',
+            'http://169.254.169.254/latest/meta-data/',
+            'http://[::1]/',
+            'ftp://example.com/finnav.apk',
+        ):
+            with self.assertRaises(SSRFBlocked, msg=url):
+                _ensure_public_host(url)
+
+    def test_ensure_public_host_allows_public_literal_ip(self):
+        from .services import _ensure_public_host
+
+        # 公网字面量 IP，不依赖 DNS
+        _ensure_public_host('https://8.8.8.8/')
+
+    def test_fetch_page_title_falls_back_for_private_url(self):
+        from .services import fetch_page_title_info
+
+        with mock.patch('apps.navigation.services.requests.get') as get:
+            title, fallback = fetch_page_title_info('http://127.0.0.1/x')
+        self.assertTrue(fallback)
+        get.assert_not_called()
+
+    def test_redirect_to_private_url_blocked(self):
+        from types import SimpleNamespace
+
+        from .services import SSRFBlocked, _safe_requests_get
+
+        redirect = SimpleNamespace(
+            status_code=302,
+            headers={'Location': 'http://127.0.0.1:8000/internal'},
+            close=lambda: None,
+        )
+        with mock.patch('apps.navigation.services.requests.get', return_value=redirect):
+            with self.assertRaises(SSRFBlocked):
+                _safe_requests_get('https://8.8.8.8/dl/app.apk')
+
+    def test_stream_app_blocks_private_url(self):
+        from .services import AppPullError, stream_app_to_site
+
+        media_root = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=media_root):
+                site = Site.objects.create(
+                    name='X', url='https://x.example.com', category=self.category,
+                    sort_order=1,
+                    app_android_url='http://169.254.169.254/latest/meta-data/',
+                )
+                with self.assertRaises(AppPullError):
+                    stream_app_to_site(site)
+        finally:
+            shutil.rmtree(media_root, ignore_errors=True)
+
+    # ---------- 2FA 防爆破 ----------
+
+    def _enabled_tfa_user(self):
+        import pyotp
+
+        from .models import TwoFactor
+
+        user = User.objects.create_user(
+            username='tfa-sec@example.com', email='tfa-sec@example.com',
+            password='secret123',
+        )
+        secret = pyotp.random_base32()
+        TwoFactor.objects.create(user=user, secret=secret, enabled=True)
+        self.setting.twofa_enabled = True
+        self.setting.save(update_fields=['twofa_enabled'])
+        return user, secret
+
+    def test_twofa_challenge_locks_after_max_attempts(self):
+        from .models import TOTPChallenge
+
+        cache.clear()
+        _, secret = self._enabled_tfa_user()
+        token = self._captcha_token('SECA')
+        login = self.client.post(
+            '/api/auth/token/',
+            {
+                'email': 'tfa-sec@example.com', 'password': 'secret123',
+                'captcha_token': token, 'captcha_answer': 'SECA',
+            },
+            format='json',
+        ).json()
+        self.assertEqual(login['code'], 'TOTP_REQUIRED')
+
+        for i in range(TOTPChallenge.MAX_ATTEMPTS):
+            resp = self.client.post(
+                '/api/auth/twofa/challenge/',
+                {'totp_token': login['totp_token'], 'code': '000000'},
+                format='json',
+            )
+            self.assertEqual(resp.status_code, 400, f'第 {i + 1} 次应返回 400')
+
+        # 超限后挑战作废，即使正确动态码也拒绝
+        import pyotp
+
+        resp = self.client.post(
+            '/api/auth/twofa/challenge/',
+            {'totp_token': login['totp_token'], 'code': pyotp.TOTP(secret).now()},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 401)
+        challenge = TOTPChallenge.objects.get(token=login['totp_token'])
+        self.assertTrue(challenge.used)
+
+    def test_twofa_challenge_throttled(self):
+        cache.clear()
+        self._enabled_tfa_user()
+        token = self._captcha_token('SECB')
+        login = self.client.post(
+            '/api/auth/token/',
+            {
+                'email': 'tfa-sec@example.com', 'password': 'secret123',
+                'captcha_token': token, 'captcha_answer': 'SECB',
+            },
+            format='json',
+        ).json()
+        for _ in range(10):
+            resp = self.client.post(
+                '/api/auth/twofa/challenge/',
+                {'totp_token': login['totp_token'], 'code': '000000'},
+                format='json',
+            )
+            self.assertNotEqual(resp.status_code, 429)
+        resp = self.client.post(
+            '/api/auth/twofa/challenge/',
+            {'totp_token': login['totp_token'], 'code': '000000'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 429)
+
+    # ---------- 票据清理与限流 ----------
+
+    def test_captcha_create_cleans_expired_rows(self):
+        from django.utils import timezone
+
+        from .captcha import create_captcha
+        from .models import Captcha
+
+        old = Captcha.objects.create(
+            token='expired-old', answer_hash='x' * 64,
+            expires_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        create_captcha(Captcha)
+        self.assertFalse(Captcha.objects.filter(pk=old.pk).exists())
+
+    def test_totp_create_cleans_expired_rows(self):
+        from django.utils import timezone
+
+        from .models import TOTPChallenge
+
+        user = User.objects.create_user(
+            username='clean@example.com', email='clean@example.com',
+            password='secret123',
+        )
+        old = TOTPChallenge.objects.create(
+            token='expired-totp', user=user,
+            expires_at=timezone.now() - timezone.timedelta(days=2),
+        )
+        TOTPChallenge.create(user)
+        self.assertFalse(TOTPChallenge.objects.filter(pk=old.pk).exists())
+
+    def test_captcha_endpoint_throttled(self):
+        cache.clear()
+        for _ in range(30):
+            resp = self.client.get('/api/auth/captcha/')
+            self.assertEqual(resp.status_code, 200, resp.status_code)
+        resp = self.client.get('/api/auth/captcha/')
+        self.assertEqual(resp.status_code, 429)
+
+    def test_verify_endpoint_throttled(self):
+        cache.clear()
+        body = {'email': 'th@example.com', 'code': '000000', 'password': 'secret123'}
+        for _ in range(20):
+            resp = self.client.post('/api/auth/verify/', body, format='json')
+            self.assertNotEqual(resp.status_code, 429, resp.status_code)
+        resp = self.client.post('/api/auth/verify/', body, format='json')
+        self.assertEqual(resp.status_code, 429)
+
+    def test_password_reset_confirm_throttled(self):
+        cache.clear()
+        body = {
+            'email': 'th@example.com', 'code': '000000', 'password': 'newpass123',
+        }
+        for _ in range(20):
+            resp = self.client.post(
+                '/api/auth/password-reset/confirm/', body, format='json'
+            )
+            self.assertNotEqual(resp.status_code, 429, resp.status_code)
+        resp = self.client.post(
+            '/api/auth/password-reset/confirm/', body, format='json'
+        )
+        self.assertEqual(resp.status_code, 429)
+
+
+class PointsTestCase(TestCase):
+    """积分机制：规则预置、审核通过发放、邀请推广、上限防刷与公开接口。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        cache.clear()
+        from .models import AppSetting
+
+        AppSetting.objects.update_or_create(
+            id=1, defaults={'require_email_verification': False}
+        )
+
+    def _captcha(self, answer='ABCD'):
+        """写入一条已知答案的图形验证码，返回其 token。"""
+        from django.utils import timezone
+
+        from .captcha import _hash
+        from .models import Captcha
+
+        obj = Captcha.objects.create(
+            token='ptok-%s-%d' % (answer, Captcha.objects.count()),
+            answer_hash=_hash(answer),
+            expires_at=timezone.now() + timezone.timedelta(minutes=5),
+        )
+        return obj.token
+
+    def _user(self, email='user@example.com'):
+        return User.objects.create_user(username=email, email=email, password='secret123')
+
+    def _register(self, email, referral_code=''):
+        payload = {
+            'email': email,
+            'password': 'secret123',
+            'captcha_token': self._captcha(),
+            'captcha_answer': 'ABCD',
+        }
+        if referral_code:
+            payload['referral_code'] = referral_code
+        return self.client.post('/api/auth/register/', payload, format='json')
+
+    def _profile(self, user):
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        return profile
+
+    # ---------- 规则预置 ----------
+
+    def test_default_rules_seeded(self):
+        rules = {r.code: r for r in PointRule.objects.all()}
+        self.assertEqual(
+            set(rules),
+            {
+                'site_approved', 'tutorial_approved', 'app_link_approved',
+                'referral_inviter', 'referral_referee',
+                'site_submit', 'tutorial_submit', 'app_link_submit',
+            },
+        )
+        self.assertEqual(rules['site_approved'].points, 20)
+        self.assertEqual(rules['referral_inviter'].points, 30)
+        self.assertEqual(rules['referral_referee'].points, 10)
+        # 「提交即发」默认关闭
+        self.assertFalse(rules['site_submit'].enabled)
+
+    # ---------- 审核通过发放 ----------
+
+    def test_site_approval_awards_points(self):
+        user = self._user()
+        self.assertEqual(self._profile(user).points_balance, 0)
+        category = Category.objects.create(name='DeFi', slug='defi')
+        sub = SiteSubmission.objects.create(
+            user=user, name='Uniswap', url='https://uniswap.org',
+            category=category, status=SiteSubmission.STATUS_PENDING,
+        )
+        site = sub.build_site()
+        profile = self._profile(user)
+        self.assertEqual(profile.points_balance, 20)
+        self.assertEqual(profile.points_lifetime, 20)
+        tx = PointTransaction.objects.get(user=user)
+        self.assertEqual(tx.amount, 20)
+        self.assertEqual(tx.balance_after, 20)
+        self.assertEqual(tx.ref_type, 'site_submission')
+        self.assertEqual(tx.ref_id, sub.pk)
+        self.assertIsNotNone(site)
+
+    def test_site_approval_is_idempotent(self):
+        from .points import award_points
+
+        user = self._user()
+        award_points(user, 'site_approved', 'site_submission', 1)
+        award_points(user, 'site_approved', 'site_submission', 1)
+        self.assertEqual(PointTransaction.objects.filter(user=user).count(), 1)
+        self.assertEqual(self._profile(user).points_balance, 20)
+
+    def test_tutorial_approval_awards_points(self):
+        user = self._user()
+        category = Category.objects.create(name='DeFi', slug='defi')
+        site = Site.objects.create(name='Uniswap', url='https://uniswap.org', category=category)
+        tutorial = SiteTutorial.objects.create(
+            site=site, user=user, type=SiteTutorial.TYPE_TEXT,
+            url='https://example.com/how-to', title='如何使用',
+        )
+        from .points import award_points
+
+        award_points(user, 'tutorial_approved', 'site_tutorial', tutorial.pk)
+        self.assertEqual(self._profile(user).points_balance, 10)
+
+    def test_app_link_approval_awards_points(self):
+        user = self._user()
+        category = Category.objects.create(name='DeFi', slug='defi')
+        site = Site.objects.create(name='Uniswap', url='https://uniswap.org', category=category)
+        sub = AppLinkSubmission.objects.create(
+            user=user, site=site, platform=AppLinkSubmission.PLATFORM_IOS,
+            url='https://apps.apple.com/app/uniswap', status=AppLinkSubmission.STATUS_PENDING,
+        )
+        sub.approve()
+        self.assertEqual(self._profile(user).points_balance, 10)
+        self.assertEqual(site.app_ios_url, sub.url)
+
+    def test_disabled_rule_skipped(self):
+        from .points import award_points
+
+        user = self._user()
+        rule = PointRule.objects.get(code='site_approved')
+        rule.enabled = False
+        rule.save()
+        self.assertIsNone(award_points(user, 'site_approved', 'site_submission', 1))
+        self.assertEqual(self._profile(user).points_balance, 0)
+
+    # ---------- 上限防刷 ----------
+
+    def test_daily_limit_blocks_extra_awards(self):
+        from .points import award_points
+
+        user = self._user()
+        rule = PointRule.objects.get(code='site_approved')
+        rule.daily_limit = 1
+        rule.save()
+        self.assertIsNotNone(award_points(user, 'site_approved', 'site_submission', 1))
+        self.assertIsNone(award_points(user, 'site_approved', 'site_submission', 2))
+        self.assertEqual(self._profile(user).points_balance, 20)
+
+    def test_total_limit_blocks_extra_awards(self):
+        from .points import award_points
+
+        user = self._user()
+        rule = PointRule.objects.get(code='site_approved')
+        rule.daily_limit = 0
+        rule.total_limit = 1
+        rule.save()
+        self.assertIsNotNone(award_points(user, 'site_approved', 'site_submission', 1))
+        self.assertIsNone(award_points(user, 'site_approved', 'site_submission', 2))
+        self.assertEqual(self._profile(user).points_balance, 20)
+
+    # ---------- 邀请推广 ----------
+
+    def test_referral_registration_awards_both(self):
+        inviter = self._user('inviter@example.com')
+        UserProfile.objects.create(user=inviter, referral_code='INVITER1')
+        resp = self._register('referee@example.com', referral_code='inviter1')
+        self.assertEqual(resp.status_code, 201)
+        self.assertIn('access', resp.json())
+        referee = User.objects.get(username='referee@example.com')
+        referral = Referral.objects.get(referee=referee)
+        self.assertEqual(referral.inviter, inviter)
+        self.assertEqual(referral.code, 'INVITER1')
+        self.assertEqual(self._profile(inviter).points_balance, 30)
+        self.assertEqual(self._profile(referee).points_balance, 10)
+
+    def test_referral_self_rejected(self):
+        from .points import process_registration
+
+        user = self._user()
+        UserProfile.objects.create(user=user, referral_code='SELFCODE')
+        self.assertIsNone(process_registration(user, 'SELFCODE'))
+        self.assertFalse(Referral.objects.filter(inviter=user).exists())
+
+    def test_referral_unknown_code_ignored(self):
+        inviter = self._user('inviter2@example.com')
+        UserProfile.objects.create(user=inviter, referral_code='INV2')
+        resp = self._register('referee2@example.com', referral_code='NOPE1234')
+        self.assertEqual(resp.status_code, 201)
+        referee = User.objects.get(username='referee2@example.com')
+        self.assertFalse(Referral.objects.filter(referee=referee).exists())
+        self.assertEqual(self._profile(referee).points_balance, 0)
+        self.assertEqual(self._profile(inviter).points_balance, 0)
+
+    def test_referral_referee_only_referred_once(self):
+        inviter = self._user('inviter3@example.com')
+        UserProfile.objects.create(user=inviter, referral_code='INV3')
+        self._register('referee3@example.com', referral_code='INV3')
+        referee = User.objects.get(username='referee3@example.com')
+        self.assertEqual(Referral.objects.filter(referee=referee).count(), 1)
+        self.assertEqual(self._profile(inviter).points_balance, 30)
+
+    def test_referral_via_email_verify_path(self):
+        from .models import AppSetting, EmailVerification
+
+        AppSetting.objects.update_or_create(
+            id=1, defaults={'require_email_verification': True}
+        )
+        inviter = self._user('inviter4@example.com')
+        UserProfile.objects.create(user=inviter, referral_code='INV4')
+        import re as _re
+
+        from django.core import mail
+
+        with self.settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            resp = self.client.post(
+                '/api/auth/register/',
+                {
+                    'email': 'referee4@example.com',
+                    'password': 'secret123',
+                    'captcha_token': self._captcha(),
+                    'captcha_answer': 'ABCD',
+                    'referral_code': 'INV4',
+                },
+                format='json',
+            )
+            self.assertEqual(resp.status_code, 200)
+            record = EmailVerification.objects.get(
+                email='referee4@example.com', purpose=EmailVerification.PURPOSE_REGISTER
+            )
+            self.assertEqual(record.referral_code, 'INV4')
+            code = _re.search(r'验证码是：(\d{6})', mail.outbox[-1].body).group(1)
+        resp = self.client.post(
+            '/api/auth/verify/',
+            {'email': 'referee4@example.com', 'code': code, 'password': 'secret123'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        referee = User.objects.get(username='referee4@example.com')
+        self.assertTrue(Referral.objects.filter(referee=referee, inviter=inviter).exists())
+        self.assertEqual(self._profile(inviter).points_balance, 30)
+        self.assertEqual(self._profile(referee).points_balance, 10)
+
+    # ---------- 手动调账 ----------
+
+    def test_adjust_points_positive_and_negative(self):
+        from django.core.exceptions import ValidationError
+
+        from .points import adjust_points
+
+        user = self._user()
+        adjust_points(user, 50, '测试奖励')
+        self.assertEqual(self._profile(user).points_balance, 50)
+        self.assertEqual(self._profile(user).points_lifetime, 50)
+        adjust_points(user, -20, '测试扣减')
+        self.assertEqual(self._profile(user).points_balance, 30)
+        with self.assertRaises(ValueError):
+            adjust_points(user, -999, '超额扣减')
+        self.assertEqual(self._profile(user).points_balance, 30)
+
+    # ---------- API ----------
+
+    def test_points_rules_public_endpoint(self):
+        resp = self.client.get('/api/points/rules/')
+        self.assertEqual(resp.status_code, 200)
+        codes = [r['code'] for r in resp.json()]
+        self.assertIn('site_approved', codes)
+        self.assertNotIn('site_submit', codes)  # 关闭的规则不公开
+
+    def test_me_returns_points_and_referral(self):
+        user = self._user()
+        UserProfile.objects.create(user=user, referral_code='MYCODE')
+        self.client.force_authenticate(user)
+        resp = self.client.get('/api/me/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['points'], {'balance': 0, 'lifetime': 0})
+        self.assertEqual(data['referral_code'], 'MYCODE')
+        # 未配置转发域名时不生成分享链接
+        self.assertEqual(data['referral_share_url'], '')
+
+    def test_me_referral_share_url_from_setting(self):
+        from .models import AppSetting
+
+        AppSetting.objects.update_or_create(id=1, defaults={'share_base_url': 'https://finnav.app'})
+        user = self._user()
+        UserProfile.objects.create(user=user, referral_code='MYCODE2')
+        self.client.force_authenticate(user)
+        resp = self.client.get('/api/me/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            resp.json()['referral_share_url'], 'https://finnav.app/?ref=MYCODE2'
+        )
+
+    def test_me_points_transactions_paginated(self):
+        from .points import award_points
+
+        user = self._user()
+        award_points(user, 'site_approved', 'site_submission', 1)
+        award_points(user, 'tutorial_approved', 'site_tutorial', 1)
+        self.client.force_authenticate(user)
+        resp = self.client.get('/api/me/points/transactions/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['count'], 2)
+        results = data['results']
+        self.assertEqual(len(results), 2)
+        # 最近在前
+        self.assertEqual(results[0]['rule_code'], 'tutorial_approved')
+        self.assertEqual(results[1]['rule_code'], 'site_approved')
+        self.assertEqual(results[0]['balance_after'], 30)
+
+    def test_points_transactions_requires_auth(self):
+        resp = self.client.get('/api/me/points/transactions/')
+        self.assertEqual(resp.status_code, 401)

@@ -14,11 +14,24 @@
 {% block extrahead %}
     {{ block.super }}
     <style>
+        :root {
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-success: #059669;
+            --fn-danger: #B02A37;
+            --fn-border: #E5E7EB;
+            --fn-input-border: #D1D5DB;
+            --fn-text: #111827;
+            --fn-text-2: #4B5563;
+            --fn-text-3: #6B7280;
+            --fn-radius-sm: 6px;
+            --fn-radius-pill: 999px;
+        }
         .sf-wrap {
             padding: 14px 16px;
             margin-bottom: 16px;
-            border: 1px solid #d9dee3;
-            border-radius: 6px;
+            border: 1px solid var(--fn-border);
+            border-radius: var(--fn-radius-md);
             background: #fff;
         }
         .sf-wrap h2 {
@@ -52,8 +65,13 @@
             flex: 1;
             padding: 7px 10px;
             font-size: 14px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            border: 1px solid var(--fn-input-border);
+            border-radius: var(--fn-radius-sm);
+        }
+        .sf-input:focus {
+            outline: none;
+            border-color: var(--fn-primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
         }
         textarea.sf-input {
             min-height: 68px;
@@ -63,9 +81,9 @@
         .sf-btn {
             padding: 7px 16px;
             font-size: 14px;
-            border: 1px solid #4F46E5;
-            border-radius: 4px;
-            background: #4F46E5;
+            border: 1px solid var(--fn-primary);
+            border-radius: var(--fn-radius-sm);
+            background: var(--fn-primary);
             color: #fff;
             cursor: pointer;
             white-space: nowrap;
@@ -78,8 +96,8 @@
             color: #6b7280;
             margin-top: 3px;
         }
-        .sf-fb.ok { color: #059669; }
-        .sf-fb.err { color: #b02a37; }
+        .sf-fb.ok { color: var(--fn-success); }
+        .sf-fb.err { color: var(--fn-danger); }
         .sf-tags-list {
             display: flex;
             flex-wrap: wrap;
@@ -90,8 +108,8 @@
             align-items: center;
             gap: 5px;
             padding: 4px 10px;
-            border: 1px solid #ced4da;
-            border-radius: 20px;
+            border: 1px solid var(--fn-input-border);
+            border-radius: var(--fn-radius-pill);
             background: #fff;
             font-size: 13px;
             color: #374151;
@@ -99,9 +117,9 @@
         }
         .sf-tag-item input { margin: 0; cursor: pointer; }
         .sf-tag-item:has(input:checked) {
-            border-color: #4F46E5;
-            background: #eef2ff;
-            color: #4F46E5;
+            border-color: var(--fn-primary);
+            background: var(--fn-primary-soft);
+            color: var(--fn-primary);
         }
         .sf-inline { display: inline-flex; align-items: center; gap: 8px; }
         .sf-check {
@@ -110,31 +128,31 @@
         .sf-logo-img { max-height: 60px; margin-bottom: 8px; display: block; }
         #app-pull-area {
             padding: 10px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            border: 1px solid var(--fn-input-border);
+            border-radius: var(--fn-radius-sm);
             background: #f8f9fa;
             margin-bottom: 12px;
             display: none;
         }
         #app-pull-area .app-pull-status { font-size: 13px; margin-bottom: 8px; }
         #app-pull-bar { height: 10px; background: #e9ecef; border-radius: 5px; overflow: hidden; }
-        #app-pull-fill { height: 100%; width: 0; background: #4F46E5; transition: width .3s; }
+        #app-pull-fill { height: 100%; width: 0; background: var(--fn-primary); transition: width .3s; }
         .sf-pull-btn {
             padding: 8px 16px;
             font-size: 14px;
-            border: 1px solid #059669;
-            border-radius: 4px;
-            background: #059669;
+            border: 1px solid var(--fn-success);
+            border-radius: var(--fn-radius-sm);
+            background: var(--fn-success);
             color: #fff;
             cursor: pointer;
         }
         .sf-ghost {
             padding: 8px 16px;
             font-size: 14px;
-            border: 1px solid #b02a37;
-            border-radius: 4px;
+            border: 1px solid var(--fn-danger);
+            border-radius: var(--fn-radius-sm);
             background: #fff;
-            color: #b02a37;
+            color: var(--fn-danger);
             cursor: pointer;
         }
     </style>
@@ -491,39 +509,6 @@
                 <label class="sf-label" for="sf-tags-new">新建标签（多个用逗号/顿号分隔，输入完成后自动保存）</label>
                 <div class="sf-input-wrap">
                     <input id="sf-tags-new" class="sf-input" type="text" placeholder="例如：交易所, 钱包">
-                </div>
-                <span class="sf-fb"></span>
-            </div>
-        </div>
-
-        <div class="sf-wrap">
-            <h2>文字教程链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
-            <div class="sf-row">
-                <label class="sf-label" for="sf-text_tutorials">文字教程</label>
-                <div class="sf-input-wrap">
-                    <textarea id="sf-text_tutorials" class="sf-input" placeholder="新手入门|https://example.com/guide" data-save="text_tutorials">{{ links_text.text_tutorials }}</textarea>
-                </div>
-                <span class="sf-fb"></span>
-            </div>
-        </div>
-
-        <div class="sf-wrap">
-            <h2>视频教程链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
-            <div class="sf-row">
-                <label class="sf-label" for="sf-video_tutorials">视频教程</label>
-                <div class="sf-input-wrap">
-                    <textarea id="sf-video_tutorials" class="sf-input" placeholder="操作演示|https://youtube.com/watch?v=xxx" data-save="video_tutorials">{{ links_text.video_tutorials }}</textarea>
-                </div>
-                <span class="sf-fb"></span>
-            </div>
-        </div>
-
-        <div class="sf-wrap">
-            <h2>辅助/代办申请链接（每行一条：文章标题|文章链接，最多 10 条）</h2>
-            <div class="sf-row">
-                <label class="sf-label" for="sf-agent_links">辅助/代办申请</label>
-                <div class="sf-input-wrap">
-                    <textarea id="sf-agent_links" class="sf-input" placeholder="代申请账号|https://example.com/apply" data-save="agent_links">{{ links_text.agent_links }}</textarea>
                 </div>
                 <span class="sf-fb"></span>
             </div>

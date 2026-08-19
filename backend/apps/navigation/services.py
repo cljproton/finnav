@@ -10,15 +10,21 @@ Logo：
 """
 import glob
 import hashlib
+import html
+import ipaddress
 import json
 import os
 import queue
 import re
+import socket
 import threading
 import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
+
+import requests
 
 from django.conf import settings
 from django.utils import timezone
@@ -44,8 +50,244 @@ LOGO_CONTENT_TYPES = {
 }
 
 
+class SSRFBlocked(Exception):
+    """请求目标为内网/回环/保留地址等，出于 SSRF 防护拦截。"""
+
+
+_PRIVATE_NETS = tuple(
+    ipaddress.ip_network(net)
+    for net in (
+        '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
+        '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24',
+        '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24',
+        '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4',
+        '::1/128', 'fc00::/7', 'fe80::/10', 'ff00::/8',
+    )
+)
+
+
+def _is_private_ip(ip):
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True  # 无法解析的 IP 一律按内网拦截（fail-closed）
+    if isinstance(addr, ipaddress.IPv4Address) and addr.is_loopback:
+        return True
+    return any(addr in net for net in _PRIVATE_NETS)
+
+
+def _resolve_host_ips(host):
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return []
+    ips = []
+    for info in infos:
+        ip = info[4][0]
+        if ip not in ips:
+            ips.append(ip)
+    return ips
+
+
+def _ensure_public_host(url):
+    """校验 http/https URL 的 host 仅指向公网地址，否则抛 SSRFBlocked。
+
+    对域名做 DNS 解析后复查，任一结果落在内网/保留网段即拦截；
+    重定向目标由调用方在每一跳再次调用本函数校验。
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise SSRFBlocked('仅支持 http/https 链接')
+    host = parsed.hostname
+    if not host:
+        raise SSRFBlocked('链接缺少主机名')
+    try:
+        ip = ipaddress.ip_address(host)  # 字面量 IP（含 IPv6）
+        if _is_private_ip(str(ip)):
+            raise SSRFBlocked('目标为内网/保留地址，已拦截')
+        return
+    except ValueError:
+        pass
+    ips = _resolve_host_ips(host)
+    if not ips:
+        raise SSRFBlocked('无法解析目标主机')
+    if any(_is_private_ip(ip) for ip in ips):
+        raise SSRFBlocked('目标解析到内网/保留地址，已拦截')
+
+
+_MAX_REDIRECTS = 5
+
+
+def _safe_requests_get(url, **kwargs):
+    """带 SSRF 校验的 requests.get：逐跳校验重定向目标，不自动跟随。"""
+    for _ in range(_MAX_REDIRECTS + 1):
+        _ensure_public_host(url)
+        resp = requests.get(url, allow_redirects=False, **kwargs)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            loc = resp.headers.get('Location')
+            resp.close()
+            if not loc:
+                raise SSRFBlocked('重定向缺少 Location')
+            url = urllib.parse.urljoin(url, loc)
+            continue
+        return resp
+    raise SSRFBlocked('重定向次数过多')
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """urllib 重定向钩子：重定向到内网目标时拦截。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _ensure_public_host(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_safe_opener = urllib.request.build_opener(_SafeRedirectHandler)
+
+
 class LogoFetchError(Exception):
     """logo 获取失败（网络错误、非图片、超限等）。"""
+
+
+TITLE_TIMEOUT = 8            # 教程标题抓取超时（秒）
+TITLE_MAX_BYTES = 256 * 1024  # 标题抓取读取上限
+TITLE_MAX_LEN = 200          # 标题最大长度
+
+# 浏览器级 UA，避免被常见站点以爬虫拦截
+BROWSER_UA = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+)
+
+
+def _decode_bytes(raw, declared_charset=None):
+    """按 utf-8 -> 声明的编码 -> gb18030 逐级解码，避免中文站点乱码。"""
+    candidates = []
+    if declared_charset:
+        candidates.append(declared_charset)
+    for enc in ['utf-8'] + candidates + ['gb18030']:
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode('utf-8', errors='ignore')
+
+
+class _MetaParser(HTMLParser):
+    """收集页面 <meta> 标签，属性顺序无关，供 og:title 等回退使用。"""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.meta = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'meta':
+            self.meta.append({k.lower(): (v or '') for k, v in attrs})
+
+
+def _meta_content(meta_list, keys):
+    for tag in meta_list:
+        key = (tag.get('property') or tag.get('name') or '').strip().lower()
+        if key in keys:
+            content = (tag.get('content') or '').strip()
+            if content:
+                return content
+    return ''
+
+
+def fetch_page_title_info(url):
+    """抓取链接标题，返回 (标题, 是否兜底)。
+
+    优先级：<title> -> og:title/twitter:title -> <h1> -> 域名兜底。
+    只读取页面头部最多 TITLE_MAX_BYTES 字节；失败时不抛异常。
+    """
+    def _clean(raw):
+        text = re.sub(r'<[^>]+>', '', raw or '')
+        text = html.unescape(text)
+        text = ' '.join(text.split())
+        return text.strip()[:TITLE_MAX_LEN]
+
+    def _fallback():
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc:
+            return parsed.netloc, True
+        return url, True
+
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+            return _fallback()
+        resp = _safe_requests_get(
+            parsed.geturl(),
+            timeout=TITLE_TIMEOUT,
+            headers={
+                'User-Agent': BROWSER_UA,
+                'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            },
+            stream=True,
+        )
+        try:
+            if resp.status_code >= 400:
+                return _fallback()
+            raw = b''
+            for chunk in resp.iter_content(TITLE_MAX_BYTES):
+                raw += chunk
+                if len(raw) > TITLE_MAX_BYTES:
+                    raw = raw[:TITLE_MAX_BYTES]
+                    break
+        finally:
+            resp.close()
+
+        declared_charset = None
+        m = re.search(
+            r'charset=["\']?([\w-]+)',
+            resp.headers.get('Content-Type', ''),
+            re.IGNORECASE,
+        )
+        if m:
+            declared_charset = m.group(1)
+        text = _decode_bytes(raw, declared_charset)
+
+        # 响应头未声明编码时，尝试 <meta charset> 再次解码
+        m = re.search(
+            r'<meta[^>]+charset=["\']?([\w-]+)["\']?', text, re.IGNORECASE
+        )
+        if m and declared_charset is None:
+            text = _decode_bytes(raw, m.group(1))
+
+        m = re.search(r'<title[^>]*>(.*?)</title>', text, re.IGNORECASE | re.DOTALL)
+        if m:
+            title = _clean(m.group(1))
+            if title:
+                return title, False
+
+        parser = _MetaParser()
+        try:
+            parser.feed(text)
+        except Exception:
+            pass
+        og = _meta_content(
+            parser.meta, {'og:title', 'twitter:title', 'og:site_name'}
+        )
+        if og:
+            return og[:TITLE_MAX_LEN], False
+
+        m = re.search(r'<h1[^>]*>(.*?)</h1>', text, re.IGNORECASE | re.DOTALL)
+        if m:
+            title = _clean(m.group(1))
+            if title:
+                return title, False
+    except Exception:
+        pass
+    return _fallback()
+
+
+def fetch_page_title(url):
+    """抓取网页标题作为分享教程标题；失败时兜底返回域名，不抛异常。"""
+    title, _ = fetch_page_title_info(url)
+    return title
 
 
 _logo_locks = {}
@@ -66,11 +308,12 @@ def _origin_of(url):
 
 
 def _fetch_bytes(url):
+    _ensure_public_host(url)
     req = urllib.request.Request(
         url,
         headers={'User-Agent': USER_AGENT},
     )
-    with urllib.request.urlopen(req, timeout=LOGO_TIMEOUT) as resp:
+    with _safe_opener.open(req, timeout=LOGO_TIMEOUT) as resp:
         content_type = resp.headers.get('Content-Type', '').split(';')[0].strip().lower()
         size = int(resp.headers.get('Content-Length') or 0)
         if size > LOGO_MAX_BYTES:
@@ -345,9 +588,10 @@ def _cleanup(dest):
 
 def _probe(url, headers):
     """探测文件大小与 Range 支持，返回 (total, supports_ranges)。"""
+    _ensure_public_host(url)
     req = urllib.request.Request(url, headers=dict(headers, Range='bytes=0-0'))
     try:
-        with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
+        with _safe_opener.open(req, timeout=PROBE_TIMEOUT) as resp:
             status = int(getattr(resp, 'status', 200))
             resp_headers = getattr(resp, 'headers', None)
             total = 0
@@ -430,6 +674,7 @@ def _download_block(url, headers, fh, guard, block, shared, report, should_cance
     need = block['end'] - block['start']
     done = block.get('done', 0) or 0
     attempts = 0
+    _ensure_public_host(url)
     while done < need:
         if shared.get('error'):
             raise _Abort(shared['error'])
@@ -443,7 +688,7 @@ def _download_block(url, headers, fh, guard, block, shared, report, should_cance
             headers=dict(headers, Range=f'bytes={start + done}-{start + need - 1}'),
         )
         try:
-            with urllib.request.urlopen(req, timeout=SEGMENT_TIMEOUT) as resp:
+            with _safe_opener.open(req, timeout=SEGMENT_TIMEOUT) as resp:
                 while done < need:
                     if shared.get('error'):
                         raise _Abort(shared['error'])
@@ -548,11 +793,12 @@ def _download_ranges(url, headers, dest, total, on_progress, should_cancel):
 
 def _stream_single(url, headers, dest, total, on_progress, should_cancel):
     """不支持 Range/未知大小的降级路径：单连接流式写入。失败/取消自动清理临时文件。"""
+    _ensure_public_host(url)
     req = urllib.request.Request(url, headers=headers)
     tmp = dest + '.part'
     size = 0
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with _safe_opener.open(req, timeout=60) as resp:
             if not total:
                 resp_headers = getattr(resp, 'headers', None)
                 if resp_headers is not None:
@@ -609,6 +855,10 @@ def stream_app_to_site(site, on_progress=None, should_cancel=None):
     parsed = urllib.parse.urlparse(site.app_android_url)
     if parsed.scheme not in ('http', 'https'):
         raise AppPullError('仅支持 http/https 下载链接')
+    try:
+        _ensure_public_host(site.app_android_url)
+    except SSRFBlocked as exc:
+        raise AppPullError(str(exc)) from None
     dest, target_name = _resolve_cache_target(site, parsed)
 
     referer = None
@@ -636,6 +886,8 @@ def stream_app_to_site(site, on_progress=None, should_cancel=None):
         raise
     except AppPullError:
         raise
+    except SSRFBlocked as exc:
+        raise AppPullError(str(exc)) from None
     except Exception:
         raise AppPullError('下载失败，请稍后重试') from None
 

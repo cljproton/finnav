@@ -1,0 +1,89 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls admin_modify %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        :root {
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-success: #059669;
+            --fn-danger: #B02A37;
+            --fn-warning: #B45309;
+            --fn-warning-soft: #FEF3C7;
+            --fn-warning-border: #FDE68A;
+            --fn-border: #E5E7EB;
+            --fn-text: #1F2937;
+            --fn-text-2: #4B5563;
+            --fn-radius-sm: 6px;
+            --fn-radius-md: 10px;
+            --fn-radius-pill: 999px;
+        }
+        .fn-adjust-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+        .fn-adjust-row label { display: block; font-size: 12px; color: var(--fn-text-2); margin-bottom: 4px; }
+        .fn-adjust-row input[type="number"] { width: 110px; padding: 6px 10px; border: 1px solid var(--fn-border); border-radius: var(--fn-radius-sm); font-size: 14px; }
+        .fn-adjust-row input[type="text"] { width: 260px; padding: 6px 10px; border: 1px solid var(--fn-border); border-radius: var(--fn-radius-sm); font-size: 14px; }
+        .fn-btn-adjust {
+            padding: 6px 16px; border: none; border-radius: var(--fn-radius-sm);
+            background: var(--fn-primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .fn-btn-adjust:hover { filter: brightness(.95); }
+        .fn-msg { margin-top: 10px; font-size: 13px; }
+        .fn-msg.ok { color: var(--fn-success); }
+        .fn-msg.err { color: var(--fn-danger); }
+        .fn-hint { font-size: 12px; color: var(--fn-text-2); margin: 10px 0 0; }
+    </style>
+    <script>
+        (function () {
+            var adjustUrl = '{% url "admin:navigation_userprofile_adjust" original.pk %}';
+            function getCookie(name) {
+                var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+                return m ? decodeURIComponent(m[2]) : '';
+            }
+            var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+
+            window.submitAdjust = function () {
+                var amount = document.getElementById('fn-amount').value.trim();
+                var reason = document.getElementById('fn-reason').value.trim();
+                var msg = document.getElementById('fn-msg');
+                if (!amount || amount === '0') { msg.textContent = '请填写非零的积分变动值。'; msg.className = 'fn-msg err'; return; }
+                if (!reason) { msg.textContent = '请填写调整原因。'; msg.className = 'fn-msg err'; return; }
+                if (!confirm('确认执行积分调账：' + (amount > 0 ? '+' : '') + amount + ' 分？')) return;
+                fetch(adjustUrl, {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: JSON.stringify({amount: amount, reason: reason})})
+                    .then(function (res) { return res.json().then(function (data) { return {ok: res.ok, data: data}; }); })
+                    .then(function (r) {
+                        if (r.ok) { msg.textContent = '调账成功，当前余额：' + r.data.balance; msg.className = 'fn-msg ok'; }
+                        else { msg.textContent = '调账失败：' + (r.data.error || '未知错误'); msg.className = 'fn-msg err'; }
+                    })
+                    .catch(function () { msg.textContent = '请求失败，请重试。'; msg.className = 'fn-msg err'; });
+            };
+        })();
+    </script>
+{% endblock %}
+
+{% block object-tools-items %}
+    <li>{% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}<a href="{% add_preserved_filters history_url %}" class="historylink">{% trans "历史" %}</a></li>
+    <li><a href="{% url 'admin:navigation_pointtransaction_changelist' %}?user__id__exact={{ original.user_id }}" target="_blank">查看该用户积分流水</a></li>
+{% endblock %}
+
+{% block after_related_objects %}
+<div class="module" style="margin-top:16px;padding:16px;border:1px solid var(--fn-border);border-radius:var(--fn-radius-md);background:#fff;">
+    <h2 style="margin:0 0 12px;font-size:15px;">积分调账</h2>
+    <div class="fn-adjust-row">
+        <div>
+            <label for="fn-amount">积分变动（可为负）</label>
+            <input type="number" id="fn-amount" placeholder="如 100 或 -50" />
+        </div>
+        <div>
+            <label for="fn-reason">调整原因</label>
+            <input type="text" id="fn-reason" placeholder="如：优质内容奖励 / 违规扣除" maxlength="200" />
+        </div>
+        <button type="button" class="fn-btn-adjust" onclick="submitAdjust()">执行调账</button>
+    </div>
+    <div id="fn-msg" class="fn-msg"></div>
+    <p class="fn-hint">
+        当前余额：<strong>{{ original.points_balance }}</strong> 分 · 累计获得：{{ original.points_lifetime }} 分 · 推广码：{{ original.referral_code|default:"—" }}。
+        调账会写入积分流水（来源：管理员调整）且不可撤销，请务必填写原因以便审计。
+    </p>
+</div>
+{% endblock %}

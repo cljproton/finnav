@@ -1,0 +1,344 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>待审核 · 快速审核</title>
+    <style>
+        :root {
+            --fn-bg: #f1f5f9;
+            --fn-surface: #ffffff;
+            --fn-border: #e5e7eb;
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-success: #059669;
+            --fn-success-soft: #ECFDF5;
+            --fn-danger: #B02A37;
+            --fn-danger-soft: #FEF2F2;
+            --fn-danger-border: #FECACA;
+            --fn-warning: #B45309;
+            --fn-warning-soft: #FEF3C7;
+            --fn-text: #1F2937;
+            --fn-text-2: #4B5563;
+            --fn-text-3: #6B7280;
+            --fn-text-4: #9CA3AF;
+            --fn-radius-sm: 6px;
+            --fn-radius-md: 10px;
+            --fn-radius-pill: 999px;
+            --fn-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Source Sans Pro", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+            background:
+                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.07), transparent 55%),
+                var(--fn-bg);
+            color: var(--fn-text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .wrap { max-width: 980px; margin: 0 auto; }
+        h1 { font-size: 22px; margin-bottom: 6px; }
+        .sub { color: var(--fn-text-3); font-size: 13px; margin-bottom: 18px; }
+        .msg {
+            padding: 10px 14px;
+            border-radius: var(--fn-radius-sm);
+            font-size: 13px;
+            margin-bottom: 16px;
+            border: 1px solid var(--fn-border);
+        }
+        .msg.success { background: var(--fn-success-soft); color: var(--fn-success); border-color: #A7F3D0; }
+        .msg.warning, .msg.error { background: var(--fn-warning-soft); color: var(--fn-warning); border-color: #FDE68A; }
+        .msg.error { color: var(--fn-danger); background: var(--fn-danger-soft); border-color: var(--fn-danger-border); }
+        .msg.info { background: var(--fn-primary-soft); color: var(--fn-primary); border-color: #C7D2FE; }
+
+        .tabs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--fn-border);
+            padding-bottom: 0;
+        }
+        .tabs .tab {
+            padding: 9px 16px;
+            font-size: 14px;
+            color: var(--fn-text-3);
+            text-decoration: none;
+            border-radius: 8px 8px 0 0;
+            border: 1px solid transparent;
+            border-bottom: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all .15s ease;
+        }
+        .tabs .tab:hover { background: var(--fn-primary-soft); color: var(--fn-text); }
+        .tabs .tab.active {
+            background: var(--fn-surface);
+            color: var(--fn-primary);
+            border-color: var(--fn-border);
+            border-bottom: 2px solid var(--fn-primary);
+            font-weight: 600;
+        }
+        .tabs .tab .count {
+            min-width: 18px;
+            padding: 0 6px;
+            border-radius: var(--fn-radius-pill);
+            background: var(--fn-border);
+            color: var(--fn-text-3);
+            font-size: 12px;
+            line-height: 18px;
+            text-align: center;
+        }
+        .tabs .tab.active .count { background: var(--fn-primary-soft); color: var(--fn-primary); }
+        .tabs .tab .count.warn { background: #fde2e2; color: var(--fn-danger); }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 14px;
+        }
+        .card {
+            background: var(--fn-surface);
+            border: 1px solid var(--fn-border);
+            border-radius: var(--fn-radius-md);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: var(--fn-shadow);
+            transition: box-shadow .18s ease, transform .18s ease;
+        }
+        .card:hover { box-shadow: 0 6px 16px rgba(15, 23, 42, .10); transform: translateY(-2px); }
+        .card .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .card .card-title { font-size: 15px; font-weight: 600; color: var(--fn-text); text-decoration: none; word-break: break-all; }
+        .card .card-title:hover { color: var(--fn-primary); text-decoration: underline; }
+        .card .site-name { font-size: 12px; color: var(--fn-text-3); }
+        .card .site-name a { color: var(--fn-primary); text-decoration: none; }
+        .card .site-name a:hover { text-decoration: underline; }
+        .card .url { font-size: 12px; color: var(--fn-primary); word-break: break-all; text-decoration: none; }
+        .card .url:hover { text-decoration: underline; }
+        .card .desc { font-size: 13px; color: var(--fn-text-2); line-height: 1.55; }
+        .card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .card .chip {
+            font-size: 12px; padding: 2px 10px; border-radius: var(--fn-radius-pill);
+            background: var(--fn-primary-soft); color: var(--fn-primary);
+        }
+        .card .chip-cat { background: var(--fn-success-soft); color: var(--fn-success); }
+        .card .chip-type { background: #e0f2fe; color: #0369a1; }
+        .card .chip-del { background: var(--fn-danger-soft); color: var(--fn-danger); border: 1px solid var(--fn-danger-border); }
+        .card .meta { font-size: 12px; color: var(--fn-text-3); display: flex; flex-wrap: wrap; gap: 12px; }
+        .card .card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 2px; }
+        .card .btn {
+            border: none; border-radius: var(--fn-radius-sm); padding: 7px 14px; font-size: 13px; cursor: pointer;
+            font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+            transition: filter .15s ease; color: #fff;
+        }
+        .card .btn:hover { filter: brightness(.95); }
+        .btn-approve { background: var(--fn-success); }
+        .btn-reject { background: var(--fn-danger); }
+        .btn-ghost { background: #fff; color: var(--fn-text-2); border: 1px solid var(--fn-border); }
+        .btn-ghost:hover { background: var(--fn-primary-soft); filter: none; }
+
+        .empty {
+            text-align: center; padding: 56px 0; color: var(--fn-text-4); font-size: 14px;
+            border: 1px dashed var(--fn-border); border-radius: var(--fn-radius-md); background: var(--fn-surface);
+        }
+        .full-list { margin-top: 20px; font-size: 13px; }
+        .full-list a { color: var(--fn-primary); text-decoration: none; }
+        .full-list a:hover { text-decoration: underline; }
+        .note { margin-top: 20px; font-size: 12px; color: var(--fn-text-4); line-height: 1.7; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>待审核</h1>
+    <div class="sub">统一快速审核用户的站点提交、教程发布、教程删除申请与 APP 链接提交。</div>
+
+    {% if messages %}
+        {% for m in messages %}
+            <div class="msg {{ m.tags }}">{{ m }}</div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="tabs">
+        <a class="tab{% if tab == 'sites' %} active{% endif %}" href="?tab=sites">
+            站点提交<span class="count{% if counts.sites %} warn{% endif %}">{{ counts.sites }}</span>
+        </a>
+        <a class="tab{% if tab == 'tutorials' %} active{% endif %}" href="?tab=tutorials">
+            教程发布<span class="count{% if counts.tutorials %} warn{% endif %}">{{ counts.tutorials }}</span>
+        </a>
+        <a class="tab{% if tab == 'tutorial_deletes' %} active{% endif %}" href="?tab=tutorial_deletes">
+            教程删除<span class="count{% if counts.tutorial_deletes %} warn{% endif %}">{{ counts.tutorial_deletes }}</span>
+        </a>
+        <a class="tab{% if tab == 'app_links' %} active{% endif %}" href="?tab=app_links">
+            APP 链接<span class="count{% if counts.app_links %} warn{% endif %}">{{ counts.app_links }}</span>
+        </a>
+    </div>
+
+    {% if tab == 'sites' %}
+        {% if site_submissions %}
+        <div class="grid">
+            {% for sub in site_submissions %}
+            <div class="card">
+                <div class="card-head">
+                    <a class="card-title" href="{% url 'admin:navigation_sitesubmission_change' sub.pk %}"
+                       title="打开详情">{{ sub.name }}</a>
+                    <span class="chip chip-type">待审核</span>
+                </div>
+                <a class="url" href="{{ sub.url }}" target="_blank" rel="noopener noreferrer">{{ sub.url }}</a>
+                {% if sub.description %}<div class="desc">{{ sub.description }}</div>{% endif %}
+                <div class="chips">
+                    {% if sub.category %}<span class="chip chip-cat">{{ sub.category }}</span>{% endif %}
+                    {% for t in sub.tags.all %}<span class="chip">{{ t.name }}</span>{% endfor %}
+                </div>
+                <div class="meta">
+                    <span>提交人：{{ sub.user }}</span>
+                    <span>{{ sub.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-approve"
+                            onclick="doAction('site', {{ sub.pk }}, 'approve', '通过并创建站点「{{ sub.name|escapejs }}」');">✓ 通过并创建</button>
+                    <button type="button" class="btn btn-reject"
+                            onclick="doAction('site', {{ sub.pk }}, 'reject', '{{ sub.name|escapejs }}');">✗ 驳回</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">暂无待审核的站点提交。</div>
+        {% endif %}
+
+    {% elif tab == 'tutorials' %}
+        {% if tutorials_publish %}
+        <div class="grid">
+            {% for t in tutorials_publish %}
+            <div class="card">
+                <div class="card-head">
+                    <a class="card-title" href="{{ t.url }}" target="_blank" rel="noopener noreferrer">{{ t.title }}</a>
+                    <span class="chip chip-type">{{ t.get_type_display }}</span>
+                </div>
+                <div class="site-name">所属站点：<a href="{% url 'admin:navigation_site_change' t.site_id %}">{{ t.site }}</a></div>
+                <a class="url" href="{{ t.url }}" target="_blank" rel="noopener noreferrer">{{ t.url }}</a>
+                <div class="meta">
+                    <span>分享人：{{ t.user }}</span>
+                    <span>{{ t.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-approve"
+                            onclick="doAction('tutorial', {{ t.pk }}, 'approve', '{{ t.title|escapejs }}');">✓ 通过发布</button>
+                    <button type="button" class="btn btn-reject"
+                            onclick="doAction('tutorial', {{ t.pk }}, 'reject', '{{ t.title|escapejs }}');">✗ 驳回</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">暂无待审核的教程发布。</div>
+        {% endif %}
+
+    {% elif tab == 'tutorial_deletes' %}
+        {% if tutorials_delete %}
+        <div class="grid">
+            {% for t in tutorials_delete %}
+            <div class="card">
+                <div class="card-head">
+                    <span class="card-title">{{ t.title }}</span>
+                    <span class="chip chip-del">申请删除</span>
+                </div>
+                <div class="site-name">所属站点：<a href="{% url 'admin:navigation_site_change' t.site_id %}">{{ t.site }}</a></div>
+                <a class="url" href="{{ t.url }}" target="_blank" rel="noopener noreferrer">{{ t.url }}</a>
+                <div class="meta">
+                    <span>分享人：{{ t.user }}</span>
+                    {% if t.delete_requested_at %}<span>申请于 {{ t.delete_requested_at|date:"Y-m-d H:i" }}</span>{% endif %}
+                    <span>发布于 {{ t.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-approve"
+                            onclick="doAction('tutorial_delete', {{ t.pk }}, 'approve', '{{ t.title|escapejs }}');">✓ 同意删除</button>
+                    <button type="button" class="btn btn-reject"
+                            onclick="doAction('tutorial_delete', {{ t.pk }}, 'reject', '{{ t.title|escapejs }}');">✗ 驳回申请</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">暂无待审核的教程删除申请。</div>
+        {% endif %}
+
+    {% elif tab == 'app_links' %}
+        {% if app_links %}
+        <div class="grid">
+            {% for sub in app_links %}
+            <div class="card">
+                <div class="card-head">
+                    <a class="card-title" href="{% url 'admin:navigation_site_change' sub.site_id %}" title="打开站点">{{ sub.site }}</a>
+                    <span class="chip chip-cat">{{ sub.get_platform_display }}</span>
+                </div>
+                <a class="url" href="{{ sub.url }}" target="_blank" rel="noopener noreferrer">{{ sub.url }}</a>
+                <div class="meta">
+                    <span>提交人：{{ sub.user }}</span>
+                    <span>{{ sub.created_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                <div class="card-actions">
+                    <button type="button" class="btn btn-approve"
+                            onclick="doAction('app_link', {{ sub.pk }}, 'approve', '{{ sub.site|escapejs }} 的{{ sub.get_platform_display }}链接');">✓ 通过</button>
+                    <button type="button" class="btn btn-reject"
+                            onclick="doAction('app_link', {{ sub.pk }}, 'reject', '{{ sub.site|escapejs }} 的{{ sub.get_platform_display }}链接');">✗ 驳回</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">暂无待审核的 APP 链接提交。</div>
+        {% endif %}
+    {% endif %}
+
+    <div class="full-list">
+        完整列表：
+        <a href="{% url 'admin:navigation_sitesubmission_changelist' %}?status__exact=pending" target="_blank">站点提交</a> ·
+        <a href="{% url 'admin:navigation_sitetutorial_changelist' %}?status__exact=pending" target="_blank">教程发布</a> ·
+        <a href="{% url 'admin:navigation_sitetutorial_changelist' %}?delete_pending__exact=1" target="_blank">教程删除</a> ·
+        <a href="{% url 'admin:navigation_applinksubmission_changelist' %}?status__exact=pending" target="_blank">APP 链接</a>
+    </div>
+    <div class="note">
+        提示：驳回时可填写意见；APP 链接通过后会自动拉取安卓 APP 缓存到本站。徽标每 30 秒自动刷新。
+    </div>
+</div>
+
+<script>
+    (function () {
+        function getCookie(name) {
+            var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
+            return m ? decodeURIComponent(m[2]) : '';
+        }
+        var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
+        var TAB = '{{ tab|escapejs }}';
+
+        window.doAction = function (model, id, action, label) {
+            var body = new URLSearchParams();
+            body.set('model', model);
+            body.set('id', id);
+            body.set('action', action);
+            body.set('tab', TAB);
+            if (action === 'approve') {
+                if (!confirm('确认通过「' + label + '」吗？')) return;
+            } else {
+                var note = prompt('驳回意见（可选）：', '');
+                if (note === null) return;
+                body.set('note', note || '');
+            }
+            fetch('{{ request.path }}', {
+                method: 'POST',
+                headers: Object.assign({'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'}, CSRF),
+                body: body.toString()
+            }).then(function () { window.location.reload(); })
+              .catch(function () { window.location.reload(); });
+        };
+    })();
+</script>
+</body>
+</html>

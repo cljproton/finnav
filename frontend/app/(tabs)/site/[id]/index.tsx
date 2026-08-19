@@ -5,7 +5,7 @@ import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import i18n from "../../../lib/i18n";
+import i18n from "../../../../lib/i18n";
 import Button from "@ant-design/react-native/es/button";
 import WhiteSpace from "@ant-design/react-native/es/white-space";
 import WingBlank from "@ant-design/react-native/es/wing-blank";
@@ -21,14 +21,16 @@ import {
   reportAppDownload,
   saveSiteInvite,
   useSettings,
-} from "../../../lib/api";
-import { useFavorites } from "../../../lib/favorites";
-import { useAuth } from "../../../lib/auth";
-import type { CaptchaPayload } from "../../../lib/auth";
-import { useThemeColors } from "../../../constants/colors";
-import type { Site, UserSiteInvite } from "../../../lib/types";
-import AuthModal from "../../../components/AuthModal";
-import { Logo } from "../../../components/Logo";
+  useSiteTutorialsTop,
+  reportTutorialVisit,
+} from "../../../../lib/api";
+import { useFavorites } from "../../../../lib/favorites";
+import { useAuth } from "../../../../lib/auth";
+import type { CaptchaPayload } from "../../../../lib/auth";
+import { useThemeColors } from "../../../../constants/colors";
+import type { Site, UserSiteInvite } from "../../../../lib/types";
+import AuthModal from "../../../../components/AuthModal";
+import { Logo } from "../../../../components/Logo";
 
 /* ---------- helpers ---------- */
 
@@ -198,11 +200,13 @@ function LinkSection({
   icon,
   links,
   colors,
+  onLinkPress,
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
   links: { name: string; url: string }[];
   colors: any;
+  onLinkPress?: (link: { name: string; url: string }, index: number) => void;
 }) {
   if (links.length === 0) return null;
 
@@ -225,7 +229,9 @@ function LinkSection({
       {links.map((link, idx) => (
         <Pressable
           key={idx}
-          onPress={() => openExternal(link.url)}
+          onPress={() =>
+            onLinkPress ? onLinkPress(link, idx) : openExternal(link.url)
+          }
           style={[
             styles.linkItem,
             {
@@ -313,6 +319,7 @@ function RatingSection({
 }) {
   const { t } = useTranslation();
   const auth = useAuth();
+  const queryClient = useQueryClient();
   const updateCache = useUpdateSiteCache();
   const [score, setScore] = useState(0);
   const [comment, setComment] = useState("");
@@ -322,14 +329,24 @@ function RatingSection({
   const [ratingCount, setRatingCount] = useState(site.rating_count);
   const [ratingAvg, setRatingAvg] = useState(site.rating_avg);
   const [ratingLoaded, setRatingLoaded] = useState(false);
+  const localEditRef = useRef(false);
+
+  // 站点数据刷新时同步评分聚合值；用户刚提交评分时不覆盖乐观值（updateCache/patch 优先）。
+  useEffect(() => {
+    if (localEditRef.current) return;
+    setRatingCount(site.rating_count);
+    setRatingAvg(site.rating_avg);
+  }, [site.id, site.rating_count, site.rating_avg]);
 
   // 打开详情页即读回当前登录用户既有的评分与评论，用于回显。
   useEffect(() => {
     if (!auth.token) return;
     let alive = true;
+    localEditRef.current = false;
     fetchMyRating(site.id)
       .then((r) => {
         if (!alive) return;
+        if (localEditRef.current) return; // 拉取期间用户已本地修改，跳过旧数据
         if (r.score !== null) setScore(r.score);
         if (r.comment) setComment(r.comment);
         setRatingLoaded(true);
@@ -346,6 +363,7 @@ function RatingSection({
   const persist = useCallback(
     async (nextScore: number, nextComment: string) => {
       if (!auth.token) return false;
+      localEditRef.current = true;
       setSubmitting(true);
       setError("");
       try {
@@ -359,6 +377,9 @@ function RatingSection({
           rating_count: res.rating_count,
           rating_avg: res.rating_avg,
         });
+        queryClient.invalidateQueries({ queryKey: ["site-reviews", site.id] });
+        queryClient.invalidateQueries({ queryKey: ["sites"] });
+        queryClient.invalidateQueries({ queryKey: ["me-points"] });
         setSaved(true);
         setTimeout(() => setSaved(false), 1600);
         return true;
@@ -369,7 +390,7 @@ function RatingSection({
         setSubmitting(false);
       }
     },
-    [auth.token, site.id, updateCache],
+    [auth.token, site.id, updateCache, queryClient],
   );
 
   // 点星：自动保存。
@@ -379,6 +400,7 @@ function RatingSection({
         onLoginPress();
         return;
       }
+      localEditRef.current = true;
       setScore(newScore);
       persist(newScore, comment);
     },
@@ -387,6 +409,11 @@ function RatingSection({
 
   // 评论：去抖自动保存（停顿后落盘）。
   const commentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (commentTimer.current) clearTimeout(commentTimer.current);
+    };
+  }, []);
   const handleCommentChange = useCallback(
     (text: string) => {
       setComment(text);
@@ -414,7 +441,8 @@ function RatingSection({
   const hasAggregate = ratingCount > 0;
   const showCommentHint = ratingLoaded && auth.token;
   // 未评分时默认展示满分（5.0）
-  const displayAvg = hasAggregate ? ratingAvg : 5.0;
+  const safeAvg = Number.isFinite(ratingAvg) ? ratingAvg : 0;
+  const displayAvg = hasAggregate ? safeAvg : 5.0;
 
   return (
     <View
@@ -558,6 +586,47 @@ function ReviewsEntry({
   );
 }
 
+/* ---------- Tutorials entry ---------- */
+
+function TutorialsEntry({
+  site,
+  colors,
+}: {
+  site: Site;
+  colors: any;
+}) {
+  const { t } = useTranslation();
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/site/${site.id}/tutorials`)}
+      style={({ pressed }) => [
+        styles.section,
+        styles.reviewsEntry,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <View style={[styles.sectionHeader, styles.reviewsEntryHeader]}>
+        <Ionicons name="book-outline" size={18} color={colors.primary} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          {t("教程")}
+        </Text>
+        <View style={styles.reviewsEntryRight}>
+          <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
+            {t("用户分享的教程")}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 /* ---------- Invite section ---------- */
 
 function InviteSection({
@@ -590,6 +659,11 @@ function InviteSection({
 
   // 自动保存：任一处修改后停顿 900ms 落盘。
   const inviteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (inviteTimer.current) clearTimeout(inviteTimer.current);
+    };
+  }, []);
   const persistInvite = useCallback(
     async (nextCode: string, nextLink: string) => {
       if (!auth.token) return;
@@ -601,6 +675,7 @@ function InviteSection({
           invite_link: nextLink.trim(),
         });
         queryClient.setQueryData(["site-invite", site.id], savedData);
+        queryClient.invalidateQueries({ queryKey: ["site-invite", site.id] });
         setSaved(true);
         setTimeout(() => setSaved(false), 1600);
       } catch (e: any) {
@@ -814,10 +889,12 @@ export default function SiteDetailScreen() {
   }
 
   const { data: fetchedSite, isLoading, error } = useSiteDetail(siteId);
-  const site = cachedSite || fetchedSite;
+  const site = fetchedSite ?? cachedSite;
   const fav = site ? isFavorite(site.id) : false;
 
   const { data: invite } = useSiteInvite(siteId, loggedIn);
+
+  const { data: tutorialsTop } = useSiteTutorialsTop(siteId);
 
   useEffect(() => {
     if (site && !visitReported.current) {
@@ -826,17 +903,20 @@ export default function SiteDetailScreen() {
     }
   }, [site]);
 
-  // 图标为空时，后台可能正在异步拉取：每个站点访问仅延迟刷新一次接口，
+  // 图标为空时，后台可能正在异步拉取：延迟多次重试刷新接口，
   // 图标就绪后自动出现（无需手动刷新），不会反复轮询。
   const logoPolledFor = useRef<number | null>(null);
   useEffect(() => {
     if (!site || site.logo) return;
     if (logoPolledFor.current === site.id) return;
     logoPolledFor.current = site.id;
-    const timer = setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ["site", siteId] });
-    }, 3000);
-    return () => clearTimeout(timer);
+    const delays = [3000, 9000, 21000];
+    const timers = delays.map((delay) =>
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["site", siteId] });
+      }, delay),
+    );
+    return () => timers.forEach((timer) => clearTimeout(timer));
   }, [site, siteId, queryClient]);
 
   const handleLogin = useCallback(
@@ -880,6 +960,10 @@ export default function SiteDetailScreen() {
     },
     [auth],
   );
+
+  const openAppLinkSubmit = useCallback(() => {
+    router.push(`/site/${siteId}/app-links`);
+  }, [router, siteId]);
 
   if (isLoading || !site) {
     return (
@@ -982,7 +1066,7 @@ export default function SiteDetailScreen() {
                 {site.category_name}
               </Text>
             </View>
-            {site.tags.map((tag, idx) => (
+            {(site.tags ?? []).map((tag, idx) => (
               <Pressable
                 key={`${tag}-${idx}`}
                 onPress={() =>
@@ -1026,50 +1110,90 @@ export default function SiteDetailScreen() {
           onLoginPress={() => setAuthVisible(true)}
         />
 
+        {/* User tutorials entry */}
+        <TutorialsEntry site={site} colors={colors} />
+
         {/* Text tutorials */}
         <LinkSection
           title={t("文字教程")}
           icon="document-text-outline"
-          links={site.text_tutorials}
+          links={(tutorialsTop?.text ?? []).map((item) => ({
+            name: item.title,
+            url: item.url,
+          }))}
           colors={colors}
+          onLinkPress={(link, idx) => {
+            const item = tutorialsTop?.text[idx];
+            if (item) reportTutorialVisit(siteId, item.id);
+            openExternal(link.url);
+          }}
         />
 
         {/* Video tutorials */}
         <LinkSection
           title={t("视频教程")}
           icon="play-circle-outline"
-          links={site.video_tutorials}
+          links={(tutorialsTop?.video ?? []).map((item) => ({
+            name: item.title,
+            url: item.url,
+          }))}
           colors={colors}
+          onLinkPress={(link, idx) => {
+            const item = tutorialsTop?.video[idx];
+            if (item) reportTutorialVisit(siteId, item.id);
+            openExternal(link.url);
+          }}
         />
 
         {/* Agent / proxy links */}
         <LinkSection
           title={t("辅助/代办")}
           icon="people-outline"
-          links={site.agent_links}
+          links={(tutorialsTop?.agent ?? []).map((item) => ({
+            name: item.title,
+            url: item.url,
+          }))}
           colors={colors}
+          onLinkPress={(link, idx) => {
+            const item = tutorialsTop?.agent[idx];
+            if (item) reportTutorialVisit(siteId, item.id);
+            openExternal(link.url);
+          }}
         />
 
         {/* APP download */}
-        {(site.app_android_has_cache ||
-          site.app_android_url ||
-          site.app_ios_url ||
-          site.app_google_play_url) && (
-          <View
-            style={[
-              styles.section,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <View style={styles.sectionHeader}>
-              <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {t("APP 下载")}
+        <View
+          style={[
+            styles.section,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              {t("APP 下载")}
+            </Text>
+            <Pressable
+              onPress={openAppLinkSubmit}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.appLinkSubmitBtn,
+                {
+                  backgroundColor: colors.primaryLight,
+                  borderColor: colors.primary,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <Ionicons name="add" size={14} color={colors.primary} />
+              <Text style={[styles.appLinkSubmitText, { color: colors.primary }]}>
+                {t("提交下载链接")}
               </Text>
-            </View>
+            </Pressable>
+          </View>
 
             {/* Android */}
             {(site.app_android_cache_url || site.app_android_url) && (
@@ -1108,19 +1232,6 @@ export default function SiteDetailScreen() {
                           {t("本站缓存校验失败，可能已被篡改，已暂停本站下载，请使用官网原始链接。")}
                         </Text>
                       </View>
-                      {site.app_android_url ? (
-                        <View style={styles.downloadAltRow}>
-                          <Text
-                            style={[styles.downloadAltLink, { color: colors.primary }]}
-                            onPress={() => {
-                              openExternal(site.app_android_url);
-                              reportAppDownload(site.id, "android_original");
-                            }}
-                          >
-                            {t("安卓 原始下载 ↗")}
-                          </Text>
-                        </View>
-                      ) : null}
                     </>
                   ) : (
                     <>
@@ -1168,7 +1279,7 @@ export default function SiteDetailScreen() {
                       ) : null}
 
                       {/* 真实性核验 */}
-                      {loggedIn && site.app_android_sha256 ? (
+                      {site.app_android_sha256 ? (
                         <View
                           style={[
                             styles.verifyPanel,
@@ -1207,13 +1318,29 @@ export default function SiteDetailScreen() {
                               <Text style={[styles.verifyLabel, { color: colors.textTertiary }]}>
                                 {t("缓存来源")}
                               </Text>
-                              <Text
-                                style={[styles.verifyLink, { color: colors.primary }]}
-                                numberOfLines={1}
-                                onPress={() => openExternal(site.app_android_url)}
-                              >
-                                {t("官网原始链接 ↗")}
-                              </Text>
+                              <View style={styles.verifyUrlBox}>
+                                <Text
+                                  style={[styles.verifyUrl, { color: colors.primary }]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="middle"
+                                  onPress={() => openExternal(site.app_android_url!)}
+                                >
+                                  {site.app_android_url}
+                                </Text>
+                                <Text
+                                  style={[styles.verifyCopy, { color: colors.primary }]}
+                                  onPress={async () => {
+                                    const ok = await copyText(site.app_android_url!);
+                                    if (ok) {
+                                      Toast.success(t("已复制链接"), 1.5);
+                                    } else {
+                                      Toast.fail(t("复制失败"), 1.5);
+                                    }
+                                  }}
+                                >
+                                  {t("复制")}
+                                </Text>
+                              </View>
                             </View>
                           ) : null}
 
@@ -1260,27 +1387,18 @@ export default function SiteDetailScreen() {
                           </Text>
                         </View>
                       ) : null}
-
-                      {site.app_android_url ? (
-                        <View style={styles.downloadAltRow}>
-                          <Text
-                            style={[styles.downloadAltLink, { color: colors.primary }]}
-                            onPress={() => {
-                              openExternal(site.app_android_url);
-                              reportAppDownload(site.id, "android_original");
-                            }}
-                          >
-                            {t("安卓 原始下载 ↗")}
-                          </Text>
-                        </View>
-                      ) : null}
                     </>
                   )
                 ) : (
                   <Button
                     onPress={() => {
-                      openExternal(site.app_android_url);
-                      reportAppDownload(site.id, "android_original");
+                      if (site.app_android_url) {
+                        openExternal(site.app_android_url);
+                        reportAppDownload(site.id, "android_original");
+                      } else if (site.app_android_cache_url) {
+                        openExternal(site.app_android_cache_url);
+                        reportAppDownload(site.id, "android_cache");
+                      }
                     }}
                     style={{
                       ...styles.downloadBtn,
@@ -1371,7 +1489,6 @@ export default function SiteDetailScreen() {
               </View>
             ) : null}
           </View>
-        )}
 
         {/* Primary CTA: visit website (invite link overrides) */}
         <Button
@@ -1627,17 +1744,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  downloadAltRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-    gap: 4,
-  },
-  downloadAltLink: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
 
   /* Integrity verification panel */
   integrityBlocked: {
@@ -1684,10 +1790,16 @@ const styles = StyleSheet.create({
   verifyLabel: {
     fontSize: 12,
   },
-  verifyLink: {
+  verifyUrlBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "75%",
+  },
+  verifyUrl: {
     fontSize: 12,
     fontWeight: "600",
-    maxWidth: "70%",
+    flexShrink: 1,
   },
   verifyValue: {
     fontSize: 12,
@@ -1900,5 +2012,21 @@ const styles = StyleSheet.create({
   },
   reviewsEntryCount: {
     fontSize: 13,
+  },
+
+  /* App link submit */
+  appLinkSubmitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginLeft: "auto",
+  },
+  appLinkSubmitText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

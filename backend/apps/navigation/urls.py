@@ -63,5 +63,15 @@ urlpatterns = [
         SearchHistorySyncView.as_view(),
         name='me-search-history',
     ),
+    path(
+        'me/points/transactions/',
+        views.MyPointsTransactionsView.as_view(),
+        name='me-points-transactions',
+    ),
+    path(
+        'points/rules/',
+        views.PointsRulesView.as_view(),
+        name='points-rules',
+    ),
     path('', include(router.urls)),
 ]

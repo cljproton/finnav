@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -11,17 +11,27 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import Toast from "@ant-design/react-native/es/toast";
-import { useThemeColors } from "../constants/colors";
-import { useCategories, useTags, useMySubmissions, submitSite } from "../lib/api";
+import Modal from "@ant-design/react-native/es/modal";
+import { useThemeColors } from "../../constants/colors";
+import {
+  useCategories,
+  useTags,
+  useMySubmissions,
+  submitSite,
+  updateSiteSubmission,
+  deleteSiteSubmission,
+} from "../../lib/api";
 import { useTranslation } from "react-i18next";
-import type { SiteSubmissionStatus } from "../lib/types";
+import type { SiteSubmission, SiteSubmissionStatus } from "../../lib/types";
 
 export default function SubmitSiteScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const STATUS_TEXT: Record<SiteSubmissionStatus, string> = {
     pending: t("审核中"),
@@ -43,6 +53,8 @@ export default function SubmitSiteScreen() {
   const [category, setCategory] = useState<number | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const toggleTag = (t: string) => {
     setSelectedTags((prev) =>
@@ -65,20 +77,30 @@ export default function SubmitSiteScreen() {
     }
     setSubmitting(true);
     try {
-      await submitSite({
+      const payload = {
         name: name.trim(),
         url: url.trim(),
         description: description.trim() || undefined,
         category,
         tags: selectedTags,
-      });
-      Toast.success(t("提交成功，等待审核"));
+      };
+      if (editingId !== null) {
+        await updateSiteSubmission(editingId, payload);
+        Toast.success(t("已更新，等待审核"));
+      } else {
+        await submitSite(payload);
+        Toast.success(t("提交成功，等待审核"));
+      }
       setName("");
       setUrl("");
       setDescription("");
       setCategory(null);
       setSelectedTags([]);
+      setEditingId(null);
       refetchSubmissions();
+      queryClient.invalidateQueries({ queryKey: ["site-submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["sites"] });
+      queryClient.invalidateQueries({ queryKey: ["site-ids"] });
     } catch (e) {
       Toast.fail(String(e instanceof Error ? e.message : t("提交失败")));
     } finally {
@@ -86,15 +108,73 @@ export default function SubmitSiteScreen() {
     }
   };
 
+  const handleEdit = (s: SiteSubmission) => {
+    setName(s.name);
+    setUrl(s.url);
+    setDescription(s.description || "");
+    setCategory(s.category);
+    setSelectedTags(s.tags || []);
+    setEditingId(s.id);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setName("");
+    setUrl("");
+    setDescription("");
+    setCategory(null);
+    setSelectedTags([]);
+  };
+
+  const handleDelete = (s: SiteSubmission) => {
+    Modal.alert(
+      t("删除"),
+      t("确认删除「{{name}}」？已驳回的提交将直接删除。", { name: s.name }),
+      [
+        { text: t("取消"), style: "cancel" },
+        {
+          text: t("确认删除"),
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteSiteSubmission(s.id);
+              Toast.success(t("已删除"), 1.5);
+              refetchSubmissions();
+              queryClient.invalidateQueries({ queryKey: ["site-submissions"] });
+              queryClient.invalidateQueries({ queryKey: ["sites"] });
+              queryClient.invalidateQueries({ queryKey: ["site-ids"] });
+            } catch (e) {
+              Toast.fail(
+                String(e instanceof Error ? e.message : t("操作失败")),
+                1.5,
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
-          <Pressable onPress={() => router.back()} hitSlop={8}>
+          <Pressable
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace("/");
+              }
+            }}
+            hitSlop={8}
+          >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </Pressable>
           <Text style={[styles.topTitle, { color: colors.text }]}>{t("提交新站点")}</Text>
@@ -210,9 +290,21 @@ export default function SubmitSiteScreen() {
             ]}
           >
             <Text style={[styles.submitText, { color: colors.surfaceSolid }]}>
-              {submitting ? t("提交中...") : t("提交审核")}
+              {submitting
+                ? t("提交中...")
+                : editingId !== null
+                  ? t("保存修改")
+                  : t("提交审核")}
             </Text>
           </Pressable>
+
+          {editingId !== null ? (
+            <Pressable onPress={cancelEdit} hitSlop={8} style={styles.cancelEditBtn}>
+              <Text style={[styles.cancelEditText, { color: colors.textTertiary }]}>
+                {t("取消编辑")}
+              </Text>
+            </Pressable>
+          ) : null}
 
           <Text style={[styles.sectionTitle, styles.listTitle, { color: colors.text }]}>
             {t("我的提交记录")}
@@ -259,6 +351,28 @@ export default function SubmitSiteScreen() {
                     <Text style={[styles.itemNote, { color: colors.textTertiary }]}>
                       {t("备注：{{note}}", { note: s.admin_note })}
                     </Text>
+                  ) : null}
+                  {s.status === "rejected" ? (
+                    <View style={styles.itemActions}>
+                      <Pressable
+                        onPress={() => handleEdit(s)}
+                        hitSlop={8}
+                        style={[styles.itemActionBtn, { borderColor: colors.primary }]}
+                      >
+                        <Text style={[styles.itemActionText, { color: colors.primary }]}>
+                          {t("编辑")}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => handleDelete(s)}
+                        hitSlop={8}
+                        style={[styles.itemActionBtn, { borderColor: colors.error }]}
+                      >
+                        <Text style={[styles.itemActionText, { color: colors.error }]}>
+                          {t("删除")}
+                        </Text>
+                      </Pressable>
+                    </View>
                   ) : null}
                 </View>
               );
@@ -376,5 +490,31 @@ const styles = StyleSheet.create({
   itemNote: {
     fontSize: 12,
     marginTop: 4,
+  },
+  itemActions: {
+    flexDirection: "row",
+    gap: 8,
+    alignSelf: "flex-start",
+    marginTop: 8,
+  },
+  itemActionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  itemActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  cancelEditBtn: {
+    alignSelf: "center",
+    marginTop: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  cancelEditText: {
+    fontSize: 13,
+    fontWeight: "500",
   },
 });

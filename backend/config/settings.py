@@ -300,6 +300,8 @@ SIMPLEUI_ICON = {
     'Site': 'fas fa-globe',
     'SiteVisit': 'fas fa-eye',
     'Tag': 'fas fa-tags',
+    'SiteTutorial': 'fas fa-book-open',
+    'AppLinkSubmission': 'fas fa-link',
 }
 
 # 侧边菜单：完整自定义（含系统模型 + 备份恢复，避免 auto 生成的重复模块）
@@ -323,6 +325,8 @@ SIMPLEUI_CONFIG = {
                 {'name': '标签', 'icon': 'fas fa-tags', 'url': '/admin/navigation/tag/'},
                 {'name': '用户站点邀请', 'icon': 'fas fa-envelope-open-text', 'url': '/admin/navigation/usersiteinvite/'},
                 {'name': '站点提交/审核', 'icon': 'fas fa-paper-plane', 'url': '/admin/navigation/sitesubmission/'},
+                {'name': '用户教程/审核', 'icon': 'fas fa-book-open', 'url': '/admin/navigation/sitetutorial/'},
+                {'name': 'APP 链接提交/审核', 'icon': 'fas fa-link', 'url': '/admin/navigation/applinksubmission/'},
                 {'name': 'APP 下载记录', 'icon': 'fas fa-download', 'url': '/admin/navigation/appdownload/'},
                 {'name': '站点', 'icon': 'fas fa-globe', 'url': '/admin/navigation/site/'},
                 {'name': '站点评分', 'icon': 'fas fa-star', 'url': '/admin/navigation/rating/'},

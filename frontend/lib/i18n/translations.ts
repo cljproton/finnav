@@ -95,7 +95,6 @@ export const en: Record<string, string> = {
   "App Store 下载": "App Store Download",
   "访问官网": "Visit Official Site",
   "站点邀请码": "Site Invite Code",
-  "官网原始链接 ↗": "Official Link ↗",
   "邀请码: {{code}}": "Invite code: {{code}}",
   "邀请链接: {{link}}": "Invite link: {{link}}",
   "来源：{{url}}": "Source: {{url}}",
@@ -200,4 +199,83 @@ export const en: Record<string, string> = {
   "安卓 原始下载 ↗": "Android Original Download ↗",
   "本站缓存于 {{time}}": "Cached on {{time}}",
   "复制": "Copy",
+
+  // tutorials
+  "用户分享的教程": "Community tutorials",
+  "分享教程": "Share a tutorial",
+  "分享你的教程链接，标题将自动获取；如不正确可手动修改。分享后需管理员审核通过才会公开展示。":
+    "Share a tutorial link and the title is fetched automatically; edit it if it looks wrong. Tutorials go public only after admin approval.",
+  "已提交，待管理员审核":
+    "Submitted, pending admin review",
+  "选择类型": "Choose type",
+  "教程链接": "Tutorial link",
+  "粘贴链接，标题将自动获取": "Paste a link, the title is fetched automatically",
+  "标题": "Title",
+  "（可选，留空自动获取）": "(optional, leave blank to fetch)",
+  "可手动填写标题": "You can type a title manually",
+  "自动获取中...": "Fetching...",
+  "提交分享": "Submit",
+  "分享失败": "Share failed",
+  "暂无教程": "No tutorials yet",
+  "加载更多": "Load more",
+  "删除": "Delete",
+  "删除审核中": "Delete under review",
+  "撤销": "Withdraw",
+  "申请删除教程": "Request to delete tutorial",
+  "确认申请删除「{{title}}」？提交后需管理员审核。":
+    "Request to delete “{{title}}”? It will be reviewed by an admin.",
+  "确认申请": "Request",
+  "已提交删除申请，待管理员审核":
+    "Delete request submitted, pending admin review",
+  "确认删除「{{title}}」？已驳回的教程将直接删除。":
+    "Delete “{{title}}”? Rejected tutorials are removed immediately.",
+  "确认删除「{{name}}」？已驳回的提交将直接删除。":
+    "Delete “{{name}}”? Rejected submissions are removed immediately.",
+  "确认删除": "Delete",
+  "已删除": "Deleted",
+  "已撤销删除申请": "Delete request withdrawn",
+
+  // app link submissions
+  "提交下载链接": "Submit download link",
+  "提交后需管理员审核，审核通过后自动更新到本站。":
+    "Links are reviewed by an admin and applied to the site once approved.",
+  "安卓 APP": "Android App",
+  "iOS App Store": "iOS App Store",
+  "提交": "Submit",
+  "我的提交": "My submissions",
+  "待审核": "Pending review",
+  "提交成功，等待管理员审核":
+    "Submitted successfully, pending admin review",
+  "选择平台": "Choose platform",
+  "下载链接": "Download link",
+  "示例：{{sample}}": "Example: {{sample}}",
+  "暂无提交": "No submissions yet",
+  "提交于 {{time}}": "Submitted {{time}}",
+  "登录后可提交下载链接": "Log in to submit a download link",
+  "已复制链接": "Link copied",
+  "请输入链接": "Please enter a link",
+
+  // points & referral
+  "积分中心": "Points Center",
+  "积分余额": "Points Balance",
+  "累计获得 {{lifetime}} 分": "{{lifetime}} earned in total",
+  "积分 {{balance}}": "Points: {{balance}}",
+  "积分与邀请": "Points & Invites",
+  "登录后查看积分与邀请奖励": "Sign in to view your points and invite rewards",
+  "提交站点、分享教程、提交 APP 链接，审核通过即得积分":
+    "Submit sites, share tutorials or app links and earn points once approved",
+  "邀请好友得积分": "Invite friends & earn points",
+  "好友通过你的邀请链接注册，你与好友各得奖励积分":
+    "When a friend registers through your invite link, you both get bonus points",
+  "分享邀请链接": "Share invite link",
+  "复制链接": "Copy link",
+  "邀请链接已复制": "Invite link copied",
+  "邀请好友": "Invite a friend",
+  "用我的邀请链接注册 FinNav，我们都能获得积分":
+    "Register FinNav through my invite link and we both earn points",
+  "如何赚积分": "How to earn points",
+  "暂无积分规则": "No point rules yet",
+  "积分流水": "Point history",
+  "还没有积分记录，快去参与吧": "No point records yet — get involved!",
+  "余额 {{balance}}": "Balance: {{balance}}",
 };

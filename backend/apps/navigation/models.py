@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
@@ -75,15 +76,6 @@ class Site(models.Model):
         related_name='sites',
         blank=True,
         verbose_name='标签',
-    )
-    text_tutorials = models.JSONField(
-        default=list, blank=True, verbose_name='文字教程链接'
-    )
-    video_tutorials = models.JSONField(
-        default=list, blank=True, verbose_name='视频教程链接'
-    )
-    agent_links = models.JSONField(
-        default=list, blank=True, verbose_name='代办/辅助申请链接'
     )
     app_android_url = models.URLField(
         blank=True, default='', verbose_name='安卓 APP 下载链接(原始)'
@@ -179,6 +171,9 @@ class EmailVerification(models.Model):
     code_hash = models.CharField(max_length=64, verbose_name='验证码哈希(SHA-256)')
     attempts = models.PositiveIntegerField(default=0, verbose_name='尝试次数')
     expires_at = models.DateTimeField(verbose_name='过期时间')
+    referral_code = models.CharField(
+        max_length=12, blank=True, default='', verbose_name='推广码(注册时可选)'
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='最后发送时间')
 
@@ -204,13 +199,20 @@ class EmailVerification(models.Model):
         return hashlib.sha256(code.encode()).hexdigest()
 
     @classmethod
-    def generate(cls, email, purpose):
+    def generate(cls, email, purpose, referral_code=''):
         """生成 6 位随机码并保存（覆盖同 email+purpose 旧码）。返回明文码。
 
         若同一邮箱在 RESEND_COOLDOWN_SECONDS 内重复索取，抛出 EmailCooldownError
         （不发送新码），用于防止恶意刷爆邮件发送量。
+        referral_code 为注册时可选填的推广码，随记录暂存，验证通过创建用户时再处理。
         """
         from django.utils import timezone
+
+        now = timezone.now()
+        # 顺手清理 1 天前的过期记录，防止表无限膨胀
+        cls.objects.filter(
+            expires_at__lt=now - timezone.timedelta(days=1)
+        ).delete()
 
         existing = cls.objects.filter(email=email, purpose=purpose).first()
         if existing is not None:
@@ -225,7 +227,12 @@ class EmailVerification(models.Model):
         obj, _ = cls.objects.update_or_create(
             email=email,
             purpose=purpose,
-            defaults={'code_hash': cls._hash(code), 'attempts': 0, 'expires_at': expires},
+            defaults={
+                'code_hash': cls._hash(code),
+                'attempts': 0,
+                'expires_at': expires,
+                'referral_code': (referral_code or '').strip(),
+            },
         )
         return code, obj
 
@@ -630,10 +637,12 @@ class TOTPChallenge(models.Model):
         verbose_name='用户',
     )
     used = models.BooleanField(default=False, verbose_name='是否已使用')
+    attempts = models.PositiveIntegerField(default=0, verbose_name='校验失败次数')
     expires_at = models.DateTimeField(verbose_name='过期时间')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     TTL_SECONDS = 5 * 60
+    MAX_ATTEMPTS = 5
 
     class Meta:
         verbose_name = '2FA 挑战'
@@ -646,11 +655,188 @@ class TOTPChallenge(models.Model):
     def create(cls, user):
         from django.utils import timezone
 
+        now = timezone.now()
+        # 顺手清理该用户的过期挑战，避免表无限膨胀
+        cls.objects.filter(
+            user=user, expires_at__lt=now - timezone.timedelta(days=1)
+        ).delete()
         return cls.objects.create(
             token=uuid.uuid4().hex,
             user=user,
-            expires_at=timezone.now() + timezone.timedelta(seconds=cls.TTL_SECONDS),
+            expires_at=now + timezone.timedelta(seconds=cls.TTL_SECONDS),
         )
+
+
+class UserProfile(models.Model):
+    """用户积分与推广资料（OneToOne User，惰性创建）。
+
+    points_balance / points_lifetime 为缓存值，以 PointTransaction 台账为准；
+    所有积分变动都必须走 points.py 服务，保证原子与一致。
+    预留位：未来对接加密货币/真实资金时在此追加钱包地址、结算配置等字段。
+    """
+
+    REFERRAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+    user = models.OneToOneField(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='profile',
+        verbose_name='用户',
+    )
+    referral_code = models.CharField(
+        max_length=12, unique=True, blank=True, default='', verbose_name='推广码'
+    )
+    points_balance = models.PositiveIntegerField(default=0, verbose_name='积分余额')
+    points_lifetime = models.PositiveIntegerField(default=0, verbose_name='累计获得积分')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        verbose_name = '用户资料'
+        verbose_name_plural = '用户资料'
+
+    def __str__(self):
+        return f'{self.user} ({self.referral_code or "-"})'
+
+    def ensure_referral_code(self):
+        """惰性生成唯一推广码（8 位，去歧义字符）。"""
+        if self.referral_code:
+            return self.referral_code
+        for _ in range(50):
+            code = ''.join(
+                secrets.choice(self.REFERRAL_ALPHABET) for _ in range(8)
+            )
+            if not UserProfile.objects.filter(referral_code=code).exists():
+                self.referral_code = code
+                self.save(update_fields=['referral_code', 'updated_at'])
+                return code
+        raise RuntimeError('无法生成唯一推广码')
+
+
+class PointRule(models.Model):
+    """积分规则（后台可配置）。code 为程序内部唯一键，points 可为负。"""
+
+    code = models.CharField(max_length=40, unique=True, verbose_name='规则代码')
+    name = models.CharField(max_length=50, verbose_name='规则名称')
+    points = models.IntegerField(default=0, verbose_name='积分值(可为负)')
+    enabled = models.BooleanField(default=True, verbose_name='是否启用')
+    daily_limit = models.PositiveIntegerField(
+        default=0, verbose_name='每日发放次数上限(0=不限)'
+    )
+    total_limit = models.PositiveIntegerField(
+        default=0, verbose_name='累计发放次数上限(0=不限)'
+    )
+    description = models.TextField(blank=True, default='', verbose_name='说明')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = '积分规则'
+        verbose_name_plural = '积分规则'
+
+    def __str__(self):
+        return f'{self.name} ({self.code})'
+
+
+class PointTransaction(models.Model):
+    """积分台账（只追加不可修改）。
+
+    每次积分变动记录一条，balance_after 为变动后余额快照，用于审计与对账。
+    ref_type + ref_id 关联触发对象；唯一约束 (user, rule, ref_type, ref_id)
+    保证同一事件重复处理（如重复点审核通过）不重复发放。
+    """
+
+    REF_TYPE_CHOICES = (
+        ('site_submission', '站点提交'),
+        ('site_tutorial', '教程分享'),
+        ('app_link_submission', 'APP 链接提交'),
+        ('referral', '邀请推广'),
+        ('manual', '管理员调整'),
+    )
+
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='point_transactions',
+        verbose_name='用户',
+    )
+    rule = models.ForeignKey(
+        PointRule,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='transactions',
+        verbose_name='规则',
+    )
+    amount = models.IntegerField(verbose_name='积分变动(可为负)')
+    balance_after = models.PositiveIntegerField(verbose_name='变动后余额')
+    ref_type = models.CharField(
+        max_length=32, blank=True, default='', choices=REF_TYPE_CHOICES, verbose_name='来源类型'
+    )
+    ref_id = models.PositiveIntegerField(blank=True, null=True, verbose_name='来源对象ID')
+    description = models.TextField(blank=True, default='', verbose_name='说明')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['ref_type', 'ref_id']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'rule', 'ref_type', 'ref_id'],
+                condition=Q(ref_id__isnull=False),
+                name='unique_user_rule_ref',
+            ),
+        ]
+        verbose_name = '积分流水'
+        verbose_name_plural = '积分流水'
+
+    def __str__(self):
+        return f'{self.user} {self.amount:+d} -> {self.balance_after}'
+
+
+class Referral(models.Model):
+    """一级邀请记录：被邀请人注册即达标（qualified），邀请人获得积分。
+
+    一人只能被邀请一次（referee OneToOne）；预留 revoked 状态供未来
+    封禁/回收积分时标记。
+    """
+
+    STATUS_QUALIFIED = 'qualified'
+    STATUS_REVOKED = 'revoked'
+    STATUS_CHOICES = (
+        (STATUS_QUALIFIED, '已达标'),
+        (STATUS_REVOKED, '已作废'),
+    )
+
+    inviter = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='referrals_sent',
+        verbose_name='邀请人',
+    )
+    referee = models.OneToOneField(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='referral_invited_by',
+        verbose_name='被邀请人',
+    )
+    code = models.CharField(max_length=12, verbose_name='使用的推广码')
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_QUALIFIED, verbose_name='状态'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '邀请记录'
+        verbose_name_plural = '邀请记录'
+
+    def __str__(self):
+        return f'{self.inviter} -> {self.referee}'
 
 
 class SiteSubmission(models.Model):
@@ -721,6 +907,179 @@ class SiteSubmission(models.Model):
         self.approved_site = site
         self.reviewed_at = timezone.now()
         self.save(update_fields=['status', 'approved_site', 'reviewed_at'])
+        from .points import award_points
+
+        award_points(
+            self.user,
+            'site_approved',
+            'site_submission',
+            self.pk,
+            description=f'站点提交审核通过：{site.name}',
+        )
+        return site
+
+
+class SiteTutorial(models.Model):
+    """用户分享的站点教程（文字教程 / 视频教程 / 辅助代办）。
+
+    分享时只需提供链接，标题由后端自动抓取（fetch_page_title）。
+    status：新分享默认 pending，需管理员审核通过（approved）后才公开；
+            驳回（rejected）不公开，作者可看到并申请删除。
+    delete_pending：作者申请删除后置位，教程保持公开，由管理员审核
+            （通过=删除，驳回=清位）。
+    view_count 用于详情页展示「访问量前 10」。
+    """
+
+    TYPE_TEXT = 'text'
+    TYPE_VIDEO = 'video'
+    TYPE_AGENT = 'agent'
+    TYPE_CHOICES = (
+        (TYPE_TEXT, '文字教程'),
+        (TYPE_VIDEO, '视频教程'),
+        (TYPE_AGENT, '辅助/代办'),
+    )
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = (
+        (STATUS_PENDING, '待审核'),
+        (STATUS_APPROVED, '已通过'),
+        (STATUS_REJECTED, '已驳回'),
+    )
+
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.CASCADE,
+        related_name='tutorials',
+        verbose_name='站点',
+    )
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='site_tutorials',
+        verbose_name='分享者',
+    )
+    type = models.CharField(max_length=16, choices=TYPE_CHOICES, verbose_name='类型')
+    url = models.URLField(max_length=500, verbose_name='链接')
+    title = models.CharField(max_length=200, verbose_name='标题(自动获取)')
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, verbose_name='发布状态'
+    )
+    view_count = models.PositiveIntegerField(default=0, verbose_name='访问量')
+    delete_pending = models.BooleanField(default=False, verbose_name='待管理员删除审核')
+    delete_requested_at = models.DateTimeField(
+        blank=True, null=True, verbose_name='删除申请时间'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        ordering = ['-view_count', '-created_at']
+        indexes = [
+            models.Index(fields=['site', 'type', 'view_count']),
+            models.Index(fields=['site', 'type', 'delete_pending']),
+            models.Index(fields=['site', 'status', 'view_count']),
+        ]
+        verbose_name = '用户教程'
+        verbose_name_plural = '用户教程'
+
+    def __str__(self):
+        return f'{self.title} ({self.get_type_display()})'
+
+
+class AppLinkSubmission(models.Model):
+    """用户提交的 APP 下载链接（安卓 / Google Play / iOS），需管理员审核。
+
+    审核通过（approve()）：
+      - android:     写入 Site.app_android_url 并后台自动拉取 APK 缓存到本站
+      - google_play: 写入 Site.app_google_play_url
+      - ios:         写入 Site.app_ios_url
+    """
+
+    PLATFORM_ANDROID = 'android'
+    PLATFORM_GOOGLE_PLAY = 'google_play'
+    PLATFORM_IOS = 'ios'
+    PLATFORM_CHOICES = (
+        (PLATFORM_ANDROID, '安卓 APP'),
+        (PLATFORM_GOOGLE_PLAY, 'Google Play'),
+        (PLATFORM_IOS, 'iOS App Store'),
+    )
+
+    STATUS_PENDING = 'pending'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = (
+        (STATUS_PENDING, '待审核'),
+        (STATUS_APPROVED, '已通过'),
+        (STATUS_REJECTED, '已驳回'),
+    )
+
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='app_link_submissions',
+        verbose_name='提交人',
+    )
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.CASCADE,
+        related_name='app_link_submissions',
+        verbose_name='站点',
+    )
+    platform = models.CharField(max_length=16, choices=PLATFORM_CHOICES, verbose_name='平台')
+    url = models.URLField(max_length=500, verbose_name='链接')
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, verbose_name='状态'
+    )
+    admin_note = models.TextField(blank=True, default='', verbose_name='审核意见')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='提交时间')
+    reviewed_at = models.DateTimeField(blank=True, null=True, verbose_name='审核时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'APP 链接提交/审核'
+        verbose_name_plural = 'APP 链接提交/审核'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'site', 'platform'],
+                condition=models.Q(status='pending'),
+                name='unique_pending_app_link_submission',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.site} {self.get_platform_display()} ({self.get_status_display()})'
+
+    def approve(self):
+        """审核通过：将链接写入站点对应字段，安卓额外触发后台拉取。"""
+        from django.utils import timezone
+
+        from .services import start_pull
+
+        site = self.site
+        if self.platform == self.PLATFORM_ANDROID:
+            site.app_android_url = self.url
+            site.save(update_fields=['app_android_url', 'updated_at'])
+            start_pull(site.pk)
+        elif self.platform == self.PLATFORM_GOOGLE_PLAY:
+            site.app_google_play_url = self.url
+            site.save(update_fields=['app_google_play_url', 'updated_at'])
+        elif self.platform == self.PLATFORM_IOS:
+            site.app_ios_url = self.url
+            site.save(update_fields=['app_ios_url', 'updated_at'])
+        self.status = self.STATUS_APPROVED
+        self.reviewed_at = timezone.now()
+        self.save(update_fields=['status', 'reviewed_at'])
+        from .points import award_points
+
+        award_points(
+            self.user,
+            'app_link_approved',
+            'app_link_submission',
+            self.pk,
+            description=f'APP 链接审核通过：{site} · {self.get_platform_display()}',
+        )
         return site
 
 

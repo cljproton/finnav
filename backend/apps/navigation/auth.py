@@ -49,6 +49,34 @@ class EmailCodeRateThrottle(SimpleRateThrottle):
         raise Throttled(detail=_('操作过于频繁，请稍后再试'), wait=wait)
 
 
+class CaptchaImageRateThrottle(SimpleRateThrottle):
+    """图形验证码接口按 IP 限流（scope='captcha_image'），防止刷库。"""
+
+    scope = 'captcha_image'
+    rate = '30/min'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class EmailVerifyRateThrottle(SimpleRateThrottle):
+    """邮箱验证码校验接口（注册验证 / 找回密码确认）按 IP 限流。"""
+
+    scope = 'email_verify'
+    rate = '20/min'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = request.user.pk
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
 def _send_code_email(email, purpose, code):
     """发送验证码邮件。本地（无 RESEND_API_KEY）走 console backend 打印明文。"""
     subject_map = {
@@ -146,6 +174,7 @@ class EmailRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(min_length=6, max_length=128, write_only=True)
     captcha_token = serializers.CharField(required=False, allow_blank=True)
     captcha_answer = serializers.CharField(required=False, allow_blank=True)
+    referral_code = serializers.CharField(required=False, allow_blank=True, max_length=12)
 
     def validate_email(self, value):
         value = force_str(value).strip().lower()
@@ -159,8 +188,10 @@ class EmailRegisterSerializer(serializers.Serializer):
 
     def save(self):
         email = self.validated_data['email']
+        referral_code = self.validated_data.get('referral_code') or ''
         # 后台可关闭邮箱验证：关闭时直接创建用户（无需邮件验证码）
         from .models import AppSetting
+        from .points import process_registration
 
         if not AppSetting.get().require_email_verification:
             user = User.objects.create_user(
@@ -168,6 +199,7 @@ class EmailRegisterSerializer(serializers.Serializer):
                 email=email,
                 password=self.validated_data['password'],
             )
+            process_registration(user, referral_code)
             refresh = RefreshToken.for_user(user)
             return {
                 'access': str(refresh.access_token),
@@ -175,7 +207,7 @@ class EmailRegisterSerializer(serializers.Serializer):
             }
         try:
             code, _cooldown = EmailVerification.generate(
-                email, EmailVerification.PURPOSE_REGISTER
+                email, EmailVerification.PURPOSE_REGISTER, referral_code
             )
         except EmailCooldownError as exc:
             raise serializers.ValidationError({'email': str(exc)})
@@ -187,6 +219,7 @@ class EmailVerifySerializer(serializers.Serializer):
     email = serializers.EmailField()
     code = serializers.CharField(max_length=6)
     password = serializers.CharField(min_length=6, max_length=128, write_only=True)
+    referral_code = serializers.CharField(required=False, allow_blank=True, max_length=12)
 
     def validate(self, attrs):
         email = force_str(attrs['email']).strip().lower()
@@ -198,18 +231,24 @@ class EmailVerifySerializer(serializers.Serializer):
         ).first()
         if record is None:
             raise serializers.ValidationError({'code': _('验证码不存在或已失效，请重新获取。')})
+        # verify() 成功后即删除记录，需先取出暂存的推广码
+        referral_code = (record.referral_code or attrs.get('referral_code') or '').strip()
         if not record.verify(attrs['code']):
             raise serializers.ValidationError({'code': _('验证码错误或已过期，请重新获取。')})
+        attrs['referral_code'] = referral_code
         return attrs
 
     @transaction.atomic
     def save(self):
+        from .points import process_registration
+
         email = self.validated_data['email']
         user = User.objects.create_user(
             username=email,
             email=email,
             password=self.validated_data['password'],
         )
+        process_registration(user, self.validated_data.get('referral_code'))
         refresh = RefreshToken.for_user(user)
         return {
             'access': str(refresh.access_token),
@@ -223,8 +262,9 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     def save(self):
         email = force_str(self.validated_data['email']).strip().lower()
         user = User.objects.filter(username__iexact=email).first()
+        # 不存在的邮箱也返回成功，避免暴露邮箱是否已注册（用户枚举防护）
         if user is None:
-            raise serializers.ValidationError({'email': _('该邮箱未注册。')})
+            return None
         try:
             code, _cooldown = EmailVerification.generate(
                 email, EmailVerification.PURPOSE_RESET
@@ -232,6 +272,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         except EmailCooldownError as exc:
             raise serializers.ValidationError({'email': str(exc)})
         _send_code_email(email, EmailVerification.PURPOSE_RESET, code)
+        return None
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
@@ -263,6 +304,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([CaptchaImageRateThrottle])
 def captcha_image(request):
     """GET /api/auth/captcha/ -> {token, image: "data:image/png;base64,..."}"""
     from base64 import b64encode
@@ -297,6 +339,7 @@ def register(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([EmailVerifyRateThrottle])
 def verify(request):
     serializer = EmailVerifySerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -318,6 +361,7 @@ def password_reset_request(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([EmailVerifyRateThrottle])
 def password_reset_confirm(request):
     serializer = PasswordResetConfirmSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)

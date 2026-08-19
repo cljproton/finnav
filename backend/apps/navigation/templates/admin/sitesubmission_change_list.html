@@ -6,11 +6,27 @@
 {% block extrastyle %}
     {{ block.super }}
     <style>
+        :root {
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-success: #059669;
+            --fn-success-soft: #ECFDF5;
+            --fn-danger: #B02A37;
+            --fn-danger-soft: #FEF2F2;
+            --fn-danger-border: #FECACA;
+            --fn-warning: #B45309;
+            --fn-warning-soft: #FEF3C7;
+            --fn-border: #E5E7EB;
+            --fn-radius-sm: 6px;
+            --fn-radius-md: 10px;
+            --fn-radius-pill: 999px;
+            --fn-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+        }
         .submission-tabs {
             display: flex;
             gap: 8px;
             margin: 0 0 18px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid var(--fn-border);
             padding-bottom: 0;
         }
         .submission-tabs .tab {
@@ -26,9 +42,9 @@
         .submission-tabs .tab:hover { background: #f3f4f6; color: #111827; }
         .submission-tabs .tab.active {
             background: #fff;
-            color: #2563eb;
-            border-color: #e5e7eb;
-            border-bottom: 2px solid #2563eb;
+            color: var(--fn-primary);
+            border-color: var(--fn-border);
+            border-bottom: 2px solid var(--fn-primary);
             font-weight: 600;
         }
         .submission-tabs .tab .count {
@@ -36,14 +52,14 @@
             min-width: 18px;
             padding: 0 6px;
             margin-left: 6px;
-            border-radius: 10px;
-            background: #e5e7eb;
+            border-radius: var(--fn-radius-md);
+            background: var(--fn-border);
             color: #4b5563;
             font-size: 12px;
             line-height: 18px;
             text-align: center;
         }
-        .submission-tabs .tab.active .count { background: #dbeafe; color: #2563eb; }
+        .submission-tabs .tab.active .count { background: var(--fn-primary-soft); color: var(--fn-primary); }
         .submission-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -52,13 +68,13 @@
         }
         .submission-card {
             background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
+            border: 1px solid var(--fn-border);
+            border-radius: var(--fn-radius-md);
             padding: 16px;
             display: flex;
             flex-direction: column;
             gap: 10px;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+            box-shadow: var(--fn-shadow);
             transition: box-shadow .18s ease, transform .18s ease;
         }
         .submission-card:hover { box-shadow: 0 6px 16px rgba(15, 23, 42, .10); transform: translateY(-2px); }
@@ -74,18 +90,18 @@
             color: #111827;
             text-decoration: none;
         }
-        .submission-card .card-title:hover { color: #2563eb; text-decoration: underline; }
+        .submission-card .card-title:hover { color: var(--fn-primary); text-decoration: underline; }
         .submission-card .status-badge {
             flex-shrink: 0;
             font-size: 12px;
             padding: 2px 10px;
-            border-radius: 999px;
+            border-radius: var(--fn-radius-pill);
             font-weight: 500;
         }
-        .status-pending { background: #fef3c7; color: #b45309; }
-        .status-approved { background: #d1fae5; color: #047857; }
-        .status-rejected { background: #fee2e2; color: #b91c1c; }
-        .submission-card .url { font-size: 12px; color: #2563eb; word-break: break-all; }
+        .status-pending { background: var(--fn-warning-soft); color: var(--fn-warning); }
+        .status-approved { background: var(--fn-success-soft); color: var(--fn-success); }
+        .status-rejected { background: var(--fn-danger-soft); color: var(--fn-danger); }
+        .submission-card .url { font-size: 12px; color: var(--fn-primary); word-break: break-all; }
         .submission-card .desc {
             font-size: 13px;
             color: #4b5563;
@@ -98,28 +114,28 @@
         .submission-card .meta { font-size: 12px; color: #6b7280; display: flex; flex-wrap: wrap; gap: 12px; }
         .submission-card .chips { display: flex; flex-wrap: wrap; gap: 6px; }
         .submission-card .chip {
-            font-size: 12px; padding: 2px 10px; border-radius: 999px; background: #eef2ff; color: #4f46e5;
+            font-size: 12px; padding: 2px 10px; border-radius: var(--fn-radius-pill); background: var(--fn-primary-soft); color: var(--fn-primary);
         }
-        .submission-card .chip-cat { background: #ecfdf5; color: #047857; }
+        .submission-card .chip-cat { background: var(--fn-success-soft); color: var(--fn-success); }
         .submission-card .admin-note {
-            font-size: 12px; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
-            border-radius: 8px; padding: 8px 10px; line-height: 1.5;
+            font-size: 12px; color: var(--fn-danger); background: var(--fn-danger-soft); border: 1px solid var(--fn-danger-border);
+            border-radius: var(--fn-radius-sm); padding: 8px 10px; line-height: 1.5;
         }
         .submission-card .card-actions {
             display: flex; gap: 8px; margin-top: auto; padding-top: 2px;
         }
         .submission-card .btn {
-            border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+            border: none; border-radius: var(--fn-radius-sm); padding: 7px 14px; font-size: 13px; cursor: pointer;
             font-weight: 500; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
             transition: filter .15s ease; color: #fff;
         }
         .submission-card .btn:hover { filter: brightness(.95); }
-        .btn-approve { background: #16a34a; }
-        .btn-reject { background: #dc2626; }
-        .btn-link { background: #2563eb; }
+        .btn-approve { background: var(--fn-success); }
+        .btn-reject { background: var(--fn-danger); }
+        .btn-link { background: var(--fn-primary); }
         .submission-empty {
-            text-align: center; padding: 48px 0; color: #9ca3af; font-size: 14px; border: 1px dashed #e5e7eb;
-            border-radius: 10px; background: #fafafa;
+            text-align: center; padding: 48px 0; color: #9ca3af; font-size: 14px; border: 1px dashed var(--fn-border);
+            border-radius: var(--fn-radius-md); background: #fafafa;
         }
     </style>
 {% endblock %}
@@ -156,7 +172,7 @@
             {% endif %}
             <div class="card-actions">
                 {% if sub.status == "pending" %}
-                    <button type="button" class="btn btn-approve" onclick="submissionApprove({{ sub.pk }});">✓ 通过并创建</button>
+                    <button type="button" class="btn btn-approve" onclick="submissionApprove({{ sub.pk }}, '{{ sub.name|escapejs }}');">✓ 通过并创建</button>
                     <button type="button" class="btn btn-reject" onclick="submissionReject({{ sub.pk }});">✗ 驳回</button>
                 {% elif sub.status == "approved" and sub.approved_site_id %}
                     <a class="btn btn-link" href="{% url 'admin:navigation_site_change' sub.approved_site_id %}">查看已建站点</a>
@@ -168,7 +184,7 @@
         {% endfor %}
     </div>
     {% else %}
-    <div class="submission-empty">暂无提交记录</div>
+    <div class="submission-empty">{% if current_status == 'pending' %}暂无待审核的提交，稍后再来看看。{% elif current_status == 'approved' %}还没有已通过的提交记录。{% elif current_status == 'rejected' %}还没有已驳回的提交记录。{% else %}还没有提交记录，去前端「提交站点」看看，或等用户来提交吧。{% endif %}</div>
     {% endif %}
 {% endblock %}
 
@@ -186,8 +202,8 @@
                 return '{% url 'admin:index' %}navigation/sitesubmission/' + subId;
             }
 
-            window.submissionApprove = function (subId) {
-                if (!confirm('确认通过并创建站点吗？')) return;
+            window.submissionApprove = function (subId, name) {
+                if (!confirm(name ? '确认通过并创建站点「' + name + '」吗？' : '确认通过并创建站点吗？')) return;
                 fetch(baseUrl(subId) + '/approve/', {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: '{}'})
                     .then(function () { window.location.reload(); });
             };

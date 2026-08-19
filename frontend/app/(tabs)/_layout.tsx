@@ -65,6 +65,9 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="site" options={{ href: null }} />
+      <Tabs.Screen name="submit-site" options={{ href: null }} />
+      <Tabs.Screen name="points" options={{ href: null }} />
     </Tabs>
   );
 }
