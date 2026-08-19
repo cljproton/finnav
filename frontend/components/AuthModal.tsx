@@ -53,6 +53,7 @@ export default function AuthModal({
   const [totpToken, setTotpToken] = useState("");
   const [captcha, setCaptcha] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -64,6 +65,7 @@ export default function AuthModal({
     setTotpToken("");
     setCaptcha("");
     setCaptchaToken(null);
+    setCaptchaKey((k) => k + 1);
     setError("");
     setLoading(false);
   };
@@ -107,6 +109,9 @@ export default function AuthModal({
       }
     } catch (e: any) {
       setError(e?.message || t("操作失败"));
+      setCaptcha("");
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -151,8 +156,14 @@ export default function AuthModal({
       }
       setCode("");
       setError("");
+      setCaptcha("");
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     } catch (e: any) {
       setError(e?.message || t("重发失败"));
+      setCaptcha("");
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -183,6 +194,9 @@ export default function AuthModal({
       onClose();
     } catch (e: any) {
       setError(e?.message || t("操作失败"));
+      setCaptcha("");
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -201,6 +215,12 @@ export default function AuthModal({
       onClose();
     } catch (e: any) {
       setError(e?.message || t("操作失败"));
+      setStep("form");
+      setOtpCode("");
+      setTotpToken("");
+      setCaptcha("");
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -412,6 +432,7 @@ export default function AuthModal({
 
             {step === "form" && (
               <CaptchaInput
+                key={captchaKey}
                 colors={colors}
                 value={captcha}
                 onChangeText={setCaptcha}
@@ -421,6 +442,7 @@ export default function AuthModal({
 
             {step === "verify" && (
               <CaptchaInput
+                key={`${captchaKey}-verify`}
                 colors={colors}
                 value={captcha}
                 onChangeText={setCaptcha}

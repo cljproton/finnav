@@ -15,11 +15,26 @@ import qrcode
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 
 from .models import TOTPChallenge, TwoFactor
+
+
+class TwoFAChallengeThrottle(SimpleRateThrottle):
+    """2FA 挑战接口按 IP 限流，缓解暴力枚举。"""
+
+    scope = 'twofa_challenge'
+    rate = '10/min'
+
+    def get_cache_key(self, request, view):
+        if request.user and request.user.is_authenticated:
+            ident = f'user:{request.user.pk}'
+        else:
+            ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
 def twofa_secret(user):
@@ -135,10 +150,12 @@ def twofa_disable(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TwoFAChallengeThrottle])
 def twofa_challenge(request):
     """POST /api/auth/twofa/challenge/ {totp_token, code} 登录二次校验。
 
     密码第一步已签发 totp_token；这里校验 2FA 动态码后返回正式 JWT。
+    每个挑战最多尝试 MAX_ATTEMPTS 次，超限即作废，防止动态码暴力枚举。
     """
     from .auth import EmailTokenObtainPairSerializer
 
@@ -153,8 +170,16 @@ def twofa_challenge(request):
         return Response(
             {'detail': _('登录凭据已过期，请重新登录。')}, status=status.HTTP_401_UNAUTHORIZED
         )
+    if challenge.attempts >= TOTPChallenge.MAX_ATTEMPTS:
+        challenge.used = True
+        challenge.save(update_fields=['used'])
+        return Response(
+            {'detail': _('登录凭据已失效，请重新登录。')}, status=status.HTTP_401_UNAUTHORIZED
+        )
     row = TwoFactor.objects.filter(user=challenge.user, enabled=True).first()
     if row is None or not _verify_code(row, code):
+        challenge.attempts = challenge.attempts + 1
+        challenge.save(update_fields=['attempts'])
         return Response(
             {'code': _('动态码错误，请重试。')}, status=status.HTTP_400_BAD_REQUEST
         )

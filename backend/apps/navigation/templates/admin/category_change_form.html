@@ -3,11 +3,25 @@
 {% block extrahead %}
     {{ block.super }}
     <style>
+        :root {
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-success: #059669;
+            --fn-danger: #B02A37;
+            --fn-border: #E5E7EB;
+            --fn-input-border: #D1D5DB;
+            --fn-text: #111827;
+            --fn-text-2: #4B5563;
+            --fn-text-3: #6B7280;
+            --fn-radius-sm: 6px;
+            --fn-radius-md: 10px;
+            --fn-radius-pill: 999px;
+        }
         .cm-wrap {
             padding: 14px 16px;
             margin-top: 16px;
-            border: 1px solid #d9dee3;
-            border-radius: 6px;
+            border: 1px solid var(--fn-border);
+            border-radius: var(--fn-radius-md);
             background: #fff;
         }
         .cm-wrap h2 {
@@ -36,39 +50,44 @@
             max-width: 460px;
             padding: 7px 10px;
             font-size: 14px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            border: 1px solid var(--fn-input-border);
+            border-radius: var(--fn-radius-sm);
             background: #fff;
+        }
+        .cm-select:focus, .cm-search:focus {
+            outline: none;
+            border-color: var(--fn-primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
         }
         .cm-search {
             width: 100%;
             max-width: 460px;
             padding: 7px 10px;
             font-size: 14px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            border: 1px solid var(--fn-input-border);
+            border-radius: var(--fn-radius-sm);
             box-sizing: border-box;
         }
         .cm-btn {
             padding: 7px 16px;
             font-size: 14px;
-            border: 1px solid #4F46E5;
-            border-radius: 4px;
-            background: #4F46E5;
+            border: 1px solid var(--fn-primary);
+            border-radius: var(--fn-radius-sm);
+            background: var(--fn-primary);
             color: #fff;
             cursor: pointer;
             white-space: nowrap;
         }
         .cm-btn:active { opacity: .85; }
         .cm-btn.danger {
-            border-color: #b02a37;
+            border-color: var(--fn-danger);
             background: #fff;
-            color: #b02a37;
+            color: var(--fn-danger);
         }
         .cm-btn.ok {
-            border-color: #059669;
+            border-color: var(--fn-success);
             background: #fff;
-            color: #059669;
+            color: var(--fn-success);
         }
         .cm-fb {
             display: block;
@@ -77,8 +96,8 @@
             color: #6b7280;
             margin-top: 3px;
         }
-        .cm-fb.ok { color: #059669; }
-        .cm-fb.err { color: #b02a37; }
+        .cm-fb.ok { color: var(--fn-success); }
+        .cm-fb.err { color: var(--fn-danger); }
         table.cm-table {
             width: 100%;
             border-collapse: collapse;
@@ -86,7 +105,7 @@
         }
         table.cm-table th, table.cm-table td {
             padding: 6px 10px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid var(--fn-border);
             font-size: 13px;
             text-align: left;
         }
@@ -96,10 +115,10 @@
         .cm-badge {
             display: inline-block;
             padding: 1px 8px;
-            border-radius: 10px;
+            border-radius: var(--fn-radius-pill);
             font-size: 12px;
-            background: #eef2ff;
-            color: #4F46E5;
+            background: var(--fn-primary-soft);
+            color: var(--fn-primary);
         }
     </style>
     <script>
@@ -355,7 +374,7 @@
             </tbody>
         </table>
     {% else %}
-        <p class="cm-empty">该分类下暂无启用的站点。</p>
+        <p class="cm-empty">该分类下暂无启用的站点，可在下方「添加站点」中勾选并批量加入。</p>
     {% endif %}
 
     {% if hidden_sites %}
@@ -391,7 +410,7 @@
     <div class="cm-row">
         <label class="cm-label">选择站点（可多选）</label>
         <div class="cm-inline">
-            <ul id="cm-site-list" style="list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;flex:1;max-width:560px;">
+            <ul id="cm-site-list" style="list-style:none;margin:0;padding:0;max-height:240px;overflow:auto;border:1px solid var(--fn-border);border-radius:6px;flex:1;max-width:560px;">
                 {% for site in addable_sites %}
                     <li data-name="{{ site.name|lower }}"
                         style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;">

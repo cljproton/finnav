@@ -3,10 +3,12 @@
 升级 simpleui 时请重新同步此文件，并保留下方改动：
 - 「双因素认证」下拉项；
 - 右上角 中/EN 语言切换按钮（#admin-lang-form + .admin-lang-btn）；
-- simpleui locale 文件跟随激活语言（内置 get_language 模板标签仅返回 settings.LANGUAGE_CODE，改用模板里的 LANGUAGE_CODE 映射 en 到 en-us）。
+- simpleui locale 文件跟随激活语言（内置 get_language 模板标签仅返回 settings.LANGUAGE_CODE，改用模板里的 LANGUAGE_CODE 映射 en 到 en-us）；
+- 右上角「待审核」通知按钮 + 红色气泡徽标（#fn-pending-badge，30s 轮询 /admin/review/count/），已移除「改变主题」按钮与主题弹窗。
 完整维护说明见独立页面：/admin/upgrade-notes/。{% endcomment %}
 {% load i18n static %}
 {% load simpletags %}
+{% load review_tags %}
 {% get_current_language as LANGUAGE_CODE %}{% get_current_language_bidi as LANGUAGE_BIDI %}
 <html lang="{{ LANGUAGE_CODE|default:"en-us" }}" {% if LANGUAGE_BIDI %}dir="rtl"{% endif %}>
 <head>
@@ -72,6 +74,31 @@
         border-color: #409EFF;
         color: #FFF;
         border-radius: 6px;
+    }
+    .fn-pending {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+    }
+    .fn-pending-badge {
+        position: absolute;
+        top: -4px;
+        right: -6px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 9px;
+        background: #f56c6c;
+        color: #FFF;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 18px;
+        text-align: center;
+        box-shadow: 0 0 0 2px #fff;
+        box-sizing: border-box;
+    }
+    .fn-pending-badge.hide {
+        display: none;
     }
 </style>
 
@@ -186,14 +213,19 @@
                                             title="English">EN</button>
                                 {% endif %}
                             </form>
-                            {% verbatim mycode %}
-                                <el-button @click="themeDialogVisible=true" v-waves>
-                                    <i class="fas fa-palette"></i>
-                                    <span v-text="getLanuage('Change theme')"></span><i
-                                        class="el-icon-arrow-down el-icon--right"></i>
-                                </el-button>
+                            {% pending_review_total as pending_total %}
+                            <span class="fn-pending">
+                                {% verbatim mycode %}
+                                    <el-button @click="openTab({eid:300001,name:'待审核',icon:'fas fa-clipboard-check',url:'/admin/review/'})"
+                                               v-waves>
+                                        <i class="fas fa-clipboard-check"></i>
+                                        <span>待审核</span>
+                                    </el-button>
+                                {% endverbatim mycode %}
+                                <span class="fn-pending-badge{% if pending_total == 0 %} hide{% endif %}"
+                                      id="fn-pending-badge">{{ pending_total }}</span>
+                            </span>
 
-                            {% endverbatim mycode %}
                             <el-dropdown>
                                 <el-button v-waves>
                                     <i class="fas fa-user"></i>
@@ -292,26 +324,6 @@
         <iframe frameborder="0" :src="pwdDialog.url" width="100%" height="500"></iframe>
     </el-dialog>
 
-    {% block theme_dialog %}
-        <el-dialog
-                :title="getLanuage('Change theme')"
-                :visible.sync="themeDialogVisible"
-                :width="small?'90%':'50%'">
-            {% block theme_body %}
-                <div class="change-theme clearfix">
-                    <div v-waves :class="{'theme-item':true,active:themeName==item.text}" v-for="(item,i) in themes"
-                         :key="item.text"
-                         :title="getLanuage(item.text)" @click="setTheme(item)">
-                        <div class="theme-menu" :style="{background:item.menu}">
-                            <div class="theme-logo" :style="{background: item.logo}"></div>
-                        </div>
-                        <div class="theme-top" :style="{background: item.top}"></div>
-                    </div>
-                </div>
-            {% endblock %}
-        </el-dialog>
-    {% endblock %}
-
     {% block font_dialog %}
         <el-dialog
                 :title="getLanuage('Set font size')"
@@ -397,6 +409,24 @@
 {% endblock %}
 {% block script %}
     {#    预留脚本block 可以实现基础该页面，添加自定义脚本#}
+    <script type="text/javascript">
+        (function () {
+            var badge = document.getElementById('fn-pending-badge');
+            if (!badge) return;
+            function refresh() {
+                fetch('/admin/review/count/', {headers: {'Accept': 'application/json'}})
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (data) {
+                        if (!data || typeof data.total !== 'number') return;
+                        badge.textContent = data.total;
+                        badge.classList.toggle('hide', data.total === 0);
+                    })
+                    .catch(function () {});
+            }
+            refresh();
+            setInterval(refresh, 30000);
+        })();
+    </script>
 {% endblock %}
 </body>
 </html>

@@ -89,6 +89,17 @@ def restore_archive(fileobj):
     data_bytes = zf.getinfo('data.json').file_size
     data_content = zf.read('data.json')
 
+    # 校验媒体条目路径，防止 zip-slip 越权写文件（media/../../x 逃逸 MEDIA_ROOT）
+    media_root_real = os.path.realpath(str(settings.MEDIA_ROOT))
+    for name in media_files:
+        rel = name[len('media/'):]
+        rel = rel.replace('\\', '/')
+        dest = os.path.realpath(os.path.join(media_root_real, rel))
+        if not (dest == media_root_real or dest.startswith(media_root_real + os.sep)):
+            raise CommandError(
+                f'备份文件包含越界路径（{name}），已拒绝恢复。'
+            )
+
     # loaddata 需要真实文件路径（不支持 zip 内路径），先解到临时目录
     import tempfile
 
@@ -109,8 +120,10 @@ def restore_archive(fileobj):
             os.makedirs(media_root, exist_ok=True)
             restored = 0
             for name in media_files:
-                rel = name[len('media/'):]
-                dest = os.path.join(media_root, rel)
+                rel = name[len('media/'):].replace('\\', '/')
+                dest = os.path.realpath(os.path.join(media_root_real, rel))
+                if not (dest == media_root_real or dest.startswith(media_root_real + os.sep)):
+                    continue  # 前面已整体校验，此处仅防御重复/变形条目
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with zf.open(name) as src, open(dest, 'wb') as out:
                     out.write(src.read())

@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "./config";
 import i18n, { getAcceptLanguage } from "./i18n";
+import { clearPendingReferral, getPendingReferral } from "./referral";
 
 const TOKEN_KEY = "auth_token";
 const EMAIL_KEY = "auth_email";
@@ -89,12 +90,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const prev = prevTokenRef.current;
     if (prev === state.token) return;
     prevTokenRef.current = state.token;
-    queryClient.invalidateQueries({ queryKey: ["site"] });
-    queryClient.invalidateQueries({ queryKey: ["sites"] });
+    const keys = [
+      ["site"],
+      ["sites"],
+      ["site-reviews"],
+      ["site-invite"],
+      ["site-tutorials"],
+      ["site-tutorials-top"],
+      ["my-app-links"],
+      ["me-points"],
+      ["me-points-transactions"],
+      ["site-submissions"],
+    ];
+    keys.forEach((key) => queryClient.invalidateQueries({ queryKey: key }));
   }, [state.token, queryClient]);
 
   const register = useCallback(
     async (email: string, password: string, captcha?: CaptchaPayload) => {
+      const referralCode = await getPendingReferral();
       const res = await fetch(`${API_URL}/auth/register/`, {
         method: "POST",
         headers: {
@@ -106,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password,
           captcha_token: captcha?.token,
           captcha_answer: captcha?.answer,
+          referral_code: referralCode || undefined,
         }),
       });
       if (!res.ok) {
@@ -114,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json().catch(() => ({}));
       // 后台关闭邮箱验证时，注册接口直接创建用户并返回令牌
       if (data.access) {
+        await clearPendingReferral();
         await Promise.all([
           AsyncStorage.setItem(TOKEN_KEY, data.access),
           AsyncStorage.setItem(EMAIL_KEY, email),
@@ -129,18 +144,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verify = useCallback(
     async (email: string, code: string, password: string) => {
+      const referralCode = await getPendingReferral();
       const res = await fetch(`${API_URL}/auth/verify/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Accept-Language": getAcceptLanguage(),
         },
-        body: JSON.stringify({ email, code, password }),
+        body: JSON.stringify({
+          email,
+          code,
+          password,
+          referral_code: referralCode || undefined,
+        }),
       });
       if (!res.ok) {
         throw new Error(await extractError(res));
       }
       const data: { access: string; refresh: string } = await res.json();
+      await clearPendingReferral();
       await Promise.all([
         AsyncStorage.setItem(TOKEN_KEY, data.access),
         AsyncStorage.setItem(EMAIL_KEY, email),

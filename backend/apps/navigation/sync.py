@@ -21,14 +21,25 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from .models import AppSetting
+        from .points import ensure_user_profile
+
         user = request.user
         favs = list(
-            UserFavorite.objects.filter(user=user).select_related('site')
+            UserFavorite.objects.filter(user=user)
+            .select_related('site__category')
+            .prefetch_related('site__tags')
         )
         history = list(
             UserSearchHistory.objects.filter(user=user)
             .values_list('term', flat=True)
         )
+        profile = ensure_user_profile(user)
+        referral_code = profile.ensure_referral_code()
+        share_base = AppSetting.get().share_base_url.strip()
+        referral_share_url = ''
+        if share_base:
+            referral_share_url = f'{share_base.rstrip("/")}/?ref={referral_code}'
         return Response(
             {
                 'id': user.id,
@@ -39,6 +50,12 @@ class MeView(APIView):
                 ],
                 'favorite_ids': [f.site_id for f in favs],
                 'search_history': history,
+                'points': {
+                    'balance': profile.points_balance,
+                    'lifetime': profile.points_lifetime,
+                },
+                'referral_code': referral_code,
+                'referral_share_url': referral_share_url,
             }
         )
 

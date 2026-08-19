@@ -1,4 +1,8 @@
-from django.db.models import Q
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
+from django.db.models import F, Q
+from django.http import Http404
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -9,24 +13,33 @@ from rest_framework.views import APIView
 
 from .models import (
     AppDownload,
+    AppLinkSubmission,
     AppSetting,
     Category,
+    PointRule,
+    PointTransaction,
     Rating,
     Site,
     SiteSubmission,
+    SiteTutorial,
     SiteVisit,
     Tag,
     UserSiteInvite,
 )
 from .serializers import (
     AppDownloadSerializer,
+    AppLinkSubmissionSerializer,
     AppSettingSerializer,
     CategorySerializer,
+    PointRuleSerializer,
+    PointTransactionSerializer,
     RatingReviewSerializer,
     RatingSerializer,
     SiteSerializer,
     SiteSubmissionCreateSerializer,
     SiteSubmissionListSerializer,
+    SiteTutorialCreateSerializer,
+    SiteTutorialSerializer,
     TagSerializer,
     UserSiteInviteSerializer,
 )
@@ -66,6 +79,22 @@ class RatingsPagination(PageNumberPagination):
     max_page_size = 100
 
 
+class TutorialsPagination(PageNumberPagination):
+    """教程列表分页：固定每页 20 条。"""
+
+    page_size = 20
+    page_size_query_param = None
+    max_page_size = 100
+
+
+class AppLinksPagination(PageNumberPagination):
+    """我的 APP 下载链接提交分页：固定每页 10 条。"""
+
+    page_size = 10
+    page_size_query_param = None
+    max_page_size = 100
+
+
 class SiteViewSet(viewsets.ReadOnlyModelViewSet):
     """
     GET /api/sites/ 站点列表（分页：{count, next, previous, results}）。
@@ -78,7 +107,11 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
     GET /api/sites/ids/ 全部启用站点 id（供收藏剪枝等轻量场景，不分页）。
     """
 
-    queryset = Site.objects.filter(is_active=True)
+    queryset = (
+        Site.objects.filter(is_active=True)
+        .select_related('category')
+        .prefetch_related('tags')
+    )
     serializer_class = SiteSerializer
     pagination_class = SiteListPagination
     filter_backends = (filters.OrderingFilter,)
@@ -125,7 +158,7 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
     def visit(self, request, pk=None):
         """POST /api/sites/{id}/visit/ 记录一次站点访问（打开详情页）。"""
         site = self.get_object()
-        Site.objects.filter(pk=site.pk).update(visit_count=site.visit_count + 1)
+        Site.objects.filter(pk=site.pk).update(visit_count=F('visit_count') + 1)
         SiteVisit.objects.create(site_id=site.pk)
         site.refresh_from_db(fields=['visit_count'])
         return Response(
@@ -147,12 +180,13 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
                 {'error': _('未知下载平台')}, status=status.HTTP_400_BAD_REQUEST
             )
         Site.objects.filter(pk=site.pk).update(
-            download_count=site.download_count + 1
+            download_count=F('download_count') + 1
         )
+        site.refresh_from_db(fields=['download_count'])
         user = request.user if getattr(request.user, 'is_authenticated', False) else None
         AppDownload.objects.create(site_id=site.pk, platform=platform, user=user)
         return Response(
-            {'id': site.pk, 'download_count': site.download_count + 1}
+            {'id': site.pk, 'download_count': site.download_count}
         )
 
     @action(detail=True, methods=['get'], permission_classes=[AllowAny])
@@ -264,6 +298,320 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(site=site, user=request.user)
         return Response(serializer.data)
+
+    # ---------- 用户分享教程 ----------
+
+    def _get_tutorial_or_404(self, site, tutorial_id):
+        tutorial = SiteTutorial.objects.filter(pk=tutorial_id, site=site).first()
+        if tutorial is None:
+            raise Http404(_('教程不存在'))
+        return tutorial
+
+    @action(detail=True, methods=['get', 'post'], url_path='tutorials')
+    def tutorials(self, request, pk=None):
+        """站点用户分享的教程列表 / 分享新教程。
+
+        GET  /api/sites/{id}/tutorials/          列表（?type=text|video|agent 过滤，
+             只展示已审核通过(approved)的教程；登录用户额外包含自己分享的
+             pending/rejected 教程以便看到审核状态，按访问量倒序分页）
+        POST /api/sites/{id}/tutorials/          body {type, url, title?}；登录用户分享，
+             标题由后端自动抓取（fetch_page_title）；新分享默认 status=pending，
+             需管理员审核通过后才公开展示。
+        """
+        site = self.get_object()
+        context = {'request': request}
+
+        if request.method == 'POST':
+            if not getattr(request.user, 'is_authenticated', False):
+                return Response(
+                    {'error': _('请先登录。')}, status=status.HTTP_401_UNAUTHORIZED
+                )
+            serializer = SiteTutorialCreateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            tutorial = serializer.save(site=site, user=request.user)
+            return Response(
+                SiteTutorialSerializer(tutorial, context=context).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        qs = SiteTutorial.objects.filter(site=site).select_related('user')
+        if getattr(request.user, 'is_authenticated', False):
+            qs = qs.filter(
+                Q(status=SiteTutorial.STATUS_APPROVED) | Q(user=request.user)
+            )
+        else:
+            qs = qs.filter(status=SiteTutorial.STATUS_APPROVED)
+        tutorial_type = request.query_params.get('type')
+        if tutorial_type:
+            qs = qs.filter(type=tutorial_type)
+        qs = qs.order_by('-view_count', '-created_at')
+        paginator = TutorialsPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        if page is not None:
+            return paginator.get_paginated_response(
+                SiteTutorialSerializer(page, many=True, context=context).data
+            )
+        return Response(
+            SiteTutorialSerializer(qs, many=True, context=context).data
+        )
+
+    @action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsAuthenticated],
+        url_path='tutorials/title',
+    )
+    def tutorial_title_preview(self, request, pk=None):
+        """POST /api/sites/{id}/tutorials/title/ 抓取链接标题供分享前预览/修改。
+
+        body {url}；返回 {title, fallback}。抓取成功时 fallback=false；
+        失败时 title 为域名兜底且 fallback=true，前端应留空让用户手动填写。
+        """
+        url = str(request.data.get('url') or '').strip()
+        if not url:
+            return Response(
+                {'error': _('请填写链接。')}, status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            URLValidator(schemes=['http', 'https'])(url)
+        except ValidationError:
+            return Response(
+                {'error': _('链接格式无效。')}, status=status.HTTP_400_BAD_REQUEST
+            )
+        from .services import fetch_page_title_info
+
+        title, fallback = fetch_page_title_info(url)
+        return Response({'title': title, 'fallback': fallback})
+
+    @action(detail=True, methods=['get'], url_path='tutorials/top')
+    def tutorials_top(self, request, pk=None):
+        """GET /api/sites/{id}/tutorials/top/ 各类型访问量前 10 的教程。
+
+        返回 {text: [...], video: [...], agent: [...]}，供详情页展示（仅已审核通过）。
+        """
+        site = self.get_object()
+        context = {'request': request}
+        top = {}
+        for tutorial_type, _label in SiteTutorial.TYPE_CHOICES:
+            qs = (
+                SiteTutorial.objects.filter(
+                    site=site,
+                    type=tutorial_type,
+                    status=SiteTutorial.STATUS_APPROVED,
+                )
+                .select_related('user')
+                .order_by('-view_count', '-created_at')[:10]
+            )
+            top[tutorial_type] = SiteTutorialSerializer(qs, many=True, context=context).data
+        return Response(top)
+
+    @action(detail=True, methods=['post'], url_path=r'tutorials/(?P<tutorial_id>[^/.]+)/visit')
+    def tutorial_visit(self, request, pk=None, tutorial_id=None):
+        """POST /api/sites/{id}/tutorials/{tid}/visit/ 记录一次教程访问（点击）。"""
+        site = self.get_object()
+        tutorial = self._get_tutorial_or_404(site, tutorial_id)
+        SiteTutorial.objects.filter(pk=tutorial.pk).update(
+            view_count=F('view_count') + 1
+        )
+        tutorial.refresh_from_db(fields=['view_count'])
+        return Response({'id': tutorial.pk, 'view_count': tutorial.view_count})
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'tutorials/(?P<tutorial_id>[^/.]+)/delete-request',
+    )
+    def tutorial_delete_request(self, request, pk=None, tutorial_id=None):
+        """POST /api/sites/{id}/tutorials/{tid}/delete-request/ 作者删除教程。
+
+        仅作者本人可操作：
+        - 已驳回(rejected)：直接永久删除，无需管理员审核；
+        - 已通过(approved)：置 delete_pending 后从公开列表隐藏，待管理员审核。
+        """
+        from django.utils import timezone
+
+        site = self.get_object()
+        tutorial = self._get_tutorial_or_404(site, tutorial_id)
+        if tutorial.user_id != request.user.pk:
+            return Response(
+                {'error': _('只能申请删除自己分享的教程。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if tutorial.status == SiteTutorial.STATUS_PENDING:
+            return Response(
+                {'error': _('教程待审核，暂不能申请删除。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if tutorial.status == SiteTutorial.STATUS_REJECTED:
+            tutorial.delete()
+            return Response({'id': tutorial.pk, 'deleted': True})
+        if tutorial.delete_pending:
+            return Response({'delete_pending': True})
+        tutorial.delete_pending = True
+        tutorial.delete_requested_at = timezone.now()
+        tutorial.save(update_fields=['delete_pending', 'delete_requested_at', 'updated_at'])
+        return Response({'id': tutorial.pk, 'delete_pending': True})
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'tutorials/(?P<tutorial_id>[^/.]+)/delete-cancel',
+    )
+    def tutorial_delete_cancel(self, request, pk=None, tutorial_id=None):
+        """POST /api/sites/{id}/tutorials/{tid}/delete-cancel/ 撤销删除申请。"""
+        site = self.get_object()
+        tutorial = self._get_tutorial_or_404(site, tutorial_id)
+        if tutorial.user_id != request.user.pk:
+            return Response(
+                {'error': _('只能操作自己分享的教程。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        tutorial.delete_pending = False
+        tutorial.delete_requested_at = None
+        tutorial.save(update_fields=['delete_pending', 'delete_requested_at', 'updated_at'])
+        return Response({'id': tutorial.pk, 'delete_pending': False})
+
+
+    @action(
+        detail=True,
+        methods=['put', 'patch'],
+        permission_classes=[IsAuthenticated],
+        url_path=r'tutorials/(?P<tutorial_id>(?!top[/.]|title[/.])[^/.]+)',
+    )
+    def tutorial_update(self, request, pk=None, tutorial_id=None):
+        """PUT/PATCH /api/sites/{id}/tutorials/{tid}/ 只能编辑被驳回的教程，编辑后回到 pending。"""
+        site = self.get_object()
+        tutorial = self._get_tutorial_or_404(site, tutorial_id)
+        if tutorial.user_id != request.user.pk:
+            return Response(
+                {'error': _('只能编辑自己分享的教程。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if tutorial.status != SiteTutorial.STATUS_REJECTED:
+            return Response(
+                {'error': _('仅已驳回的教程可编辑。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = SiteTutorialCreateSerializer(
+            tutorial,
+            data=request.data,
+            partial=request.method == 'PATCH',
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(status=SiteTutorial.STATUS_PENDING)
+        return Response(
+            SiteTutorialSerializer(
+                tutorial, context={'request': request}
+            ).data
+        )
+
+    # ---------- APP 下载链接提交 ----------
+
+    @action(
+        detail=True,
+        methods=['get', 'post'],
+        permission_classes=[IsAuthenticated],
+        url_path='app-links',
+    )
+    def app_links(self, request, pk=None):
+        """当前用户在站点的 APP 下载链接提交（按平台独立，需管理员审核）。
+
+        GET  /api/sites/{id}/app-links/  查看当前用户的提交记录（含状态，分页
+             返回 {count, next, previous, results}）。
+        POST /api/sites/{id}/app-links/  body {platform, url} 提交新链接；
+             同一 (用户, 站点, 平台) 仅允许一条待审核记录。
+        """
+        site = self.get_object()
+
+        if request.method == 'POST':
+            serializer = AppLinkSubmissionSerializer(
+                data=request.data, context={'request': request, 'site': site}
+            )
+            serializer.is_valid(raise_exception=True)
+            submission = serializer.save(site=site, user=request.user)
+            return Response(
+                AppLinkSubmissionSerializer(submission).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        qs = AppLinkSubmission.objects.filter(user=request.user, site=site)
+        paginator = AppLinksPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(
+            AppLinkSubmissionSerializer(page, many=True).data
+        )
+
+    @action(
+        detail=True,
+        methods=['delete', 'put', 'patch'],
+        permission_classes=[IsAuthenticated],
+        url_path=r'app-links/(?P<submission_id>[^/.]+)',
+    )
+    def app_link_detail(self, request, pk=None, submission_id=None):
+        """当前用户对已驳回 APP 链接提交的操作（作者本人）。
+        DELETE /api/sites/{id}/app-links/{sid}/ 删除提交（仅已驳回，免审核）。
+        PUT/PATCH /api/sites/{id}/app-links/{sid}/ 编辑提交，编辑后回到 pending。
+        """
+        site = self.get_object()
+        submission = AppLinkSubmission.objects.filter(pk=submission_id, site=site).first()
+        if submission is None:
+            return Response({'error': _('提交不存在。')}, status=status.HTTP_404_NOT_FOUND)
+        if submission.user_id != request.user.pk:
+            return Response({'error': _('只能操作自己提交的链接。')}, status=status.HTTP_403_FORBIDDEN)
+        if request.method == 'DELETE':
+            if submission.status != AppLinkSubmission.STATUS_REJECTED:
+                return Response(
+                    {'error': _('仅已驳回的提交可直接删除。')},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            submission.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        if submission.status != AppLinkSubmission.STATUS_REJECTED:
+            return Response(
+                {'error': _('仅已驳回的提交可编辑。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = AppLinkSubmissionSerializer(
+            submission,
+            data=request.data,
+            partial=request.method == 'PATCH',
+            context={'request': request, 'site': site},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save(status=AppLinkSubmission.STATUS_PENDING, reviewed_at=None)
+        return Response(AppLinkSubmissionSerializer(submission).data)
+
+
+
+class PointsRulesView(APIView):
+    """GET /api/points/rules/ 公开的积分规则列表（仅启用），供 App 展示赚积分途径。"""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        rules = PointRule.objects.filter(enabled=True).order_by('id')
+        return Response(PointRuleSerializer(rules, many=True).data)
+
+
+class MyPointsTransactionsView(APIView):
+    """GET /api/me/points/transactions/ 当前用户积分流水（分页）。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = (
+            PointTransaction.objects.filter(user=request.user)
+            .select_related('rule')
+            .order_by('-created_at')
+        )
+        paginator = AppLinksPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        if page is not None:
+            return paginator.get_paginated_response(
+                PointTransactionSerializer(page, many=True).data
+            )
+        return Response(PointTransactionSerializer(qs, many=True).data)
 
 
 class SettingsView(APIView):
@@ -410,6 +758,185 @@ def admin_upgrade_notes(request):
     return render(request, 'admin/upgrade_notes.html')
 
 
+def _pending_review_counts():
+    """四类待管理员审核的数量：站点提交 / 教程发布 / 教程删除申请 / APP 链接提交。"""
+    return {
+        'sites': SiteSubmission.objects.filter(
+            status=SiteSubmission.STATUS_PENDING
+        ).count(),
+        'tutorials': SiteTutorial.objects.filter(
+            status=SiteTutorial.STATUS_PENDING
+        ).count(),
+        'tutorial_deletes': SiteTutorial.objects.filter(delete_pending=True).count(),
+        'app_links': AppLinkSubmission.objects.filter(
+            status=AppLinkSubmission.STATUS_PENDING
+        ).count(),
+    }
+
+
+def admin_review_count(request):
+    """后台右上角「待审核」徽标的 JSON 计数接口（staff 专属，供轮询）。"""
+    from django.http import JsonResponse
+
+    counts = _pending_review_counts()
+    counts['total'] = sum(counts.values())
+    return JsonResponse(counts)
+
+
+def admin_review(request):
+    """待审核中心（staff 专属）：统一快速审核站点提交 / 教程发布 / 教程删除申请 / APP 链接提交。
+
+    - GET：按 ?tab= 渲染对应 tab 的待审核卡片列表
+    - POST：action=approve|reject + model=site|tutorial|tutorial_delete|app_link + id + 可选 note
+      仅处理对应状态为待审核的记录（幂等），处理完跳回原 tab。
+    """
+    from django.contrib import messages
+    from django.http import HttpResponseRedirect
+    from django.shortcuts import render
+
+    REVIEW_TABS = ('sites', 'tutorials', 'tutorial_deletes', 'app_links')
+
+    if request.method == 'POST':
+        model = request.POST.get('model') or ''
+        action = request.POST.get('action') or ''
+        pk = request.POST.get('id') or ''
+        note = (request.POST.get('note') or '').strip()
+        tab = request.POST.get('tab') or request.GET.get('tab') or 'sites'
+        if tab not in REVIEW_TABS:
+            tab = 'sites'
+
+        def _redirect():
+            return HttpResponseRedirect(request.path + '?tab=' + tab)
+
+        def _done_pending():
+            messages.info(request, '该提交已处理，无需重复操作。')
+
+        if model == 'site' and pk:
+            sub = SiteSubmission.objects.filter(pk=pk).first()
+            if sub is None:
+                raise Http404('提交不存在')
+            if sub.status != SiteSubmission.STATUS_PENDING:
+                _done_pending()
+                return _redirect()
+            if action == 'approve':
+                try:
+                    site = sub.build_site()
+                except Exception as exc:  # noqa: BLE001
+                    messages.error(request, f'创建站点失败：{exc}')
+                    return _redirect()
+                from .services import ensure_logo_async
+
+                ensure_logo_async(site.pk)
+                messages.success(request, f'审核通过，已创建站点「{site.name}」。')
+            elif action == 'reject':
+                sub.status = SiteSubmission.STATUS_REJECTED
+                sub.admin_note = note or sub.admin_note
+                sub.reviewed_at = timezone.now()
+                sub.save(update_fields=['status', 'admin_note', 'reviewed_at'])
+                messages.warning(request, f'已驳回站点提交「{sub.name}」。')
+            return _redirect()
+
+        if model == 'tutorial' and pk:
+            tutorial = SiteTutorial.objects.filter(pk=pk).first()
+            if tutorial is None:
+                raise Http404('教程不存在')
+            if tutorial.status != SiteTutorial.STATUS_PENDING:
+                _done_pending()
+                return _redirect()
+            if action == 'approve':
+                tutorial.status = SiteTutorial.STATUS_APPROVED
+                tutorial.save(update_fields=['status', 'updated_at'])
+                from .points import award_points
+
+                award_points(
+                    tutorial.user,
+                    'tutorial_approved',
+                    'site_tutorial',
+                    tutorial.pk,
+                    description=f'教程发布审核通过：{tutorial.title}',
+                )
+                messages.success(request, f'已通过教程发布审核「{tutorial.title}」。')
+            elif action == 'reject':
+                tutorial.status = SiteTutorial.STATUS_REJECTED
+                tutorial.save(update_fields=['status', 'updated_at'])
+                messages.warning(request, f'已驳回教程发布「{tutorial.title}」。')
+            return _redirect()
+
+        if model == 'tutorial_delete' and pk:
+            tutorial = SiteTutorial.objects.filter(pk=pk).first()
+            if tutorial is None:
+                raise Http404('教程不存在')
+            if not tutorial.delete_pending:
+                _done_pending()
+                return _redirect()
+            if action == 'approve':
+                tutorial.delete()
+                messages.success(request, f'已同意删除教程「{tutorial.title}」。')
+            elif action == 'reject':
+                tutorial.delete_pending = False
+                tutorial.delete_requested_at = None
+                tutorial.save(
+                    update_fields=['delete_pending', 'delete_requested_at', 'updated_at']
+                )
+                messages.warning(request, f'已驳回删除申请「{tutorial.title}」，教程恢复展示。')
+            return _redirect()
+
+        if model == 'app_link' and pk:
+            sub = AppLinkSubmission.objects.filter(pk=pk).first()
+            if sub is None:
+                raise Http404('提交不存在')
+            if sub.status != AppLinkSubmission.STATUS_PENDING:
+                _done_pending()
+                return _redirect()
+            if action == 'approve':
+                try:
+                    sub.approve()
+                except Exception as exc:  # noqa: BLE001
+                    messages.error(request, f'审核通过失败：{exc}')
+                    return _redirect()
+                messages.success(
+                    request, f'已通过 APP 链接提交「{sub.site} · {sub.get_platform_display()}」。'
+                )
+            elif action == 'reject':
+                sub.status = AppLinkSubmission.STATUS_REJECTED
+                sub.admin_note = note or sub.admin_note
+                sub.reviewed_at = timezone.now()
+                sub.save(update_fields=['status', 'admin_note', 'reviewed_at'])
+                messages.warning(
+                    request, f'已驳回 APP 链接提交「{sub.site} · {sub.get_platform_display()}」。'
+                )
+            return _redirect()
+
+        messages.error(request, '无效的审核请求。')
+        return _redirect()
+
+    tab = request.GET.get('tab', 'sites')
+    if tab not in REVIEW_TABS:
+        tab = 'sites'
+    context = {
+        'tab': tab,
+        'counts': _pending_review_counts(),
+        'site_submissions': (
+            SiteSubmission.objects.filter(status=SiteSubmission.STATUS_PENDING)
+            .select_related('user', 'category')
+            .prefetch_related('tags')
+        ),
+        'tutorials_publish': (
+            SiteTutorial.objects.filter(status=SiteTutorial.STATUS_PENDING)
+            .select_related('site', 'user')
+        ),
+        'tutorials_delete': (
+            SiteTutorial.objects.filter(delete_pending=True)
+            .select_related('site', 'user')
+        ),
+        'app_links': (
+            AppLinkSubmission.objects.filter(status=AppLinkSubmission.STATUS_PENDING)
+            .select_related('site', 'user')
+        ),
+    }
+    return render(request, 'admin/review.html', context)
+
+
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
     """GET /api/tags/ 标签列表（供提交站点等前端选择）。"""
 
@@ -419,9 +946,12 @@ class TagViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class SiteSubmissionViewSet(viewsets.ModelViewSet):
-    """当前用户的站点提交：POST 提交(pending)、GET 查看自己列表。"""
+    """当前用户的站点提交：POST 提交(pending)、GET 查看自己列表。
 
-    http_method_names = ['get', 'post']
+    DELETE 仅允许删除已驳回(rejected)的提交，免管理员审核。
+    """
+
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete']
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
@@ -434,3 +964,28 @@ class SiteSubmissionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        """PUT/PATCH /api/site-submissions/{id}/ 只能编辑被驳回的提交，编辑后状态回到 pending。"""
+        partial = kwargs.pop('partial', False)
+        obj = self.get_object()
+        if obj.status != SiteSubmission.STATUS_REJECTED:
+            return Response(
+                {"error": _("仅已驳回的提交可编辑。")},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = self.get_serializer(obj, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(status=SiteSubmission.STATUS_PENDING, reviewed_at=None)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        """DELETE /api/site-submissions/{id}/ 仅允许删除已驳回的提交，免管理员审核。"""
+        submission = self.get_object()
+        if submission.status != SiteSubmission.STATUS_REJECTED:
+            return Response(
+                {'error': _('仅已驳回的提交可直接删除。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        submission.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

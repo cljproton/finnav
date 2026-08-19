@@ -1,8 +1,3 @@
-export interface TutorialLink {
-  name: string;
-  url: string;
-}
-
 export interface Site {
   id: number;
   name: string;
@@ -13,9 +8,6 @@ export interface Site {
   category_name: string;
   tags: string[];
   sort_order: number;
-  text_tutorials: TutorialLink[];
-  video_tutorials: TutorialLink[];
-  agent_links: TutorialLink[];
   app_android_url: string;
   app_android_cache_url: string | null;
   app_android_has_cache: boolean;
@@ -106,4 +98,87 @@ export interface SiteSubmission {
   admin_note: string;
   created_at: string;
   approved_site: number | null;
+}
+
+export type TutorialType = "text" | "video" | "agent";
+
+export type TutorialStatus = "pending" | "approved" | "rejected";
+
+export interface SiteTutorial {
+  id: number;
+  site: number;
+  type: TutorialType;
+  url: string;
+  title: string;
+  status: TutorialStatus;
+  view_count: number;
+  username_masked: string;
+  is_mine: boolean;
+  can_delete: boolean;
+  delete_pending: boolean;
+  created_at: string;
+}
+
+export interface SiteTutorialPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: SiteTutorial[];
+}
+
+export interface TutorialsTop {
+  text: SiteTutorial[];
+  video: SiteTutorial[];
+  agent: SiteTutorial[];
+}
+
+export type AppLinkPlatform = "android" | "google_play" | "ios";
+
+export interface AppLinkSubmission {
+  id: number;
+  site: number;
+  platform: AppLinkPlatform;
+  url: string;
+  status: SiteSubmissionStatus;
+  admin_note: string;
+  created_at: string;
+}
+
+export interface AppLinkPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: AppLinkSubmission[];
+}
+
+export interface PointRule {
+  code: string;
+  name: string;
+  points: number;
+  description: string;
+}
+
+export interface PointTransaction {
+  id: number;
+  amount: number;
+  balance_after: number;
+  rule_code: string | null;
+  rule_name: string | null;
+  ref_type: string;
+  description: string;
+  created_at: string;
+}
+
+export interface PointTransactionPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: PointTransaction[];
+}
+
+export interface MyPoints {
+  balance: number;
+  lifetime: number;
+  referral_code: string;
+  referral_share_url: string;
 }

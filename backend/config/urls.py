@@ -33,6 +33,16 @@ urlpatterns = [
         name='admin_upgrade_notes',
     ),
     path(
+        'admin/review/',
+        staff_member_required(views.admin_review, login_url='admin:login'),
+        name='admin_review',
+    ),
+    path(
+        'admin/review/count/',
+        staff_member_required(views.admin_review_count, login_url='admin:login'),
+        name='admin_review_count',
+    ),
+    path(
         'admin/navigation/twofactor/',
         RedirectView.as_view(url='/admin/', permanent=True),
     ),

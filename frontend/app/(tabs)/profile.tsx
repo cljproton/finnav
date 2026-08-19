@@ -11,6 +11,7 @@ import PageHero from "../../components/PageHero";
 import AuthModal from "../../components/AuthModal";
 import SiteFooter from "../../components/SiteFooter";
 import TwoFactorManager from "../../components/TwoFactorManager";
+import { useMyPoints } from "../../lib/api";
 import { useRouter } from "expo-router";
 import BackToTopButton, {
   type BackToTopHandle,
@@ -22,6 +23,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const auth = useAuth();
   const router = useRouter();
+  const { data: points } = useMyPoints(!!auth.user);
   const [authVisible, setAuthVisible] = useState(false);
   const scrollRef = useRef<ScrollView | null>(null);
   const backToTopRef = useRef<BackToTopHandle>(null);
@@ -125,6 +127,20 @@ export default function ProfileScreen() {
                   <Text style={[styles.userHint, { color: colors.textTertiary }]}>
                     {t("已登录 · 收藏与搜索记录已同步")}
                   </Text>
+                  <View
+                    style={[
+                      styles.pointsBadge,
+                      {
+                        backgroundColor: colors.primaryLight,
+                        borderColor: colors.borderGlow,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="trophy-outline" size={14} color={colors.primary} />
+                    <Text style={[styles.pointsBadgeText, { color: colors.primary }]}>
+                      {t("积分 {{balance}}", { balance: points?.balance ?? 0 })}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -143,6 +159,25 @@ export default function ProfileScreen() {
                 <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   {t("提交新站点")}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+              </Pressable>
+
+              {/* 积分与邀请 */}
+              <Pressable
+                onPress={() => router.push("/points")}
+                style={({ pressed }) => [
+                  styles.menuBtn,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Ionicons name="trophy-outline" size={20} color={colors.primary} />
+                <Text style={[styles.menuText, { color: colors.text }]}>
+                  {t("积分与邀请")}
                 </Text>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
               </Pressable>
@@ -257,6 +292,20 @@ const styles = StyleSheet.create({
   userHint: {
     fontSize: 13,
     marginTop: 6,
+  },
+  pointsBadge: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  pointsBadgeText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   logoutBtn: {
     marginTop: 14,

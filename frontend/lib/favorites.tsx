@@ -39,6 +39,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const idsRef = useRef<number[]>([]);
   const snapRef = useRef<Record<number, Site>>({});
   const scopeRef = useRef<string>(ANON_SCOPE);
+  const epochRef = useRef(0);
+  const syncChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const scopeKey = (scope: string) => keysFor(scope);
 
@@ -55,6 +57,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadScope = useCallback(async (scope: string) => {
+    const epoch = ++epochRef.current;
     const { ids: kId, snap: kSnap } = scopeKey(scope);
     try {
       const [rawIds, rawSnap] = await Promise.all([
@@ -63,6 +66,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       ]);
       const pIds = rawIds ? JSON.parse(rawIds) : [];
       const pSnap = rawSnap ? JSON.parse(rawSnap) : {};
+      if (epochRef.current !== epoch) return epoch;
       idsRef.current = pIds;
       snapRef.current = pSnap;
       setIds(pIds);
@@ -70,6 +74,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoaded(true);
     }
+    return epoch;
   }, []);
 
   // 首次加载匿名作用域的本地缓存（登录状态可能尚未就绪，由身份切换 effect 接手）
@@ -77,28 +82,40 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     loadScope(ANON_SCOPE);
   }, [loadScope]);
 
-  // 登录后把服务器收藏拉下来合并，再把合并结果推回服务器（双向同步）
-  const syncFromServer = useCallback(async () => {
-    try {
-      const res = await authedFetch(`${API_URL}/me/`);
-      if (!res.ok) return;
-      const me = await res.json();
-      const serverSites: Site[] = me.favorites ?? [];
-      const merged = Array.from(new Set([...idsRef.current, ...serverSites.map((s) => s.id)]));
-      const snap = { ...snapRef.current };
-      for (const s of serverSites) {
-        snap[s.id] = s; // 服务器数据为权威
+  // 登录后把服务器收藏拉下来合并，再把合并结果推回服务器（双向同步）。
+  // extraIds/extraSnap：匿名 -> 登录时传入的匿名本地收藏，一并并入该账号。
+  const syncFromServer = useCallback(
+    async (extraIds?: number[], extraSnap?: Record<number, Site>) => {
+      try {
+        const res = await authedFetch(`${API_URL}/me/`);
+        if (!res.ok) return;
+        const me = await res.json();
+        const serverSites: Site[] = me.favorites ?? [];
+        const merged = Array.from(
+          new Set([
+            ...(extraIds ?? []),
+            ...idsRef.current,
+            ...serverSites.map((s) => s.id),
+          ]),
+        );
+        const snap = { ...(extraSnap ?? {}), ...snapRef.current };
+        for (const s of serverSites) {
+          snap[s.id] = s; // 服务器数据为权威
+        }
+        await persist(merged, snap);
+        syncChainRef.current = syncChainRef.current.then(async () => {
+          await authedFetch(`${API_URL}/me/favorites/`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ site_ids: idsRef.current }),
+          }).catch(() => {});
+        });
+      } catch {
+        // 同步失败时静默，保留本地数据
       }
-      await persist(merged, snap);
-      await authedFetch(`${API_URL}/me/favorites/`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ site_ids: merged }),
-      });
-    } catch {
-      // 同步失败时静默，保留本地数据
-    }
-  }, [persist]);
+    },
+    [persist],
+  );
 
   // 身份切换：匿名<->用户、或换用户登录，隔离各自本地缓存
   useEffect(() => {
@@ -109,21 +126,28 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
     scopeRef.current = scope;
 
-    if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
-      // 匿名 -> 登录：把匿名本地收藏合并进该账号（保留合并功能），再清理匿名缓存
-      syncFromServer();
-      const { ids: kId, snap: kSnap } = scopeKey(ANON_SCOPE);
-      Promise.all([AsyncStorage.removeItem(kId), AsyncStorage.removeItem(kSnap)]).catch(
-        () => {},
-      );
-      return;
-    }
+    (async () => {
+      if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
+        // 匿名 -> 登录：把匿名本地收藏合并进该账号（保留合并功能），再清理匿名缓存
+        const anonIds = idsRef.current;
+        const anonSnap = snapRef.current;
+        const epoch = await loadScope(scope);
+        if (epochRef.current !== epoch) return;
+        await syncFromServer(anonIds, anonSnap);
+        const { ids: kId, snap: kSnap } = scopeKey(ANON_SCOPE);
+        Promise.all([AsyncStorage.removeItem(kId), AsyncStorage.removeItem(kSnap)]).catch(
+          () => {},
+        );
+        return;
+      }
 
-    // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，不合并上一用户的本地数据
-    loadScope(scope);
-    if (scope !== ANON_SCOPE) {
-      syncFromServer();
-    }
+      // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，不合并上一用户的本地数据
+      const epoch = await loadScope(scope);
+      if (epochRef.current !== epoch) return;
+      if (scope !== ANON_SCOPE) {
+        await syncFromServer();
+      }
+    })();
   }, [auth.loaded, auth.user, syncFromServer, loadScope]);
 
   const toggle = useCallback(
@@ -140,11 +164,13 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       }
       persist(next, nextSnap);
       if (auth.user) {
-        authedFetch(`${API_URL}/me/favorites/`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ site_ids: next }),
-        }).catch(() => {});
+        syncChainRef.current = syncChainRef.current.then(async () => {
+          await authedFetch(`${API_URL}/me/favorites/`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ site_ids: next }),
+          }).catch(() => {});
+        });
       }
     },
     [persist, auth.user],

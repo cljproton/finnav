@@ -73,9 +73,15 @@ def _render_png(code):
 
 
 def create_captcha(model_cls):
-    """创建一条验证码记录，返回 (token, png_bytes)。"""
+    """创建一条验证码记录，返回 (token, png_bytes)。
+
+    创建时顺手清理 1 天前的过期记录，配合接口限流避免表无限膨胀。
+    """
     code = ''.join(secrets.choice(_CHARS) for _ in range(_CODE_LEN))
     token = secrets.token_urlsafe(24)
+    model_cls.objects.filter(
+        expires_at__lt=timezone.now() - timezone.timedelta(days=1)
+    ).delete()
     record = model_cls(
         token=token,
         answer_hash=_hash(code),

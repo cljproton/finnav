@@ -5,8 +5,6 @@ from django import forms
 from django.contrib import admin
 from django.contrib import messages
 from django.contrib.admin.forms import AdminAuthenticationForm
-from django.core.exceptions import ValidationError
-from django.core.validators import URLValidator
 from django.http import Http404, JsonResponse
 from django.urls import path
 from django.utils import timezone
@@ -15,13 +13,19 @@ from django.utils.html import format_html
 from . import services
 from .models import (
     AppDownload,
+    AppLinkSubmission,
     AppSetting,
     Captcha,
     Category,
+    PointRule,
+    PointTransaction,
     Rating,
+    Referral,
     Site,
     SiteSubmission,
+    SiteTutorial,
     Tag,
+    UserProfile,
     UserSiteInvite,
 )
 
@@ -358,19 +362,7 @@ class SiteAdmin(admin.ModelAdmin):
                 extra_context['site_tags'] = list(
                     site.tags.values_list('name', flat=True)
                 )
-                extra_context['links_text'] = {
-                    'text_tutorials': self._links_friendly(site.text_tutorials),
-                    'video_tutorials': self._links_friendly(site.video_tutorials),
-                    'agent_links': self._links_friendly(site.agent_links),
-                }
         return super().changeform_view(request, object_id, form_url, extra_context)
-
-    @staticmethod
-    def _links_friendly(links):
-        return '\n'.join(
-            f"{item.get('name', '')}|{item.get('url', '')}"
-            for item in (links or []) if item
-        )
 
     def response_change(self, request, obj):
         if '_delete_android_cache' in request.POST and obj.app_android_file:
@@ -502,46 +494,16 @@ class SiteAdmin(admin.ModelAdmin):
             raise forms.ValidationError('标签格式不正确')
         return [str(i).strip() for i in items if str(i).strip()]
 
-    @staticmethod
-    def _parse_links(field, value):
-        if isinstance(value, (list, tuple)):
-            return list(value)
-        if not isinstance(value, str):
-            raise forms.ValidationError(f'{field} 格式不正确')
-        links = []
-        for n, line in enumerate(value.splitlines(), start=1):
-            line = line.strip()
-            if not line:
-                continue
-            if '|' not in line:
-                raise forms.ValidationError(
-                    f'{field} 第 {n} 行格式应为「文章标题|文章链接」'
-                )
-            name, _, url = line.partition('|')
-            name, url = name.strip(), url.strip()
-            if not name or not url:
-                raise forms.ValidationError(f'{field} 第 {n} 行缺少标题或链接')
-            try:
-                URLValidator(schemes=['http', 'https'])(url)
-            except ValidationError:
-                raise forms.ValidationError(f'{field} 第 {n} 行链接格式无效')
-            links.append({'name': name, 'url': url})
-        if len(links) > 10:
-            raise forms.ValidationError(f'{field} 最多可录入 10 条')
-        return links
-
-    _LINK_FIELDS = ('text_tutorials', 'video_tutorials', 'agent_links')
     _SAFE_FIELDS = (
         'name', 'url', 'description', 'category', 'sort_order', 'is_active',
         'app_android_url', 'app_ios_url', 'app_google_play_url', 'logo',
         'invite_code', 'invite_link',
-    ) + _LINK_FIELDS + ('tags',)
+    ) + ('tags',)
 
     def field_save(self, request, object_id):
         """POST 保存单个字段（友好文本经转换后写入）。
 
         - tags：逗号/顿号/换行分隔的字符串 -> 列表
-        - text_tutorials / video_tutorials / agent_links：每行「名称|链接」-> [{name,url}]
         - logo：multipart 上传文件
         """
         site = self._get_site_or_404(request, object_id)
@@ -572,13 +534,6 @@ class SiteAdmin(admin.ModelAdmin):
             site.tags.set(tags)
             Site.objects.filter(pk=site.pk).update(updated_at=timezone.now())
             return JsonResponse({'ok': True})
-        elif field in self._LINK_FIELDS:
-            try:
-                value = self._parse_links(field, value)
-            except forms.ValidationError as exc:
-                return JsonResponse(
-                    {'ok': False, 'errors': {field: list(exc.messages)}}, status=400
-                )
 
         meta = type('Meta', (), {'model': Site, 'fields': (field,)})
         form_cls = type('SingleFieldForm', (forms.ModelForm,), {'Meta': meta})
@@ -598,7 +553,6 @@ class SiteAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {'fields': ('name', 'description', 'url', 'category', 'tags')}),
         ('展示', {'fields': ('logo', 'logo_preview', 'sort_order', 'is_active')}),
-        ('教程与代办', {'fields': ('text_tutorials', 'video_tutorials', 'agent_links')}),
         (
             'APP',
             {
@@ -843,6 +797,324 @@ class AppDownloadAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+@admin.register(SiteTutorial)
+class SiteTutorialAdmin(admin.ModelAdmin):
+    """用户分享的教程（发布审核 + 删除申请审核）。"""
+
+    list_display = (
+        'title', 'site', 'user', 'type', 'status', 'view_count',
+        'delete_pending', 'delete_requested_at', 'created_at',
+    )
+    list_filter = ('type', 'status', 'delete_pending', 'site__category')
+    search_fields = ('title', 'url', 'user__email', 'user__username', 'site__name')
+    autocomplete_fields = ('site',)
+    readonly_fields = ('created_at', 'updated_at')
+    list_per_page = 50
+    actions = ['approve_publish', 'reject_publish', 'approve_deletes', 'reject_deletes']
+
+    @admin.action(description='通过所选发布审核（公开教程）')
+    def approve_publish(self, request, queryset):
+        from .points import award_points
+
+        approved = 0
+        for tutorial in queryset.filter(status=SiteTutorial.STATUS_PENDING):
+            tutorial.status = SiteTutorial.STATUS_APPROVED
+            tutorial.save(update_fields=['status', 'updated_at'])
+            award_points(
+                tutorial.user,
+                'tutorial_approved',
+                'site_tutorial',
+                tutorial.pk,
+                description=f'教程发布审核通过：{tutorial.title}',
+            )
+            approved += 1
+        self.message_user(
+            request, f'已通过 {approved} 条教程的发布审核。', messages.SUCCESS
+        )
+
+    @admin.action(description='驳回所选发布审核（不公开）')
+    def reject_publish(self, request, queryset):
+        rejected = queryset.filter(status=SiteTutorial.STATUS_PENDING).update(
+            status=SiteTutorial.STATUS_REJECTED
+        )
+        self.message_user(
+            request, f'已驳回 {rejected} 条教程的发布审核。', messages.SUCCESS
+        )
+
+    @admin.action(description='通过所选删除申请（删除教程）')
+    def approve_deletes(self, request, queryset):
+        deleted = 0
+        for tutorial in queryset.filter(delete_pending=True):
+            tutorial.delete()
+            deleted += 1
+        self.message_user(
+            request, f'已删除 {deleted} 条待审核教程。', messages.SUCCESS
+        )
+
+    @admin.action(description='驳回所选删除申请（恢复展示）')
+    def reject_deletes(self, request, queryset):
+        rejected = queryset.filter(delete_pending=True).update(
+            delete_pending=False, delete_requested_at=None
+        )
+        self.message_user(
+            request, f'已驳回 {rejected} 条删除申请。', messages.SUCCESS
+        )
+
+
+@admin.register(AppLinkSubmission)
+class AppLinkSubmissionAdmin(admin.ModelAdmin):
+    """用户提交的 APP 下载链接（审核通过后写入站点并触发安卓自动拉取）。"""
+
+    list_display = ('site', 'platform', 'url', 'user', 'status', 'created_at')
+    list_filter = ('status', 'platform', 'site__category')
+    search_fields = ('site__name', 'url', 'user__email', 'user__username')
+    autocomplete_fields = ('site',)
+    readonly_fields = ('created_at', 'reviewed_at', 'status')
+    list_per_page = 50
+    change_form_template = 'admin/applinksubmission_change_form.html'
+    actions = ['approve_selected', 'reject_selected']
+
+    @admin.action(description='审核通过所选提交（安卓联动自动拉取）')
+    def approve_selected(self, request, queryset):
+        ok = 0
+        errors = []
+        for submission in queryset.filter(status=AppLinkSubmission.STATUS_PENDING):
+            try:
+                submission.approve()
+                ok += 1
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f'{submission}: {exc}')
+        msg = f'已通过 {ok} 条提交。'
+        if errors:
+            msg += ' 失败：' + '；'.join(errors[:5])
+        self.message_user(request, msg, messages.WARNING if errors else messages.SUCCESS)
+
+    @admin.action(description='驳回所选提交')
+    def reject_selected(self, request, queryset):
+        from django.utils import timezone
+
+        rejected = queryset.filter(status=AppLinkSubmission.STATUS_PENDING).update(
+            status=AppLinkSubmission.STATUS_REJECTED, reviewed_at=timezone.now()
+        )
+        self.message_user(request, f'已驳回 {rejected} 条提交。', messages.SUCCESS)
+
+    def get_urls(self):
+        urls = [
+            path(
+                '<path:object_id>/approve/',
+                self.admin_site.admin_view(self.submit_approve),
+                name='navigation_applinksubmission_approve',
+            ),
+            path(
+                '<path:object_id>/reject/',
+                self.admin_site.admin_view(self.submit_reject),
+                name='navigation_applinksubmission_reject',
+            ),
+        ]
+        return urls + super().get_urls()
+
+    def _get_submission_or_404(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404('提交不存在')
+        return obj
+
+    def _redirect(self, request, obj):
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
+
+        return HttpResponseRedirect(
+            reverse('admin:navigation_applinksubmission_change', args=[obj.pk])
+        )
+
+    def submit_approve(self, request, object_id):
+        """POST 审核通过：写入站点对应链接，安卓触发后台拉取 APK。"""
+        obj = self._get_submission_or_404(request, object_id)
+        if request.method != 'POST':
+            return JsonResponse({'error': 'method not allowed'}, status=405)
+        if obj.status == AppLinkSubmission.STATUS_PENDING:
+            try:
+                obj.approve()
+            except Exception as exc:  # noqa: BLE001
+                messages.error(request, f'审核通过失败：{exc}')
+                return self._redirect(request, obj)
+            self.message_user(request, '已通过，站点链接已更新。', messages.SUCCESS)
+        else:
+            self.message_user(request, '该提交已处理，无需重复操作。', messages.WARNING)
+        return self._redirect(request, obj)
+
+    def submit_reject(self, request, object_id):
+        """POST 驳回：body 可选 note。"""
+        from django.utils import timezone
+
+        obj = self._get_submission_or_404(request, object_id)
+        if request.method != 'POST':
+            return JsonResponse({'error': 'method not allowed'}, status=405)
+        note = ''
+        try:
+            body = json.loads(request.body or b'{}')
+            note = (body.get('note') or '').strip()
+        except (ValueError, TypeError):
+            pass
+        if obj.status == AppLinkSubmission.STATUS_PENDING:
+            obj.status = AppLinkSubmission.STATUS_REJECTED
+            obj.admin_note = note or obj.admin_note
+            obj.reviewed_at = timezone.now()
+            obj.save(update_fields=['status', 'admin_note', 'reviewed_at'])
+            self.message_user(request, '已驳回该提交。', messages.WARNING)
+        else:
+            self.message_user(request, '该提交已处理，无需重复操作。', messages.WARNING)
+        return self._redirect(request, obj)
+
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        if object_id:
+            obj = self.get_object(request, object_id)
+            if obj is not None:
+                extra_context['submission'] = obj
+                extra_context['pending'] = obj.status == AppLinkSubmission.STATUS_PENDING
+                extra_context['platform_label'] = obj.get_platform_display()
+                extra_context['site_android_url'] = obj.site.app_android_url
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+
+@admin.register(PointRule)
+class PointRuleAdmin(admin.ModelAdmin):
+    """积分规则（后台可配置积分值、开关与防刷上限）。"""
+
+    list_display = (
+        'code', 'name', 'points', 'enabled', 'daily_limit', 'total_limit', 'updated_at'
+    )
+    list_filter = ('enabled',)
+    search_fields = ('code', 'name', 'description')
+    list_editable = ('points', 'enabled', 'daily_limit', 'total_limit')
+    fieldsets = (
+        (
+            None,
+            {
+                'fields': ('code', 'name', 'points', 'enabled'),
+                'description': 'points 为本次事件发放的积分（可为负，用于扣分场景）；'
+                               'enabled 关闭后该规则不再发放。',
+            },
+        ),
+        (
+            '防刷限制',
+            {
+                'fields': ('daily_limit', 'total_limit'),
+                'description': '每用户「每日 / 累计」发放次数上限，0 表示不限。'
+                               '邀请与内容审核类规则建议配置上限以防批量刷分。',
+            },
+        ),
+        ('说明', {'fields': ('description',)}),
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        # 已有流水引用的规则代码不允许修改，避免台账来源漂移
+        if obj is not None and obj.transactions.exists():
+            return ('code',)
+        return ()
+
+
+@admin.register(PointTransaction)
+class PointTransactionAdmin(admin.ModelAdmin):
+    """积分流水（只读，仅供审计；调账请到用户资料页）。"""
+
+    list_display = (
+        'user', 'amount', 'balance_after', 'rule', 'ref_type', 'description', 'created_at'
+    )
+    list_filter = ('ref_type',)
+    search_fields = ('user__email', 'user__username', 'description')
+    autocomplete_fields = ('user',)
+    readonly_fields = (
+        'user', 'rule', 'amount', 'balance_after', 'ref_type', 'ref_id',
+        'description', 'created_at',
+    )
+    date_hierarchy = 'created_at'
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Referral)
+class ReferralAdmin(admin.ModelAdmin):
+    """邀请记录（只读）。"""
+
+    list_display = ('inviter', 'referee', 'code', 'status', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('inviter__email', 'inviter__username', 'referee__email', 'code')
+    readonly_fields = ('inviter', 'referee', 'code', 'status', 'created_at')
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    """用户积分与推广资料。积分字段只读，调账通过页内「积分调账」按钮完成。"""
+
+    list_display = (
+        'user', 'referral_code', 'points_balance', 'points_lifetime', 'created_at'
+    )
+    search_fields = ('user__email', 'user__username', 'referral_code')
+    autocomplete_fields = ('user',)
+    readonly_fields = (
+        'user', 'referral_code', 'points_balance', 'points_lifetime', 'created_at',
+        'updated_at',
+    )
+    list_per_page = 50
+    change_form_template = 'admin/userprofile_change_form.html'
+
+    def get_urls(self):
+        urls = [
+            path(
+                '<path:object_id>/adjust/',
+                self.admin_site.admin_view(self.adjust_points),
+                name='navigation_userprofile_adjust',
+            ),
+        ]
+        return urls + super().get_urls()
+
+    def _get_profile_or_404(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404('用户资料不存在')
+        return obj
+
+    def adjust_points(self, request, object_id):
+        """POST 手动调账：body {amount, reason}。amount 可为负。"""
+        from .points import adjust_points as do_adjust
+
+        profile = self._get_profile_or_404(request, object_id)
+        if request.method != 'POST':
+            return JsonResponse({'error': 'method not allowed'}, status=405)
+        try:
+            body = json.loads(request.body or b'{}')
+            amount = int(body.get('amount'))
+            reason = str(body.get('reason') or '').strip()
+        except (ValueError, TypeError):
+            return JsonResponse({'error': '请求体格式错误'}, status=400)
+        try:
+            do_adjust(profile.user, amount, reason)
+        except ValueError as exc:
+            return JsonResponse({'ok': False, 'error': str(exc)}, status=400)
+        profile.refresh_from_db(fields=['points_balance', 'points_lifetime'])
+        return JsonResponse(
+            {
+                'ok': True,
+                'balance': profile.points_balance,
+                'lifetime': profile.points_lifetime,
+            }
+        )
 
 
 

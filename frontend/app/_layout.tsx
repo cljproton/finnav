@@ -1,4 +1,4 @@
-import { Slot } from "expo-router";
+import { Slot, useGlobalSearchParams } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // react-native-web 在开发模式会对 View 的字符串子节点打 console.error
@@ -28,6 +28,7 @@ import { FavoritesProvider } from "../lib/favorites";
 import { SearchHistoryProvider } from "../lib/searchHistory";
 import { restoreSavedLanguage } from "../lib/i18n";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import { savePendingReferral } from "../lib/referral";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -138,6 +139,18 @@ const darkTheme: Theme = {
   switch_unchecked: "#334155",
 };
 
+/* ---------- Referral link listener ---------- */
+
+function ReferralLinkListener() {
+  const params = useGlobalSearchParams<{ ref?: string }>();
+  useEffect(() => {
+    if (params?.ref) {
+      savePendingReferral(String(params.ref));
+    }
+  }, [params?.ref]);
+  return null;
+}
+
 /* ---------- Root layout ---------- */
 
 export default function RootLayout() {
@@ -169,6 +182,7 @@ export default function RootLayout() {
         <AuthProvider>
           <FavoritesProvider>
             <SearchHistoryProvider>
+              <ReferralLinkListener />
               <StatusBar style={isDark ? "light" : "dark"} />
               <SeoUpdater />
               <HeadScripts />

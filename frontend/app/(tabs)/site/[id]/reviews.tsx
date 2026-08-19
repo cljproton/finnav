@@ -10,12 +10,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
-import { useSiteReviews } from "../../../lib/api";
-import { useAuth } from "../../../lib/auth";
-import type { CaptchaPayload } from "../../../lib/auth";
-import { useThemeColors } from "../../../constants/colors";
-import type { SiteReview } from "../../../lib/types";
-import AuthModal from "../../../components/AuthModal";
+import { useSiteReviews } from "../../../../lib/api";
+import { useAuth } from "../../../../lib/auth";
+import type { CaptchaPayload } from "../../../../lib/auth";
+import { useThemeColors } from "../../../../constants/colors";
+import type { SiteReview } from "../../../../lib/types";
+import AuthModal from "../../../../components/AuthModal";
 
 function ReviewStars({ score, colors, size = 12 }: { score: number; colors: any; size?: number }) {
   const full = Math.round(score);

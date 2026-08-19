@@ -3,7 +3,26 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { API_URL } from "./config";
 import { authedFetch } from "./auth";
 import i18n, { withLanguageHeaders } from "./i18n";
-import type { Category, ReviewPage, Site, SitePage, SiteSettings, SiteSubmission, Tag, UserSiteInvite } from "./types";
+import type {
+  AppLinkPage,
+  AppLinkPlatform,
+  AppLinkSubmission,
+  Category,
+  MyPoints,
+  PointRule,
+  PointTransactionPage,
+  ReviewPage,
+  Site,
+  SitePage,
+  SiteSettings,
+  SiteSubmission,
+  SiteTutorial,
+  SiteTutorialPage,
+  Tag,
+  TutorialType,
+  TutorialsTop,
+  UserSiteInvite,
+} from "./types";
 
 async function fetchJSON<T>(url: string): Promise<T> {
   const res = await fetch(url, { headers: withLanguageHeaders() });
@@ -121,6 +140,32 @@ export async function submitSite(payload: {
     const msg =
       typeof body === "object" && body !== null
         ? body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function updateSiteSubmission(
+  submissionId: number,
+  payload: {
+    name: string;
+    url: string;
+    description?: string;
+    category: number;
+    tags?: string[];
+  },
+): Promise<SiteSubmission> {
+  const res = await authedFetch(`${API_URL}/site-submissions/${submissionId}/`, {
+    method: "PUT",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || body.non_field_errors?.[0] || JSON.stringify(body)
         : i18n.t("请求失败 ({{status}})", { status: res.status });
     throw new Error(String(msg));
   }
@@ -275,6 +320,264 @@ export function useSiteReviews(siteId: number, enabled: boolean) {
   });
 }
 
+/* ---------- tutorials ---------- */
+
+function fetchSiteTutorials(
+  siteId: number,
+  type: TutorialType,
+  page: number,
+): Promise<SiteTutorialPage> {
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (page > 1) params.set("page", String(page));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return fetchSiteJSON<SiteTutorialPage>(
+    `${API_URL}/sites/${siteId}/tutorials/${suffix}`,
+  );
+}
+
+export function useSiteTutorials(siteId: number, type: TutorialType) {
+  return useInfiniteQuery<SiteTutorialPage>({
+    queryKey: ["site-tutorials", siteId, type],
+    queryFn: ({ pageParam }) =>
+      fetchSiteTutorials(siteId, type, pageParam as number),
+    initialPageParam: 1,
+    staleTime: 30_000,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.next) {
+        const u = new URL(lastPage.next, "http://placeholder");
+        const p = u.searchParams.get("page");
+        const n = p ? Number(p) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+      }
+      return undefined;
+    },
+  });
+}
+
+export function useSiteTutorialsTop(siteId: number) {
+  return useQuery<TutorialsTop>({
+    queryKey: ["site-tutorials-top", siteId],
+    queryFn: () =>
+      fetchSiteJSON<TutorialsTop>(
+        `${API_URL}/sites/${siteId}/tutorials/top/`,
+      ),
+    staleTime: 30_000,
+  });
+}
+
+export interface ShareTutorialPayload {
+  type: TutorialType;
+  url: string;
+  title?: string;
+}
+
+export interface TutorialTitleResult {
+  title: string;
+  fallback: boolean;
+}
+
+export async function fetchTutorialTitle(
+  siteId: number,
+  url: string,
+): Promise<TutorialTitleResult> {
+  const res = await authedFetch(`${API_URL}/sites/${siteId}/tutorials/title/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+  const data = await res.json();
+  return {
+    title: String(data?.title ?? ""),
+    fallback: Boolean(data?.fallback),
+  };
+}
+
+export async function shareTutorial(
+  siteId: number,
+  payload: ShareTutorialPayload,
+): Promise<SiteTutorial> {
+  const body: ShareTutorialPayload = { type: payload.type, url: payload.url };
+  const title = payload.title?.trim();
+  if (title) body.title = title;
+  const res = await authedFetch(`${API_URL}/sites/${siteId}/tutorials/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function updateTutorial(
+  siteId: number,
+  tutorialId: number,
+  payload: ShareTutorialPayload,
+): Promise<SiteTutorial> {
+  const body: ShareTutorialPayload = { type: payload.type, url: payload.url };
+  const title = payload.title?.trim();
+  if (title) body.title = title;
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/tutorials/${tutorialId}/`,
+    {
+      method: "PUT",
+      headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function reportTutorialVisit(
+  siteId: number,
+  tutorialId: number,
+): Promise<void> {
+  try {
+    await fetch(`${API_URL}/sites/${siteId}/tutorials/${tutorialId}/visit/`, {
+      method: "POST",
+      headers: withLanguageHeaders(),
+    });
+  } catch {
+    // best-effort
+  }
+}
+
+export async function requestTutorialDelete(
+  siteId: number,
+  tutorialId: number,
+): Promise<void> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/tutorials/${tutorialId}/delete-request/`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+}
+
+export async function cancelTutorialDelete(
+  siteId: number,
+  tutorialId: number,
+): Promise<void> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/tutorials/${tutorialId}/delete-cancel/`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+}
+
+/* ---------- app link submissions ---------- */
+
+export function useMyAppLinks(siteId: number, enabled: boolean) {
+  return useInfiniteQuery<AppLinkPage>({
+    queryKey: ["my-app-links", siteId],
+    queryFn: async ({ pageParam }) => {
+      const page = pageParam as number;
+      const suffix = page > 1 ? `?page=${page}` : "";
+      const res = await authedFetch(
+        `${API_URL}/sites/${siteId}/app-links/${suffix}`,
+      );
+      if (!res.ok)
+        throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+      return res.json();
+    },
+    initialPageParam: 1,
+    enabled,
+    staleTime: 30_000,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.next) {
+        const u = new URL(lastPage.next, "http://placeholder");
+        const p = u.searchParams.get("page");
+        const n = p ? Number(p) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+      }
+      return undefined;
+    },
+  });
+}
+
+export interface SubmitAppLinkPayload {
+  platform: AppLinkPlatform;
+  url: string;
+}
+
+export async function submitAppLink(
+  siteId: number,
+  payload: SubmitAppLinkPayload,
+): Promise<AppLinkSubmission> {
+  const res = await authedFetch(`${API_URL}/sites/${siteId}/app-links/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function updateAppLink(
+  siteId: number,
+  submissionId: number,
+  payload: SubmitAppLinkPayload,
+): Promise<AppLinkSubmission> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/app-links/${submissionId}/`,
+    {
+      method: "PUT",
+      headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function deleteSiteSubmission(submissionId: number): Promise<void> {
+  const res = await authedFetch(
+    `${API_URL}/site-submissions/${submissionId}/`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+}
+
+export async function deleteAppLink(
+  siteId: number,
+  submissionId: number,
+): Promise<void> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/app-links/${submissionId}/`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+}
+
 /* ---------- mutations ---------- */
 
 export async function reportVisit(siteId: number): Promise<void> {
@@ -344,4 +647,61 @@ export function useUpdateSiteCache() {
       old ? { ...old, ...patch } : old,
     );
   }, [queryClient]);
+}
+
+/* ---------- points & referral ---------- */
+
+export function useMyPoints(enabled = true) {
+  return useQuery<MyPoints>({
+    queryKey: ["me-points"],
+    enabled,
+    queryFn: async () => {
+      const res = await authedFetch(`${API_URL}/me/`);
+      if (!res.ok)
+        throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+      const data = await res.json();
+      return {
+        balance: Number(data?.points?.balance ?? 0),
+        lifetime: Number(data?.points?.lifetime ?? 0),
+        referral_code: String(data?.referral_code ?? ""),
+        referral_share_url: String(data?.referral_share_url ?? ""),
+      };
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function usePointRules() {
+  return useQuery<PointRule[]>({
+    queryKey: ["point-rules"],
+    queryFn: () => fetchJSON<PointRule[]>(`${API_URL}/points/rules/`),
+  });
+}
+
+function fetchMyPointTransactions(page: number): Promise<PointTransactionPage> {
+  const suffix = page > 1 ? `?page=${page}` : "";
+  return authedFetch(`${API_URL}/me/points/transactions/${suffix}`).then((res) => {
+    if (!res.ok)
+      throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+    return res.json();
+  });
+}
+
+export function useMyPointTransactions(enabled: boolean) {
+  return useInfiniteQuery<PointTransactionPage>({
+    queryKey: ["me-points-transactions"],
+    queryFn: ({ pageParam }) => fetchMyPointTransactions(pageParam as number),
+    initialPageParam: 1,
+    enabled,
+    staleTime: 30_000,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.next) {
+        const u = new URL(lastPage.next, "http://placeholder");
+        const p = u.searchParams.get("page");
+        const n = p ? Number(p) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+      }
+      return undefined;
+    },
+  });
 }

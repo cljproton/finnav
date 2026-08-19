@@ -9,6 +9,9 @@
             --fn-primary-soft: #EEF2FF;
             --fn-success: #059669;
             --fn-danger: #B02A37;
+            --fn-warning: #B45309;
+            --fn-warning-soft: #FEF3C7;
+            --fn-warning-border: #FDE68A;
             --fn-border: #E5E7EB;
             --fn-radius-sm: 6px;
             --fn-radius-md: 10px;
@@ -41,8 +44,8 @@
     </style>
     <script>
         (function () {
-            var approveUrl = '{% url "admin:navigation_sitesubmission_approve" original.pk %}';
-            var rejectUrl = '{% url "admin:navigation_sitesubmission_reject" original.pk %}';
+            var approveUrl = '{% url "admin:navigation_applinksubmission_approve" original.pk %}';
+            var rejectUrl = '{% url "admin:navigation_applinksubmission_reject" original.pk %}';
             function getCookie(name) {
                 var m = document.cookie.match('(^|;)\\s*' + name + '=([^;]*)');
                 return m ? decodeURIComponent(m[2]) : '';
@@ -50,7 +53,7 @@
             var CSRF = { 'X-CSRFToken': getCookie('csrftoken'), 'Accept': 'application/json' };
 
             window.submitApprove = function () {
-                if (!confirm('确认通过并创建站点「{{ submission.name|escapejs }}」吗？')) return;
+                if (!confirm('确认通过该「{{ platform_label }}」链接提交吗？')) return;
                 fetch(approveUrl, {method: 'POST', headers: Object.assign({'Content-Type': 'application/json'}, CSRF), body: '{}'})
                     .then(function () { window.location.reload(); });
             };
@@ -67,18 +70,14 @@
 {% block object-tools-items %}
     <li>{% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}<a href="{% add_preserved_filters history_url %}" class="historylink">{% trans "历史" %}</a></li>
     {% if submission %}
-        {% if submission.status == "pending" %}
-            <li><button type="button" class="fn-btn-approve" onclick="submitApprove()">✓ 通过并创建站点</button></li>
+        {% if pending %}
+            <li><button type="button" class="fn-btn-approve" onclick="submitApprove()">✓ 审核通过</button></li>
             <li><button type="button" class="fn-btn-reject" onclick="submitReject()">✗ 驳回</button></li>
         {% elif submission.status == "approved" %}
-            <li><span class="sidebar-panel-accent" style="color:var(--fn-success);">已通过</span></li>
-            <li><a href="{% url 'admin:navigation_site_change' submission.approved_site_id %}" >查看已建站点</a></li>
+            <li><span style="color:var(--fn-success);">已通过</span></li>
         {% else %}
             <li><span style="color:var(--fn-danger);">已驳回</span></li>
         {% endif %}
-    {% endif %}
-    {% if has_absolute_url %}
-        <li><a href="{{ absolute_url }}" class="viewsitelink">{% trans "在网站中查看" %}</a></li>
     {% endif %}
 {% endblock %}
 
@@ -87,16 +86,21 @@
 <div class="module" style="margin-top:16px;padding:16px;border:1px solid var(--fn-border);border-radius:var(--fn-radius-md);background:#fff;">
     <h2 style="margin:0 0 12px;font-size:15px;">提交信息</h2>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <tr><th style="text-align:left;width:140px;padding:8px;">站点名称</th><td>{{ submission.name }}</td></tr>
-        <tr><th style="text-align:left;padding:8px;">网址</th><td><a href="{{ submission.url }}" target="_blank" rel="noopener">{{ submission.url }}</a></td></tr>
-        <tr><th style="text-align:left;padding:8px;">描述</th><td>{{ submission.description|default:"—" }}</td></tr>
-        <tr><th style="text-align:left;padding:8px;">分类</th><td>{{ submission.category }}</td></tr>
-        <tr><th style="text-align:left;padding:8px;">标签</th><td>
-            {% for t in tag_names %}<span style="display:inline-block;padding:1px 8px;border-radius:var(--fn-radius-pill);background:var(--fn-primary-soft);color:var(--fn-primary);margin-right:4px;">{{ t }}</span>{% empty %}—{% endfor %}
-        </td></tr>
+        <tr><th style="text-align:left;width:140px;padding:8px;">站点</th><td><a href="{% url 'admin:navigation_site_change' submission.site_id %}">{{ submission.site }}</a></td></tr>
+        <tr><th style="text-align:left;padding:8px;">平台</th><td>{{ platform_label }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">链接</th><td><a href="{{ submission.url }}" target="_blank" rel="noopener">{{ submission.url }}</a></td></tr>
         <tr><th style="text-align:left;padding:8px;">提交人</th><td>{{ submission.user }}</td></tr>
         <tr><th style="text-align:left;padding:8px;">提交时间</th><td>{{ submission.created_at }}</td></tr>
+        <tr><th style="text-align:left;padding:8px;">状态</th><td>{{ submission.get_status_display }}{% if submission.admin_note %}（意见：{{ submission.admin_note }}）{% endif %}</td></tr>
+        {% if submission.platform == "android" %}
+        <tr><th style="text-align:left;padding:8px;">站点当前安卓链接</th><td>{{ site_android_url|default:"—" }}</td></tr>
+        {% endif %}
     </table>
+    {% if submission.platform == "android" and pending %}
+    <p style="margin:12px 0 0;padding:10px 12px;background:var(--fn-warning-soft);border:1px solid var(--fn-warning-border);border-radius:var(--fn-radius-sm);color:var(--fn-warning);">
+        审核通过后会自动拉取安卓 APP 并缓存到本站。若拉取失败，可在站点页底部「APP 拉取」区域手动重新拉取或更换安卓下载链接。
+    </p>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock %}

@@ -33,6 +33,8 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const termsRef = useRef<string[]>([]);
   const scopeRef = useRef<string>(ANON_SCOPE);
+  const epochRef = useRef(0);
+  const syncChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const persist = useCallback(async (next: string[]) => {
     termsRef.current = next;
@@ -41,14 +43,17 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadScope = useCallback(async (scope: string) => {
+    const epoch = ++epochRef.current;
     try {
       const raw = await AsyncStorage.getItem(historyKeyFor(scope));
       const p = raw ? JSON.parse(raw) : [];
+      if (epochRef.current !== epoch) return epoch;
       termsRef.current = p;
       setTerms(p);
     } finally {
       setLoaded(true);
     }
+    return epoch;
   }, []);
 
   // 首次加载：本地作用域的缓存（登录状态可能未就绪，由身份切换登录接手）
@@ -56,24 +61,32 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
     loadScope(ANON_SCOPE);
   }, [loadScope]);
 
-  // 登录后拉取服务器搜索历史并合并（服务器权威），再推回合并结果
-  const syncFromServer = useCallback(async () => {
-    try {
-      const res = await authedFetch(`${API_URL}/me/`);
-      if (!res.ok) return;
-      const me = await res.json();
-      const serverTerms: string[] = me.search_history ?? [];
-      const merged = Array.from(new Set([...serverTerms, ...termsRef.current]));
-      await persist(merged.slice(0, MAX_ITEMS));
-      await authedFetch(`${API_URL}/me/search-history/`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ terms: merged.slice(0, MAX_ITEMS) }),
-      });
-    } catch {
-      // 静默失败，保留本地
-    }
-  }, [persist]);
+  // 登录后拉取服务器搜索历史并合并（本地优先，服务器补充），再推回合并结果。
+  // extraTerms：匿名 -> 登录时传入的匿名本地历史，一并并入该账号。
+  const syncFromServer = useCallback(
+    async (extraTerms?: string[]) => {
+      try {
+        const res = await authedFetch(`${API_URL}/me/`);
+        if (!res.ok) return;
+        const me = await res.json();
+        const serverTerms: string[] = me.search_history ?? [];
+        const merged = Array.from(
+          new Set([...(extraTerms ?? []), ...termsRef.current, ...serverTerms]),
+        );
+        await persist(merged.slice(0, MAX_ITEMS));
+        syncChainRef.current = syncChainRef.current.then(async () => {
+          await authedFetch(`${API_URL}/me/search-history/`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ terms: termsRef.current.slice(0, MAX_ITEMS) }),
+          }).catch(() => {});
+        });
+      } catch {
+        // 静默失败，保留本地
+      }
+    },
+    [persist],
+  );
 
   // 身份切换：匿名<->用户、用户间登录，隔离各自本地缓存
   useEffect(() => {
@@ -84,32 +97,36 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
 
     scopeRef.current = scope;
 
-    if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
-      // 匿名 -> 登录：把匿名本地历史合并进该账号（保留当前功能），再清理匿名缓存
-      syncFromServer();
-      AsyncStorage.removeItem(historyKeyFor(ANON_SCOPE)).catch(() => {});
-      return;
-    }
+    (async () => {
+      if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
+        // 匿名 -> 登录：把匿名本地历史合并进该账号（保留当前功能），再清理匿名缓存
+        const anonTerms = termsRef.current;
+        const epoch = await loadScope(scope);
+        if (epochRef.current !== epoch) return;
+        await syncFromServer(anonTerms);
+        AsyncStorage.removeItem(historyKeyFor(ANON_SCOPE)).catch(() => {});
+        return;
+      }
 
-    // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，丢弃上一用户本地数据
-    loadScope(scope);
-    if (scope !== ANON_SCOPE) {
-      syncFromServer();
-    }
+      // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，丢弃上一用户本地数据
+      const epoch = await loadScope(scope);
+      if (epochRef.current !== epoch) return;
+      if (scope !== ANON_SCOPE) {
+        await syncFromServer();
+      }
+    })();
   }, [auth.loaded, auth.user, syncFromServer, loadScope]);
 
   const pushToServer = useCallback(
     async (next: string[]) => {
       if (!auth.user) return;
-      try {
+      syncChainRef.current = syncChainRef.current.then(async () => {
         await authedFetch(`${API_URL}/me/search-history/`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ terms: next }),
-        });
-      } catch {
-        // 静默
-      }
+        }).catch(() => {});
+      });
     },
     [auth.user],
   );

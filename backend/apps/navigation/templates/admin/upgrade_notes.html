@@ -7,72 +7,77 @@
     <title>模板维护说明 · FinNav</title>
     <style>
         :root {
-            --bg: #0b1220;
-            --bg-soft: #111a2c;
-            --card: rgba(148, 163, 184, 0.06);
-            --card-border: rgba(99, 102, 241, 0.22);
-            --text: #e2e8f0;
-            --text-dim: #94a3b8;
-            --text-faint: #64748b;
-            --accent: #6366f1;
-            --accent-2: #22d3ee;
-            --ok: #34d399;
-            --warn: #fbbf24;
+            --fn-bg: #f1f5f9;
+            --fn-surface: #ffffff;
+            --fn-border: #e5e7eb;
+            --fn-primary: #4F46E5;
+            --fn-primary-soft: #EEF2FF;
+            --fn-warning: #B45309;
+            --fn-warning-soft: #FEF3C7;
+            --fn-warning-border: #FDE68A;
+            --fn-text: #1F2937;
+            --fn-text-2: #4B5563;
+            --fn-text-3: #6B7280;
+            --fn-text-4: #9CA3AF;
+            --fn-radius-sm: 6px;
+            --fn-radius-md: 12px;
+            --fn-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: "Source Sans Pro", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
             background:
-                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.18), transparent 60%),
-                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.12), transparent 55%),
-                var(--bg);
-            color: var(--text);
+                radial-gradient(1200px 600px at 80% -10%, rgba(99, 102, 241, 0.08), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, 0.07), transparent 55%),
+                var(--fn-bg);
+            color: var(--fn-text);
             min-height: 100vh;
             padding: 24px;
         }
         .wrap { max-width: 900px; margin: 0 auto; }
         h1 { font-size: 22px; margin-bottom: 6px; }
-        .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+        .sub { color: var(--fn-text-3); font-size: 13px; margin-bottom: 20px; }
         .card {
-            background: var(--card);
-            border: 1px solid var(--card-border);
-            border-radius: 12px;
+            background: var(--fn-surface);
+            border: 1px solid var(--fn-border);
+            border-radius: var(--fn-radius-md);
             padding: 20px;
             margin-bottom: 16px;
+            box-shadow: var(--fn-shadow);
         }
-        .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent-2); }
-        .card p { font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 12px; }
+        .card h2 { font-size: 15px; margin-bottom: 12px; color: var(--fn-primary); }
+        .card p { font-size: 13px; color: var(--fn-text-2); line-height: 1.7; margin-bottom: 12px; }
         .card ul { list-style: none; }
         .card li {
             display: flex;
             gap: 10px;
             align-items: flex-start;
             font-size: 13px;
-            color: var(--text-dim);
+            color: var(--fn-text-2);
             line-height: 1.6;
             padding: 8px 0;
-            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+            border-bottom: 1px solid #f1f5f9;
         }
         .card li:last-child { border-bottom: none; }
-        .card li svg { color: var(--accent-2); flex-shrink: 0; margin-top: 3px; }
+        .card li svg { color: var(--fn-primary); flex-shrink: 0; margin-top: 3px; }
         code {
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             font-size: 12px;
-            background: rgba(99, 102, 241, 0.15);
-            color: #a5b4fc;
+            background: var(--fn-primary-soft);
+            color: var(--fn-primary);
             padding: 1px 6px;
             border-radius: 4px;
         }
-        .path { color: var(--accent-2); font-weight: 600; }
+        .path { color: var(--fn-primary); font-weight: 600; }
         .tag {
             display: inline-block;
             padding: 2px 10px;
             border-radius: 999px;
             font-size: 12px;
             font-weight: 600;
-            background: rgba(244, 184, 36, 0.14);
-            color: var(--warn);
-            border: 1px solid rgba(244, 184, 36, 0.28);
+            background: var(--fn-warning-soft);
+            color: var(--fn-warning);
+            border: 1px solid var(--fn-warning-border);
         }
     </style>
 </head>

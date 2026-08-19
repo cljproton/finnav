@@ -5,11 +5,15 @@ from rest_framework import serializers
 
 from .models import (
     AppDownload,
+    AppLinkSubmission,
     AppSetting,
     Category,
+    PointRule,
+    PointTransaction,
     Rating,
     Site,
     SiteSubmission,
+    SiteTutorial,
     Tag,
     UserFavorite,
     UserSiteInvite,
@@ -38,9 +42,6 @@ class SiteSerializer(serializers.ModelSerializer):
             'category_name',
             'tags',
             'sort_order',
-            'text_tutorials',
-            'video_tutorials',
-            'agent_links',
             'app_android_url',
             'app_android_cache_url',
             'app_android_has_cache',
@@ -68,8 +69,9 @@ class SiteSerializer(serializers.ModelSerializer):
         return obj.logo.url
 
     def get_tags(self, obj):
-        """返回标签名列表（按 sort_order, name 排序），保持 string[] 契约。"""
-        return list(obj.tags.values_list('name', flat=True))
+        """返回标签名列表（Tag.Meta 默认按 sort_order, name 排序），保持 string[] 契约。"""
+        # 用 Python 迭代而非 values_list/order_by：配合外层 prefetch_related('tags') 消除 N+1
+        return [t.name for t in obj.tags.all()]
 
     def get_app_android_has_cache(self, obj):
         """安卓 APP 是否已有本站本地缓存（公开信息，用于展示下载入口）。"""
@@ -88,57 +90,10 @@ class SiteSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.app_android_file.url)
 
     def get_app_android_sha256(self, obj):
-        """缓存 APK 的 SHA-256 校验值（仅登录用户可见，与本站缓存下载同权限）。"""
+        """缓存 APK 的 SHA-256 校验值（公开信息，供真实性核验比对）。"""
         if not obj.app_android_sha256:
             return None
-        request = self.context.get('request')
-        if request is None or not getattr(request.user, 'is_authenticated', False):
-            return None
         return obj.app_android_sha256
-
-    def _validate_link_array(self, value, field_name):
-        """链接数组校验：必须是数组，最多 10 条；每项含非空 name 与合法 http/https url。"""
-        if not isinstance(value, list):
-            raise serializers.ValidationError(_('%(field)s 必须是数组') % {'field': field_name})
-        if len(value) > 10:
-            raise serializers.ValidationError(
-                _('%(field)s 最多可录入 10 条') % {'field': field_name}
-            )
-        for index, item in enumerate(value):
-            if not isinstance(item, dict):
-                raise serializers.ValidationError(
-                    _('%(field)s 第 %(index)s 项必须是对象（含 name 与 url）')
-                    % {'field': field_name, 'index': index + 1}
-                )
-            name = item.get('name')
-            url = item.get('url')
-            if not name or not str(name).strip():
-                raise serializers.ValidationError(
-                    _('%(field)s 第 %(index)s 项缺少非空的 name')
-                    % {'field': field_name, 'index': index + 1}
-                )
-            if not url or not str(url).strip():
-                raise serializers.ValidationError(
-                    _('%(field)s 第 %(index)s 项缺少非空的 url')
-                    % {'field': field_name, 'index': index + 1}
-                )
-            try:
-                URLValidator(schemes=['http', 'https'])(url)
-            except ValidationError:
-                raise serializers.ValidationError(
-                    _('%(field)s 第 %(index)s 项链接格式无效')
-                    % {'field': field_name, 'index': index + 1}
-                )
-        return value
-
-    def validate_text_tutorials(self, value):
-        return self._validate_link_array(value, 'text_tutorials')
-
-    def validate_video_tutorials(self, value):
-        return self._validate_link_array(value, 'video_tutorials')
-
-    def validate_agent_links(self, value):
-        return self._validate_link_array(value, 'agent_links')
 
 
 class RatingSerializer(serializers.ModelSerializer):
@@ -351,8 +306,169 @@ class SiteSubmissionListSerializer(serializers.ModelSerializer):
         return list(obj.tags.values_list('name', flat=True))
 
 
+class PointRuleSerializer(serializers.ModelSerializer):
+    """公开的积分规则（供 App「赚积分」页展示，仅启用规则）。"""
+
+    class Meta:
+        model = PointRule
+        fields = ('code', 'name', 'points', 'description')
+        read_only_fields = fields
+
+
+class PointTransactionSerializer(serializers.ModelSerializer):
+    """用户积分流水（本人可见）。"""
+
+    rule_code = serializers.CharField(source='rule.code', read_only=True)
+    rule_name = serializers.CharField(source='rule.name', read_only=True)
+
+    class Meta:
+        model = PointTransaction
+        fields = (
+            'id', 'amount', 'balance_after', 'rule_code', 'rule_name',
+            'ref_type', 'description', 'created_at',
+        )
+        read_only_fields = fields
+
+
 class AppDownloadSerializer(serializers.ModelSerializer):
     class Meta:
         model = AppDownload
         fields = ('id', 'site', 'platform', 'downloaded_at')
         read_only_fields = ('id', 'site', 'platform', 'downloaded_at')
+
+
+class SiteTutorialSerializer(serializers.ModelSerializer):
+    """用户分享教程（读）：公开展示，含脱敏分享者与当前用户关系。"""
+
+    username_masked = serializers.SerializerMethodField()
+    is_mine = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SiteTutorial
+        fields = (
+            'id',
+            'site',
+            'type',
+            'url',
+            'title',
+            'status',
+            'view_count',
+            'username_masked',
+            'is_mine',
+            'can_delete',
+            'delete_pending',
+            'created_at',
+        )
+        read_only_fields = fields
+
+    def get_username_masked(self, obj):
+        return mask_username(obj.user.username)
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        if request is None or not getattr(request.user, 'is_authenticated', False):
+            return False
+        return obj.user_id == request.user.pk
+
+    def get_can_delete(self, obj):
+        request = self.context.get('request')
+        if request is None or not getattr(request.user, 'is_authenticated', False):
+            return False
+        return (
+            obj.user_id == request.user.pk
+            and obj.status != SiteTutorial.STATUS_PENDING
+            and not obj.delete_pending
+        )
+
+
+class SiteTutorialCreateSerializer(serializers.ModelSerializer):
+    """用户分享教程（写）：只需类型 + 链接，标题自动抓取；也可手动指定标题覆盖。"""
+
+    url = serializers.CharField(max_length=500)
+    title = serializers.CharField(
+        max_length=200, required=False, allow_blank=True, trim_whitespace=True
+    )
+
+    class Meta:
+        model = SiteTutorial
+        fields = ('id', 'type', 'url', 'title', 'created_at')
+        read_only_fields = ('id', 'created_at')
+
+    def validate_type(self, value):
+        choices = dict(SiteTutorial.TYPE_CHOICES)
+        if value not in choices:
+            raise serializers.ValidationError(_('未知的教程类型。'))
+        return value
+
+    def validate_url(self, value):
+        url = str(value or '').strip()
+        if not url:
+            raise serializers.ValidationError(_('请填写链接。'))
+        try:
+            URLValidator(schemes=['http', 'https'])(url)
+        except ValidationError:
+            raise serializers.ValidationError(_('链接格式无效。'))
+        return url
+
+    def validate_title(self, value):
+        title = str(value or '').strip()
+        if len(title) > 200:
+            raise serializers.ValidationError(_('标题过长（最多 200 字）。'))
+        return title
+
+    def create(self, validated_data):
+        manual_title = validated_data.get('title')
+        url = validated_data['url']
+        if not manual_title:
+            from .services import fetch_page_title
+
+            manual_title = fetch_page_title(url) or url
+        validated_data['title'] = manual_title
+        return super().create(validated_data)
+
+
+class AppLinkSubmissionSerializer(serializers.ModelSerializer):
+    """用户提交的 APP 下载链接（按平台独立提交，需管理员审核）。"""
+
+    class Meta:
+        model = AppLinkSubmission
+        fields = ('id', 'site', 'platform', 'url', 'status', 'admin_note', 'created_at')
+        read_only_fields = ('id', 'site', 'status', 'admin_note', 'created_at')
+
+    def validate_platform(self, value):
+        choices = dict(AppLinkSubmission.PLATFORM_CHOICES)
+        if value not in choices:
+            raise serializers.ValidationError(_('未知的平台。'))
+        return value
+
+    def validate_url(self, value):
+        url = str(value or '').strip()
+        if not url:
+            raise serializers.ValidationError(_('请填写链接。'))
+        try:
+            URLValidator(schemes=['http', 'https'])(url)
+        except ValidationError:
+            raise serializers.ValidationError(_('链接格式无效。'))
+        return url
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get('request')
+        site = self.context.get('site')
+        if (
+            request is not None
+            and getattr(request.user, 'is_authenticated', False)
+            and site is not None
+        ):
+            pending = AppLinkSubmission.objects.filter(
+                user=request.user,
+                site=site,
+                platform=attrs.get('platform'),
+                status=AppLinkSubmission.STATUS_PENDING,
+            ).exists()
+            if pending:
+                raise serializers.ValidationError(
+                    _('该平台已有待审核的提交，请等待审核结果。')
+                )
+        return attrs

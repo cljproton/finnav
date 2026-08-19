@@ -25,16 +25,13 @@ CATEGORIES = [
 ]
 
 
-def _s(name, url, description, tags=(), text_tutorials=(), video_tutorials=(), agent_links=()):
+def _s(name, url, description, tags=()):
     """构造单条站点数据（name 英文原名，description 中文说明）。"""
     return {
         'name': name,
         'url': url,
         'description': description,
         'tags': list(tags),
-        'text_tutorials': list(text_tutorials),
-        'video_tutorials': list(video_tutorials),
-        'agent_links': list(agent_links),
     }
 
 
@@ -42,15 +39,8 @@ SITES_BY_CATEGORY = {
     'defi': [
         _s('Uniswap', 'https://uniswap.org', '全球最流行的去中心化交易所（DEX），自动做市商模式的先驱。',
            ('dex', 'swap', 'amm'),
-           text_tutorials=(
-               {'name': 'Uniswap 官方文档', 'url': 'https://docs.uniswap.org'},
-               {'name': 'Uniswap 开发者文档', 'url': 'https://docs.uniswap.org/contracts/v3'},
-           ),
-           video_tutorials=({'name': 'Uniswap 使用教学（B站）', 'url': 'https://search.bilibili.com/all?keyword=uniswap'},),
-           agent_links=({'name': '闲鱼代申请', 'url': 'https://www.goofish.com'},)),
         _s('Aave (AAVE)', 'https://aave.com', '领先的去中心化借贷协议，支持存入资产赚取利息或抵押借款。',
-           ('lending', '借贷'),
-           text_tutorials=({'name': 'Aave 官方文档', 'url': 'https://docs.aave.com'},)),
+           ('lending', '借贷')),
         _s('Curve Finance', 'https://curve.fi', '专为稳定币设计的低滑点兑换协议，也是稳定币流动性主力。',
            ('dex', 'stablecoin', 'amm')),
         _s('Lido', 'https://lido.fi', '以太坊流动性质押协议，质押 ETH 可换取 stETH 并获得收益。',
@@ -124,10 +114,7 @@ SITES_BY_CATEGORY = {
     ],
     'exchange': [
         _s('Binance 币安', 'https://www.binance.com', '全球交易量最大的加密货币交易所，支持现货、合约、理财等全业务。',
-           ('cex', '现货', '合约'),
-           text_tutorials=({'name': '币安帮助中心', 'url': 'https://www.binance.com/zh-CN/support'},),
-           video_tutorials=({'name': '币安注册与使用教程（B站）', 'url': 'https://search.bilibili.com/all?keyword=%E5%B8%81%E5%AE%89'},),
-           agent_links=({'name': '闲鱼代开通', 'url': 'https://www.goofish.com'},)),
+           ('cex', '现货', '合约')),
         _s('OKX 欧易', 'https://www.okx.com', '全球化数字资产交易平台，提供现货、合约、期权与 Web3 钱包。',
            ('cex', '交易')),
         _s('Coinbase', 'https://www.coinbase.com', '美国合规的加密货币交易所，适合新手，支持美元入金。',
@@ -197,19 +184,13 @@ SITES_BY_CATEGORY = {
     ],
     'wallet': [
         _s('MetaMask 小狐狸', 'https://metamask.io', '最流行的以太坊浏览器插件钱包，也是 DeFi 生态的入口。',
-           ('wallet', 'ethereum', '浏览器插件'),
-           text_tutorials=({'name': 'MetaMask 官方帮助', 'url': 'https://support.metamask.io'},),
-           video_tutorials=({'name': 'MetaMask 安装教学（B站）', 'url': 'https://search.bilibili.com/all?keyword=metamask'},),
-           agent_links=({'name': '闲鱼代安装', 'url': 'https://www.goofish.com'},)),
+           ('wallet', 'ethereum', '浏览器插件')),
         _s('Trust Wallet 信任钱包', 'https://trustwallet.com', '币安官方推出的多链移动钱包，支持数千种代币。',
-           ('wallet', 'mobile'),
-           video_tutorials=({'name': 'Trust Wallet 使用教程（B站）', 'url': 'https://search.bilibili.com/all?keyword=trust%20wallet'},)),
+           ('wallet', 'mobile')),
         _s('Phantom 幻影', 'https://phantom.app', 'Solana 生态最受欢迎的浏览器钱包与移动钱包。',
-           ('wallet', 'solana'),
-           agent_links=({'name': '闲鱼代注册', 'url': 'https://www.goofish.com'},)),
+           ('wallet', 'solana')),
         _s('Ledger', 'https://www.ledger.com', '全球最知名的硬件钱包，冷存储安全首选。',
-           ('hardware-wallet', '冷钱包'),
-           video_tutorials=({'name': 'Ledger 使用教学（B站）', 'url': 'https://search.bilibili.com/all?keyword=ledger'},)),
+           ('hardware-wallet', '冷钱包')),
         _s('Trezor', 'https://trezor.io', '开源的硬件钱包，强调透明与可审计性。',
            ('hardware-wallet', '冷钱包')),
         _s('Exodus', 'https://www.exodus.com', '界面精美的桌面/移动多币种钱包，内置兑换功能。',
@@ -315,8 +296,7 @@ SITES_BY_CATEGORY = {
     ],
     'broker': [
         _s('Interactive Brokers 盈透证券', 'https://www.interactivebrokers.com', '全球最顶级的券商之一，支持美股、港股、期权、期货，佣金低，适合跨境投资。',
-           ('美股', '港股', '期权', '期货'),
-           text_tutorials=({'name': '盈透证券帮助中心', 'url': 'https://www.interactivebrokers.com/cn/trading/wiseTrade.php'},)),
+           ('美股', '港股', '期权', '期货')),
         _s('Charles Schwab 嘉信理财', 'https://www.schwab.com', '美国最大的零售券商之一，股票与 ETF 零佣金，支持 ACH 转账与全球日交易。',
            ('美股', 'ETF', '零佣金')),
         _s('Firstrade 第一证券', 'https://www.firstrade.com', '美股与期权全免佣金，提供中文界面，深受海外华人投资者喜爱。',
@@ -446,8 +426,7 @@ SITES_BY_CATEGORY = {
     ],
     'ucard': [
         _s('Wirex', 'https://wirexapp.com', '加密 Visa 借记卡，支持 BTC、USDT 等稳定币直接消费并获得返现。',
-           ('加密卡', 'Visa', 'USDT'),
-           agent_links=({'name': '闲鱼代办Wirex卡', 'url': 'https://www.goofish.com'},)),
+           ('加密卡', 'Visa', 'USDT')),
         _s('Crypto.com Card', 'https://crypto.com', 'Crypto.com 推出的加密 Visa 卡，质押 CRO 可提升消费返现比例。',
            ('加密卡', 'Visa', '返现')),
         _s('RedotPay 红点支付', 'https://www.redotpay.com', 'USDT/加密充值 Visa 预付卡，支持 Apple Pay 与全球消费支付。',
@@ -457,8 +436,7 @@ SITES_BY_CATEGORY = {
         _s('OneKey Card', 'https://card.onekey.so', '硬件钱包团队推出的加密 Visa 卡，支持 BTC、ETH、USDT 充值消费。',
            ('加密卡', 'Visa')),
         _s('Xapo Bank', 'https://www.xapo.com', '加密友好银行，支持比特币与美元存款并附 Visa 借记卡，存款有利息。',
-           ('加密银行', 'Visa', '比特币'),
-           agent_links=({'name': '闲鱼代申请Xapo', 'url': 'https://www.goofish.com'},)),
+           ('加密银行', 'Visa', '比特币')),
         _s('Bybit Card', 'https://www.bybit.com', 'Bybit 交易所推出的加密 Visa 卡，支持 USDT 支付返现。',
            ('加密卡', 'Visa')),
         _s('Binance Card', 'https://www.binance.com', '币安加密借记卡，消费按 BNB 返现（部分地区停发）。',
