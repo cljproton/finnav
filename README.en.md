@@ -8,10 +8,20 @@
 
 
 
-A finance / Web3 website navigation app. One frontend codebase ships to Web / Android / iOS, with a Django admin backend for freely managing categories and sites.
+A finance / Web3 website navigation app: one frontend codebase ships to **Web / Android / iOS**, with its own Django admin. Beyond a plain navigation site, it embeds a **user-contribution + points-incentive + paid-experience** ecosystem — users submit sites, share tutorials, and upload APP links; once approved by an admin they are auto-published and earn points, which can be spent in-app to unlock experiences, gift to friends, or turn into redeemable vouchers.
 
 - The UI supports **Chinese/English switching**: tap the floating "中 / EN" pill in the top-right corner of the frontend to switch instantly; backend API errors and validation messages follow the client language (Chinese by default).
 - **中文版**：见 [README.md](README.md)。
+
+## Highlights
+
+- **One codebase, three platforms**: Expo (React Native) builds Web / Android / iOS from a single codebase; Ant Design indigo finance theme, dark/light mode follows the system
+- **Points incentive loop**: earn points via registration, inviting friends, and having submitted sites / tutorials / APP links approved; spend points on paid experiences, gifting to friends, or redeemable vouchers — rules, values and daily/global caps are all admin-configurable
+- **UGC + review workflow**: user-submitted sites, tutorials and APP links go through a single admin review; approval auto-publishes them and awards points, all handled in the admin review center
+- **Paid experience marketplace**: users publish point-priced experience posts (5–500 pts), one purchase unlocks permanently, with likes and images; the author receives the full amount in points in real time
+- **Solid account security**: graphical captcha, email-code registration (resend cooldown, hashed codes only), password reset, plus TOTP 2FA for both end users and the admin backend
+- **APP distribution & verification**: Android APKs can be cached and distributed from this site with SHA-256 integrity checks; a failed check automatically suspends on-site downloads
+- **One-click deployment & multi-platform packaging**: Docker Compose (combined or split), a Linux one-click script; GitHub Actions or EAS to build Android APK / iOS IPA
 
 ## Screenshots
 
@@ -22,17 +32,54 @@ A finance / Web3 website navigation app. One frontend codebase ships to Web / An
 
 ## Features
 
-- Home: category filter + site cards (logo / name / description / tags); tap into site detail; pull-to-refresh
-- Site detail: text tutorials, video tutorials, application (e.g. Xianyu) links (multiple of each), APP download (with version), visit the official site
-- One-tap share: share site name/description/link from the detail page (native share sheet / Web `navigator.share`); the shared site-link format is controlled by the "share base URL" admin setting — when set it becomes `<base>/site/<site-id>` (so users without the app can open the web version), otherwise it stays the `finnav:///site/xx` deep link
-- Star rating: email-registered users can rate sites (0-5 stars, half-star steps), optional comment; each site shows average rating and rating count, one vote per user
-- Visit stats: opening a site detail page counts one visit
-- Search: real-time search by name / description / tag
+### Browsing
+
+- Home: category filter + site cards (logo / name / description / tags); tap into site detail; pull-to-refresh; the announcement bar at the top is configurable from the admin
+- Search: real-time search by name / description / tag; search history syncs with your account
 - Favorites: persisted locally (AsyncStorage); auto-sync with the server once logged in for cross-device consistency
-- Account: email-code registration (Resend; without a key the code is printed to the backend log), login, forgot password; sign out from the "My" page; search history and favorites stay in sync across devices
-- UI: Ant Design theme, indigo finance palette, dark/light mode follows the system; bottom tabs, search, cards, modals all use AntD components (sub-path imports)
-- Admin: Simpleui theme. Overview page aggregates per-site visits and ranks TOP10 by visits + average rating + rating count; freely manage categories and sites, upload logos and APP packages, maintain tutorials/videos/application links; site settings include a "share base URL" global option
-- Logo: supports PNG / JPG / WebP / SVG upload; SVG is auto-converted to PNG before saving (backend converts via cairosvg, falling back to the original file on failure)
+
+### Site detail
+
+- Tutorials: text / video / helper-agent (e.g. Xianyu) types, shared by users and shown after admin approval; a top-10 hot list is available
+- APP download: Android / Google Play / iOS entry points; Android APKs can be cached and distributed from this site (size, cache time, SHA-256), with automatic integrity verification — a failed check suspends on-site downloads and prompts using the official link
+- Star rating: logged-in users rate sites (0–5 stars, half-star steps), optional comment; each site shows average rating and rating count, one vote per user; a separate page lists all reviews
+- Visit stats: opening a site detail page counts one visit, timestamped for admin trend charts
+- One-tap share: share the site name / description / link (native share sheet / Web `navigator.share`); the shared site-link format is controlled by the "share base URL" admin setting — when set it becomes `<base>/site/<site-id>` (so users without the app can open the web version), otherwise it stays the `finnav:///site/xx` deep link
+- My invite code: configure a personal invite code / invite link per site, automatically appended when sharing
+
+### Account & security
+
+- Register / login / password reset: email verification codes (Resend; without a key the code is printed to the backend log), with a 60 s resend cooldown; codes are stored hashed, valid for 10 minutes, max 5 attempts
+- Graphical captcha: register / login endpoints include a dynamically rendered, single-use captcha
+- 2FA: TOTP setup page + second-step login verification for end users; admin 2FA can be enabled independently (global switch + per-admin opt-in)
+- "Me" page: sign out, view points, invite friends, manage search history and favorites
+
+### User contributions (UGC)
+
+- Submit sites: users submit new sites; admin approval auto-creates the site and awards points (default +20)
+- Share tutorials: paste a link to share — the title is fetched automatically; after approval it goes public and awards points (default +10); authors can request deletion, reviewed by the admin
+- Submit APP links: Android / Google Play / iOS links are all accepted; approval auto-fills the site fields, and Android links trigger a background APK pull to cache locally
+- Experiences: users publish point-priced paid posts; one purchase unlocks forever; up to 5 images, likes and sales stats; the author receives the equivalent points in real time
+
+### Points system
+
+- Earn: registration bonus (+20), invite friends (inviter +30 / referee +10), approved site / tutorial / APP-link submissions (+20 / +10 / +10)
+- Spend: unlock experiences, gift points (by email, no fee), generate vouchers (deducted from the creator's balance; anyone else can redeem them)
+- Management: rules, values and daily/global issuance caps are admin-configurable; the transaction ledger is immutable (with balance snapshots) — approval rewards, gifts and vouchers are all auditable
+
+### Admin (Simpleui theme)
+
+- Data dashboard: per-site visit stats with a TOP10 ranking by visits + average rating + rating count; visit-trend chart and download-overview pages
+- Review center: unified review of site submissions, tutorial shares and APP-link submissions
+- Backup / restore: one-click zip backup from the UI; `backup` / `restore` management commands
+- Sites & categories: freely manage, upload logos and APP packages; logos accept PNG / JPG / WebP / SVG, with SVG auto-converted to PNG (cairosvg, falling back to the original file on failure)
+- Global settings: site title / subtitle / icon, SEO, announcement bar, footer copyright, `<head>` injection scripts, items-per-page, email-verification toggle, 2FA toggle, share base URL (share-link prefix)
+- Upgrade-notes page: records version changes and upgrade caveats
+
+### UI & internationalization
+
+- Ant Design theme with an indigo finance palette; dark/light mode follows the system; bottom tabs, search, cards, modals are all AntD components (sub-path imports)
+- One-tap Chinese/English switching; backend API errors and validation messages follow the client language (Chinese by default)
 
 ## Project structure
 
@@ -73,6 +120,7 @@ Start / stop / restart / check the dev servers with one command:
 - Frontend: Expo SDK 55 (React Native 0.83) + expo-router + TanStack Query + AsyncStorage + @ant-design/react-native (Ant Design theme) + i18next / react-i18next / expo-localization
   - Note: always import AntD components via sub-paths (e.g. `@ant-design/react-native/es/button`), never `from "@ant-design/react-native"` — the barrel entry cannot be bundled under RNGH v3 (it depends on the removed `DrawerLayout`)
 - Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg (SVG logo → PNG)
+- Everything is built in-house: the points economy, paid experiences, review flows and backup/restore are implemented natively on Django / DRF and Expo with no extra third-party services (optional email sending via Resend only)
 
 ## Backend (backend/)
 

@@ -1,13 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   Pressable,
-  TextInput,
   Platform,
-  ActivityIndicator as RNActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
@@ -19,11 +17,8 @@ import Toast from "@ant-design/react-native/es/toast";
 import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
 import {
   cancelTutorialDelete,
-  fetchTutorialTitle,
   reportTutorialVisit,
   requestTutorialDelete,
-  shareTutorial,
-  updateTutorial,
   useSiteTutorials,
 } from "../../../../../lib/api";
 import { useAuth } from "../../../../../lib/auth";
@@ -39,16 +34,6 @@ function openExternal(url: string) {
   }
   Linking.openURL(url);
 }
-
-const TYPE_OPTIONS: {
-  type: TutorialType;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}[] = [
-  { type: "text", label: "文字教程", icon: "document-text-outline" },
-  { type: "video", label: "视频教程", icon: "play-circle-outline" },
-  { type: "agent", label: "辅助/代办", icon: "people-outline" },
-];
 
 /* ---------- tutorial item ---------- */
 
@@ -277,16 +262,6 @@ export default function SiteTutorialsScreen() {
   const queryClient = useQueryClient();
 
   const [authVisible, setAuthVisible] = useState(false);
-  const [shareVisible, setShareVisible] = useState(false);
-  const [shareType, setShareType] = useState<TutorialType>("text");
-  const [shareUrl, setShareUrl] = useState("");
-  const [shareTitle, setShareTitle] = useState("");
-  const [titleEdited, setTitleEdited] = useState(false);
-  const [titleFetching, setTitleFetching] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [shareError, setShareError] = useState("");
-  const [editTarget, setEditTarget] = useState<SiteTutorial | null>(null);
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const textQ = useSiteTutorials(siteId, "text");
   const videoQ = useSiteTutorials(siteId, "video");
@@ -323,42 +298,6 @@ export default function SiteTutorialsScreen() {
       router.replace(`/site/${siteId}`);
     }
   };
-
-  useEffect(() => {
-    if (previewTimer.current) {
-      clearTimeout(previewTimer.current);
-      previewTimer.current = null;
-    }
-    const url = shareUrl.trim();
-    if (
-      !shareVisible ||
-      !loggedIn ||
-      titleEdited ||
-      !/^https?:\/\/[^\s]+$/i.test(url)
-    ) {
-      setTitleFetching(false);
-      return;
-    }
-    setTitleFetching(true);
-    previewTimer.current = setTimeout(async () => {
-      try {
-        const { title, fallback } = await fetchTutorialTitle(siteId, url);
-        if (!fallback) {
-          setShareTitle(title);
-        }
-      } catch {
-        // 预览失败时留空，提交时后端仍会自动抓取
-      } finally {
-        setTitleFetching(false);
-      }
-    }, 600);
-    return () => {
-      if (previewTimer.current) {
-        clearTimeout(previewTimer.current);
-        previewTimer.current = null;
-      }
-    };
-  }, [shareUrl, shareVisible, loggedIn, titleEdited, siteId]);
 
   const refreshTutorials = useCallback(
     (type?: TutorialType) => {
@@ -445,71 +384,26 @@ export default function SiteTutorialsScreen() {
     [t, siteId, refreshTutorials],
   );
 
-  const openShare = useCallback(() => {
+  const handleSharePress = useCallback(() => {
     if (!loggedIn) {
       setAuthVisible(true);
       return;
     }
-    setEditTarget(null);
-    setShareType("text");
-    setShareUrl("");
-    setShareTitle("");
-    setTitleEdited(false);
-    setTitleFetching(false);
-    setShareError("");
-    setShareVisible(true);
-  }, [loggedIn]);
+    router.push(`/site/${siteId}/tutorials/create`);
+  }, [loggedIn, router, siteId]);
 
-  const openEdit = useCallback(
+  const handleEdit = useCallback(
     (tutorial: SiteTutorial) => {
       if (!loggedIn) {
         setAuthVisible(true);
         return;
       }
-      setEditTarget(tutorial);
-      setShareType(tutorial.type);
-      setShareUrl(tutorial.url);
-      setShareTitle(tutorial.title);
-      setTitleEdited(true);
-      setTitleFetching(false);
-      setShareError("");
-      setShareVisible(true);
+      router.push(
+        `/site/${siteId}/tutorials/create?edit=${tutorial.id}&type=${tutorial.type}&url=${encodeURIComponent(tutorial.url)}&title=${encodeURIComponent(tutorial.title)}&status=${tutorial.status}`,
+      );
     },
-    [loggedIn],
+    [loggedIn, router, siteId],
   );
-
-  const handleShare = useCallback(async () => {
-    const url = shareUrl.trim();
-    if (!url) {
-      setShareError(t("请输入链接"));
-      return;
-    }
-    setSharing(true);
-    setShareError("");
-    try {
-      const type = editTarget ? editTarget.type : shareType;
-      const payload = {
-        type,
-        url,
-        title: shareTitle,
-      };
-      if (editTarget) {
-        const updated = await updateTutorial(siteId, editTarget.id, payload);
-        Toast.success(t("已更新，待管理员审核"), 1.5);
-        refreshTutorials(updated.type);
-      } else {
-        const created = await shareTutorial(siteId, payload);
-        Toast.success(t("已提交，待管理员审核"), 1.5);
-        refreshTutorials(created.type);
-      }
-      setShareVisible(false);
-      setEditTarget(null);
-    } catch (e: any) {
-      setShareError(e?.message || t("分享失败"));
-    } finally {
-      setSharing(false);
-    }
-  }, [t, shareUrl, shareTitle, shareType, editTarget, siteId, refreshTutorials]);
 
   const handleLogin = useCallback(
     async (email: string, password: string, captcha: CaptchaPayload) => {
@@ -565,7 +459,7 @@ export default function SiteTutorialsScreen() {
         <Text style={[styles.title, { color: colors.text }]}>{t("教程")}</Text>
         <View style={styles.topBarRight}>
           <Pressable
-            onPress={openShare}
+            onPress={handleSharePress}
             hitSlop={12}
             style={({ pressed }) => [
               styles.shareBtn,
@@ -617,174 +511,12 @@ export default function SiteTutorialsScreen() {
                 onOpen={handleOpen}
                 onDeleteRequest={handleDeleteRequest}
                 onDeleteCancel={handleDeleteCancel}
-                onEdit={openEdit}
+                onEdit={handleEdit}
               />
             );
           })}
         </ScrollView>
       )}
-
-      {/* Share modal */}
-      <Modal
-        visible={shareVisible}
-        transparent
-        animationType="fade"
-        onClose={() => {
-          setShareVisible(false);
-          setEditTarget(null);
-        }}
-        maskClosable
-        title={null}
-        footer={[]}
-        style={styles.modal}
-      >
-        <View
-          style={[
-            styles.modalContent,
-            {
-              backgroundColor: colors.surfaceSolid,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Pressable
-            onPress={() => {
-              setShareVisible(false);
-              setEditTarget(null);
-            }}
-            hitSlop={12}
-            style={styles.closeBtn}
-          >
-            <Ionicons name="close" size={20} color={colors.textTertiary} />
-          </Pressable>
-
-          <Text style={[styles.modalTitle, { color: colors.text }]}>
-            {editTarget ? t("编辑教程") : t("分享教程")}
-          </Text>
-
-          <Text style={[styles.modalLabel, { color: colors.textTertiary }]}>
-            {t("选择类型")}
-          </Text>
-          <View style={styles.typeRow}>
-            {TYPE_OPTIONS.map((opt) => {
-              const active = opt.type === shareType;
-              return (
-                <Pressable
-                  key={opt.type}
-                  onPress={() => setShareType(opt.type)}
-                  style={[
-                    styles.typeChip,
-                    {
-                      backgroundColor: active
-                        ? colors.primaryLight
-                        : colors.chipBg,
-                      borderColor: active ? colors.primary : colors.border,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={opt.icon}
-                    size={15}
-                    color={active ? colors.primary : colors.textTertiary}
-                  />
-                  <Text
-                    style={[
-                      styles.typeChipText,
-                      {
-                        color: active ? colors.primary : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {t(opt.label)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.modalLabel, { color: colors.textTertiary }]}>
-            {t("教程链接")}
-          </Text>
-          <TextInput
-            value={shareUrl}
-            onChangeText={setShareUrl}
-            placeholder={t("粘贴链接，标题将自动获取")}
-            placeholderTextColor={colors.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            style={[
-              styles.urlInput,
-              {
-                color: colors.text,
-                backgroundColor: colors.chipBg,
-                borderColor: colors.border,
-              },
-            ]}
-          />
-
-          <View style={styles.titleLabelRow}>
-            <Text style={[styles.modalLabel, { color: colors.textTertiary }]}>
-              {t("标题")}
-            </Text>
-            {titleFetching ? (
-              <View style={styles.titleFetching}>
-                <RNActivityIndicator size="small" color={colors.textTertiary} />
-                <Text style={[styles.titleFetchingText, { color: colors.textTertiary }]}>
-                  {t("自动获取中...")}
-                </Text>
-              </View>
-            ) : null}
-            <Text style={[styles.titleOptional, { color: colors.textTertiary }]}>
-              {t("（可选，留空自动获取）")}
-            </Text>
-          </View>
-          <TextInput
-            value={shareTitle}
-            onChangeText={(text) => {
-              setShareTitle(text);
-              setTitleEdited(true);
-            }}
-            placeholder={t("可手动填写标题")}
-            placeholderTextColor={colors.textTertiary}
-            maxLength={200}
-            style={[
-              styles.urlInput,
-              {
-                color: colors.text,
-                backgroundColor: colors.chipBg,
-                borderColor: colors.border,
-              },
-            ]}
-          />
-
-          {shareError ? (
-            <Text style={[styles.error, { color: colors.error }]}>
-              {shareError}
-            </Text>
-          ) : null}
-
-          <Pressable
-            onPress={handleShare}
-            disabled={sharing}
-            style={({ pressed }) => [
-              styles.submitBtn,
-              {
-                backgroundColor: colors.primary,
-                opacity: pressed || sharing ? 0.8 : 1,
-              },
-            ]}
-          >
-            {sharing ? (
-              <RNActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitBtnText}>
-                {editTarget ? t("保存修改") : t("提交分享")}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      </Modal>
 
       <AuthModal
         visible={authVisible}
@@ -947,89 +679,5 @@ const styles = StyleSheet.create({
   loadMoreText: {
     fontSize: 14,
     fontWeight: "600",
-  },
-  modal: {
-    margin: 0,
-    justifyContent: "center",
-  },
-  modalContent: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-  },
-  closeBtn: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    zIndex: 1,
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 16,
-  },
-  modalLabel: {
-    fontSize: 13,
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  titleLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  titleFetching: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  titleFetchingText: {
-    fontSize: 12,
-  },
-  titleOptional: {
-    fontSize: 12,
-    marginLeft: "auto",
-  },
-  typeRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 12,
-  },
-  typeChip: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  typeChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  urlInput: {
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  error: {
-    fontSize: 13,
-    marginTop: 10,
-  },
-  submitBtn: {
-    marginTop: 18,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
   },
 });

@@ -191,7 +191,7 @@ class EmailRegisterSerializer(serializers.Serializer):
         referral_code = self.validated_data.get('referral_code') or ''
         # 后台可关闭邮箱验证：关闭时直接创建用户（无需邮件验证码）
         from .models import AppSetting
-        from .points import process_registration
+        from .points import grant_registration_bonus, process_registration
 
         if not AppSetting.get().require_email_verification:
             user = User.objects.create_user(
@@ -200,6 +200,7 @@ class EmailRegisterSerializer(serializers.Serializer):
                 password=self.validated_data['password'],
             )
             process_registration(user, referral_code)
+            grant_registration_bonus(user)
             refresh = RefreshToken.for_user(user)
             return {
                 'access': str(refresh.access_token),
@@ -240,7 +241,7 @@ class EmailVerifySerializer(serializers.Serializer):
 
     @transaction.atomic
     def save(self):
-        from .points import process_registration
+        from .points import grant_registration_bonus, process_registration
 
         email = self.validated_data['email']
         user = User.objects.create_user(
@@ -249,6 +250,7 @@ class EmailVerifySerializer(serializers.Serializer):
             password=self.validated_data['password'],
         )
         process_registration(user, self.validated_data.get('referral_code'))
+        grant_registration_bonus(user)
         refresh = RefreshToken.for_user(user)
         return {
             'access': str(refresh.access_token),

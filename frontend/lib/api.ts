@@ -8,9 +8,14 @@ import type {
   AppLinkPlatform,
   AppLinkSubmission,
   Category,
+  Experience,
+  ExperiencePage,
+  ExperienceImage,
+  LikeResult,
   MyPoints,
   PointRule,
   PointTransactionPage,
+  PointsVoucher,
   ReviewPage,
   Site,
   SitePage,
@@ -19,9 +24,11 @@ import type {
   SiteTutorial,
   SiteTutorialPage,
   Tag,
+  TransferResult,
   TutorialType,
   TutorialsTop,
   UserSiteInvite,
+  VoucherRedeemResult,
 } from "./types";
 
 async function fetchJSON<T>(url: string): Promise<T> {
@@ -480,6 +487,185 @@ export async function cancelTutorialDelete(
   if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
 }
 
+/* ---------- experiences ---------- */
+
+function fetchSiteExperiences(
+  siteId: number,
+  page: number,
+): Promise<ExperiencePage> {
+  const suffix = page > 1 ? `?page=${page}` : "";
+  return fetchSiteJSON<ExperiencePage>(
+    `${API_URL}/sites/${siteId}/experiences/${suffix}`,
+  );
+}
+
+export function useSiteExperiences(siteId: number) {
+  return useInfiniteQuery<ExperiencePage>({
+    queryKey: ["site-experiences", siteId],
+    queryFn: ({ pageParam }) =>
+      fetchSiteExperiences(siteId, pageParam as number),
+    initialPageParam: 1,
+    staleTime: 30_000,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.next) {
+        const u = new URL(lastPage.next, "http://placeholder");
+        const p = u.searchParams.get("page");
+        const n = p ? Number(p) : NaN;
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+      }
+      return undefined;
+    },
+  });
+}
+
+export interface CreateExperiencePayload {
+  title: string;
+  content: string;
+  price: number;
+  image_ids?: number[];
+}
+
+export async function fetchExperienceDetail(
+  siteId: number,
+  experienceId: number,
+): Promise<Experience> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/experiences/${experienceId}/`,
+  );
+  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+  return res.json();
+}
+
+export async function createExperience(
+  siteId: number,
+  payload: CreateExperiencePayload,
+): Promise<Experience> {
+  const res = await authedFetch(`${API_URL}/sites/${siteId}/experiences/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function updateExperience(
+  siteId: number,
+  experienceId: number,
+  payload: CreateExperiencePayload,
+): Promise<Experience> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/experiences/${experienceId}/`,
+    {
+      method: "PUT",
+      headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function deleteExperience(
+  siteId: number,
+  experienceId: number,
+): Promise<void> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/experiences/${experienceId}/`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+}
+
+export async function purchaseExperience(
+  siteId: number,
+  experienceId: number,
+): Promise<Experience> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/experiences/${experienceId}/purchase/`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function toggleExperienceLike(
+  siteId: number,
+  experienceId: number,
+): Promise<LikeResult> {
+  const res = await authedFetch(
+    `${API_URL}/sites/${siteId}/experiences/${experienceId}/like/`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function uploadExperienceImage(
+  file: File | { uri: string; name: string; type: string },
+): Promise<ExperienceImage> {
+  const form = new FormData();
+  const body = form as any;
+  body.append("file", file as any);
+  const res = await authedFetch(`${API_URL}/uploads/images/`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const bodyJson = await res.json().catch(() => ({}));
+    const msg =
+      typeof bodyJson === "object" && bodyJson !== null
+        ? bodyJson.detail || bodyJson.error || JSON.stringify(bodyJson)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function deleteExperienceImage(imageId: number): Promise<void> {
+  const res = await authedFetch(`${API_URL}/uploads/images/${imageId}/`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
+  }
+}
+
 /* ---------- app link submissions ---------- */
 
 export function useMyAppLinks(siteId: number, enabled: boolean) {
@@ -704,4 +890,83 @@ export function useMyPointTransactions(enabled: boolean) {
       return undefined;
     },
   });
+}
+
+export async function fetchMyPointsVouchers(): Promise<PointsVoucher[]> {
+  const res = await authedFetch(`${API_URL}/points/vouchers/`, {
+    headers: withLanguageHeaders(),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.detail || body.error || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export function useMyPointsVouchers(enabled: boolean) {
+  return useQuery<PointsVoucher[]>({
+    queryKey: ["me-points-vouchers"],
+    queryFn: fetchMyPointsVouchers,
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export async function transferPoints(
+  toEmail: string,
+  amount: number,
+  message?: string,
+): Promise<TransferResult> {
+  const res = await authedFetch(`${API_URL}/points/transfer/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ to_email: toEmail, amount, message: message || "" }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.error || body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function createPointsVoucher(amount: number): Promise<PointsVoucher> {
+  const res = await authedFetch(`${API_URL}/points/vouchers/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ amount }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.error || body.detail || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
+}
+
+export async function redeemPointsVoucher(code: string): Promise<VoucherRedeemResult> {
+  const res = await authedFetch(`${API_URL}/points/vouchers/redeem/`, {
+    method: "POST",
+    headers: withLanguageHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      typeof body === "object" && body !== null
+        ? body.error || body.detail || body.non_field_errors?.[0] || JSON.stringify(body)
+        : i18n.t("请求失败 ({{status}})", { status: res.status });
+    throw new Error(String(msg));
+  }
+  return res.json();
 }

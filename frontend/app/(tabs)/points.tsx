@@ -7,21 +7,32 @@ import {
   Pressable,
   Platform,
   Share,
+  TextInput,
 } from "react-native";
 import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Toast from "@ant-design/react-native/es/toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { useThemeColors } from "../../constants/colors";
 import { useTranslation } from "react-i18next";
 import {
   useMyPoints,
   usePointRules,
   useMyPointTransactions,
+  useMyPointsVouchers,
+  transferPoints,
+  createPointsVoucher,
+  redeemPointsVoucher,
 } from "../../lib/api";
+import type { PointsVoucher } from "../../lib/types";
 import { useAuth } from "../../lib/auth";
 import AuthModal from "../../components/AuthModal";
+
+const MIN_TRANSFER_AMOUNT = 10;
+const MIN_VOUCHER_AMOUNT = 10;
+const VOUCHER_VALID_DAYS = 30;
 
 function inviteUrl(shareUrl: string, code: string): string {
   if (shareUrl) return shareUrl;
@@ -141,6 +152,380 @@ function ShareInvite({
           {t("复制链接")}
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+type TransferTab = "gift" | "voucher" | "redeem";
+
+function TransferCard() {
+  const { t } = useTranslation();
+  const colors = useThemeColors();
+  const queryClient = useQueryClient();
+
+  const [tab, setTab] = useState<TransferTab>("gift");
+  const [busy, setBusy] = useState(false);
+
+  const [giftEmail, setGiftEmail] = useState("");
+  const [giftAmount, setGiftAmount] = useState("");
+  const [giftMessage, setGiftMessage] = useState("");
+
+  const [voucherAmount, setVoucherAmount] = useState("");
+  const [createdVoucher, setCreatedVoucher] = useState<PointsVoucher | null>(null);
+
+  const [redeemCode, setRedeemCode] = useState("");
+
+  const { data: vouchers } = useMyPointsVouchers(true);
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["me-points"] });
+    queryClient.invalidateQueries({ queryKey: ["me-points-transactions"] });
+    queryClient.invalidateQueries({ queryKey: ["me-points-vouchers"] });
+  };
+
+  const handleGift = async () => {
+    const email = giftEmail.trim().toLowerCase();
+    if (!email) {
+      Toast.fail(t("请输入对方邮箱"), 1.5);
+      return;
+    }
+    const amount = Number(giftAmount);
+    if (!Number.isInteger(amount) || amount < MIN_TRANSFER_AMOUNT) {
+      Toast.fail(t("转赠面额至少 {{min}} 积分", { min: MIN_TRANSFER_AMOUNT }), 1.5);
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await transferPoints(email, amount, giftMessage.trim());
+      Toast.success(
+        t("已转赠 {{amount}} 积分给 {{email}}", { amount, email: res.to_email }),
+        1.5,
+      );
+      setGiftEmail("");
+      setGiftAmount("");
+      setGiftMessage("");
+      invalidate();
+    } catch (e) {
+      Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateVoucher = async () => {
+    const amount = Number(voucherAmount);
+    if (!Number.isInteger(amount) || amount < MIN_VOUCHER_AMOUNT) {
+      Toast.fail(t("兑换码面额至少 {{min}} 积分", { min: MIN_VOUCHER_AMOUNT }), 1.5);
+      return;
+    }
+    setBusy(true);
+    try {
+      const v = await createPointsVoucher(amount);
+      setCreatedVoucher(v);
+      setVoucherAmount("");
+      invalidate();
+      Toast.success(
+        t("兑换码已生成，{{days}} 天内有效", { days: VOUCHER_VALID_DAYS }),
+        1.5,
+      );
+    } catch (e) {
+      Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRedeem = async () => {
+    if (!redeemCode.trim()) {
+      Toast.fail(t("请输入兑换码"), 1.5);
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await redeemPointsVoucher(redeemCode.trim());
+      Toast.success(
+        t("到账 {{amount}} 积分，当前余额 {{balance}}", {
+          amount: res.amount,
+          balance: res.balance_after,
+        }),
+        1.5,
+      );
+      setRedeemCode("");
+      invalidate();
+    } catch (e) {
+      Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopyVoucher = async () => {
+    if (!createdVoucher) return;
+    const ok = await copyText(createdVoucher.code);
+    Toast[ok ? "success" : "fail"](ok ? t("兑换码已复制") : t("复制失败"), 1.5);
+  };
+
+  const voucherStatusLabel = (v: PointsVoucher): string => {
+    if (v.is_expired) return t("已过期");
+    if (v.status === "used") return t("已核销");
+    if (v.status === "revoked") return t("已作废");
+    return t("待核销");
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="swap-horizontal" size={18} color={colors.primary} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("积分转赠")}</Text>
+      </View>
+      <Text style={[styles.sectionDesc, { color: colors.textTertiary }]}>
+        {t("免手续费，最低 {{min}} 积分", { min: MIN_TRANSFER_AMOUNT })}
+      </Text>
+
+      <View style={[styles.transferTabs, { backgroundColor: colors.chipBg }]}>
+        {(
+          [
+            ["gift", t("转赠给账号")],
+            ["voucher", t("生成兑换码")],
+            ["redeem", t("核销兑换码")],
+          ] as [TransferTab, string][]
+        ).map(([key, label]) => (
+          <Pressable
+            key={key}
+            onPress={() => setTab(key)}
+            style={[styles.transferTab, tab === key && { backgroundColor: colors.primary }]}
+          >
+            <Text
+              style={[
+                styles.transferTabText,
+                { color: tab === key ? colors.surfaceSolid : colors.textSecondary },
+              ]}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {tab === "gift" ? (
+        <View>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t("对方邮箱")}
+          </Text>
+          <TextInput
+            value={giftEmail}
+            onChangeText={setGiftEmail}
+            placeholder={t("对方账号邮箱")}
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            style={[
+              styles.transferInput,
+              { color: colors.text, backgroundColor: colors.chipBg, borderColor: colors.border },
+            ]}
+          />
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t("转赠数量（积分）")}
+          </Text>
+          <TextInput
+            value={giftAmount}
+            onChangeText={(text) => setGiftAmount(text.replace(/[^0-9]/g, ""))}
+            placeholder={`${MIN_TRANSFER_AMOUNT}+`}
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="number-pad"
+            style={[
+              styles.transferInput,
+              { color: colors.text, backgroundColor: colors.chipBg, borderColor: colors.border },
+            ]}
+          />
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t("留言（可选）")}
+          </Text>
+          <TextInput
+            value={giftMessage}
+            onChangeText={setGiftMessage}
+            placeholder={t("给好友说点什么")}
+            placeholderTextColor={colors.textTertiary}
+            maxLength={200}
+            style={[
+              styles.transferInput,
+              { color: colors.text, backgroundColor: colors.chipBg, borderColor: colors.border },
+            ]}
+          />
+          <Pressable
+            onPress={handleGift}
+            disabled={busy}
+            style={({ pressed }) => [
+              styles.transferBtn,
+              { backgroundColor: colors.primary, opacity: pressed || busy ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={[styles.transferBtnText, { color: colors.surfaceSolid }]}>
+              {busy ? t("转赠中…") : t("转赠")}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {tab === "voucher" ? (
+        <View>
+          <Text style={[styles.sectionDesc, { color: colors.textTertiary }]}>
+            {t("生成后可将兑换码发给任意账号核销，生成时从余额扣除，不退还")}
+          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t("兑换码面额（积分）")}
+          </Text>
+          <TextInput
+            value={voucherAmount}
+            onChangeText={(text) => setVoucherAmount(text.replace(/[^0-9]/g, ""))}
+            placeholder={`${MIN_VOUCHER_AMOUNT}+`}
+            placeholderTextColor={colors.textTertiary}
+            keyboardType="number-pad"
+            style={[
+              styles.transferInput,
+              { color: colors.text, backgroundColor: colors.chipBg, borderColor: colors.border },
+            ]}
+          />
+          <Pressable
+            onPress={handleCreateVoucher}
+            disabled={busy}
+            style={({ pressed }) => [
+              styles.transferBtn,
+              { backgroundColor: colors.primary, opacity: pressed || busy ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={[styles.transferBtnText, { color: colors.surfaceSolid }]}>
+              {busy ? t("生成中…") : t("生成兑换码")}
+            </Text>
+          </Pressable>
+          {createdVoucher ? (
+            <View
+              style={[
+                styles.voucherBox,
+                { backgroundColor: colors.chipBg, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.voucherLabel, { color: colors.textTertiary }]}>
+                {t("面额 {{amount}} 积分", { amount: createdVoucher.amount })}
+              </Text>
+              <Text style={[styles.voucherCode, { color: colors.primary }]}>
+                {createdVoucher.code}
+              </Text>
+              <Text style={[styles.voucherMeta, { color: colors.textTertiary }]}>
+                {t("有效期至 {{time}}", {
+                  time: (createdVoucher.expires_at ?? "").replace("T", " ").slice(0, 10),
+                })}
+              </Text>
+              <Pressable
+                onPress={handleCopyVoucher}
+                style={({ pressed }) => [
+                  styles.transferBtn,
+                  { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={[styles.transferBtnText, { color: colors.surfaceSolid }]}>
+                  {t("复制兑换码")}
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {tab === "redeem" ? (
+        <View>
+          <Text style={[styles.sectionDesc, { color: colors.textTertiary }]}>
+            {t("输入好友给你的兑换码，面额到账")}
+          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>
+            {t("兑换码")}
+          </Text>
+          <TextInput
+            value={redeemCode}
+            onChangeText={(text) => setRedeemCode(text.toUpperCase())}
+            placeholder={t("输入兑换码")}
+            placeholderTextColor={colors.textTertiary}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            style={[
+              styles.transferInput,
+              styles.redeemInput,
+              { color: colors.text, backgroundColor: colors.chipBg, borderColor: colors.border },
+            ]}
+          />
+          <Pressable
+            onPress={handleRedeem}
+            disabled={busy}
+            style={({ pressed }) => [
+              styles.transferBtn,
+              { backgroundColor: colors.primary, opacity: pressed || busy ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={[styles.transferBtnText, { color: colors.surfaceSolid }]}>
+              {busy ? t("核销中…") : t("核销")}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.myVouchersHeader}>
+        <Ionicons name="pricetags-outline" size={16} color={colors.primary} />
+        <Text style={[styles.myVouchersTitle, { color: colors.text }]}>
+          {t("我的兑换码")}
+        </Text>
+      </View>
+      {!vouchers || vouchers.length === 0 ? (
+        <Text style={[styles.emptyDesc, { color: colors.textTertiary }]}>
+          {t("暂无兑换码")}
+        </Text>
+      ) : (
+        vouchers.map((v, idx) => (
+          <View
+            key={v.id}
+            style={[
+              styles.voucherRow,
+              idx > 0 && { borderTopWidth: 1, borderTopColor: colors.divider },
+            ]}
+          >
+            <View style={styles.voucherRowLeft}>
+              <Text style={[styles.voucherRowCode, { color: colors.text }]}>
+                {v.code}
+              </Text>
+              <Text style={[styles.voucherRowMeta, { color: colors.textTertiary }]}>
+                {v.is_expired
+                  ? t("已过期")
+                  : v.redeemed_at
+                    ? t("核销于 {{time}}", {
+                        time: v.redeemed_at.replace("T", " ").slice(0, 10),
+                      })
+                    : t("有效期至 {{time}}", {
+                        time: (v.expires_at ?? "").replace("T", " ").slice(0, 10),
+                      })}
+              </Text>
+            </View>
+            <View style={styles.voucherRowRight}>
+              <Text style={[styles.voucherRowAmount, { color: colors.primary }]}>
+                {v.amount}
+              </Text>
+              <Text
+                style={[
+                  styles.voucherRowStatus,
+                  {
+                    color: v.is_expired || v.status === "revoked"
+                      ? colors.textTertiary
+                      : v.status === "used"
+                        ? colors.textSecondary
+                        : colors.success,
+                  },
+                ]}
+              >
+                {voucherStatusLabel(v)}
+              </Text>
+            </View>
+          </View>
+        ))
+      )}
     </View>
   );
 }
@@ -286,6 +671,11 @@ export default function PointsScreen() {
                   shareUrl={referralShareUrl}
                   onCopied={() => Toast.success(t("邀请链接已复制"), 1.5)}
                 />
+              </View>
+
+              {/* 积分转赠 */}
+              <View style={{ marginTop: 22 }}>
+                <TransferCard />
               </View>
 
               {/* 赚积分途径 */}
@@ -600,5 +990,109 @@ const styles = StyleSheet.create({
   loginBtnText: {
     fontSize: 15,
     fontWeight: "700",
+  },
+  transferTabs: {
+    flexDirection: "row",
+    gap: 4,
+    padding: 4,
+    borderRadius: 10,
+    marginTop: 14,
+  },
+  transferTab: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  transferTabText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  fieldLabel: {
+    fontSize: 13,
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  transferInput: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  redeemInput: {
+    letterSpacing: 3,
+    textTransform: "uppercase",
+  },
+  transferBtn: {
+    marginTop: 16,
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  transferBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  voucherBox: {
+    marginTop: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: "center",
+  },
+  voucherLabel: {
+    fontSize: 13,
+  },
+  voucherCode: {
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: 3,
+    marginTop: 8,
+  },
+  voucherMeta: {
+    fontSize: 12,
+    marginTop: 6,
+  },
+  myVouchersHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 20,
+  },
+  myVouchersTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  voucherRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+  },
+  voucherRowLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  voucherRowCode: {
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 2,
+  },
+  voucherRowMeta: {
+    fontSize: 12,
+    marginTop: 3,
+  },
+  voucherRowRight: {
+    alignItems: "flex-end",
+  },
+  voucherRowAmount: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  voucherRowStatus: {
+    fontSize: 12,
+    marginTop: 3,
   },
 });

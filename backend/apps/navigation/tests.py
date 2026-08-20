@@ -9,6 +9,7 @@ from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, TransactionTestCase, override_settings
 from rest_framework import serializers
 from rest_framework.test import APIClient
@@ -17,8 +18,14 @@ from .models import (
     AppDownload,
     AppLinkSubmission,
     Category,
+    Experience,
+    ExperienceImage,
+    ExperienceLike,
+    ExperiencePurchase,
     PointRule,
     PointTransaction,
+    PointsGift,
+    PointsVoucher,
     Rating,
     Referral,
     Site,
@@ -4664,11 +4671,13 @@ class PointsTestCase(TestCase):
                 'site_approved', 'tutorial_approved', 'app_link_approved',
                 'referral_inviter', 'referral_referee',
                 'site_submit', 'tutorial_submit', 'app_link_submit',
+                'registration_bonus',
             },
         )
         self.assertEqual(rules['site_approved'].points, 20)
         self.assertEqual(rules['referral_inviter'].points, 30)
         self.assertEqual(rules['referral_referee'].points, 10)
+        self.assertEqual(rules['registration_bonus'].points, 20)
         # 「提交即发」默认关闭
         self.assertFalse(rules['site_submit'].enabled)
 
@@ -4775,7 +4784,7 @@ class PointsTestCase(TestCase):
         self.assertEqual(referral.inviter, inviter)
         self.assertEqual(referral.code, 'INVITER1')
         self.assertEqual(self._profile(inviter).points_balance, 30)
-        self.assertEqual(self._profile(referee).points_balance, 10)
+        self.assertEqual(self._profile(referee).points_balance, 30)  # 邀请 10 + 注册奖励 20
 
     def test_referral_self_rejected(self):
         from .points import process_registration
@@ -4792,7 +4801,7 @@ class PointsTestCase(TestCase):
         self.assertEqual(resp.status_code, 201)
         referee = User.objects.get(username='referee2@example.com')
         self.assertFalse(Referral.objects.filter(referee=referee).exists())
-        self.assertEqual(self._profile(referee).points_balance, 0)
+        self.assertEqual(self._profile(referee).points_balance, 20)  # 仅注册奖励
         self.assertEqual(self._profile(inviter).points_balance, 0)
 
     def test_referral_referee_only_referred_once(self):
@@ -4842,7 +4851,7 @@ class PointsTestCase(TestCase):
         referee = User.objects.get(username='referee4@example.com')
         self.assertTrue(Referral.objects.filter(referee=referee, inviter=inviter).exists())
         self.assertEqual(self._profile(inviter).points_balance, 30)
-        self.assertEqual(self._profile(referee).points_balance, 10)
+        self.assertEqual(self._profile(referee).points_balance, 30)  # 邀请 10 + 注册奖励 20
 
     # ---------- 手动调账 ----------
 
@@ -4916,3 +4925,991 @@ class PointsTestCase(TestCase):
     def test_points_transactions_requires_auth(self):
         resp = self.client.get('/api/me/points/transactions/')
         self.assertEqual(resp.status_code, 401)
+
+    # ---------- 新用户推广码（unique 空串回归） ----------
+
+    def test_new_user_me_returns_referral_code(self):
+        """全新用户（无资料）访问 /api/me/ 即获得唯一推广码。"""
+        user = self._user()
+        self.assertFalse(UserProfile.objects.filter(user=user).exists())
+        self.client.force_authenticate(user)
+        resp = self.client.get('/api/me/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['referral_code'])
+        self.assertEqual(len(data['referral_code']), 8)
+        profile = UserProfile.objects.get(user=user)
+        self.assertEqual(profile.referral_code, data['referral_code'])
+
+    def test_consecutive_new_users_get_distinct_codes(self):
+        """多个全新用户连续创建资料互不影响（不再撞 unique 空串约束）。"""
+        from .points import ensure_user_profile
+
+        users = [self._user(f'fresh{i}@example.com') for i in range(3)]
+        codes = {ensure_user_profile(u).referral_code for u in users}
+        self.assertEqual(len(codes), 3)
+        self.assertTrue(all(codes))
+        self.assertTrue(all(len(c) == 8 for c in codes))
+
+    def test_award_points_to_new_users_without_profiles(self):
+        """给无资料用户发放积分不抛 IntegrityError，且各自拿到推广码。"""
+        from .points import award_points
+
+        user1 = self._user('aw1@example.com')
+        user2 = self._user('aw2@example.com')
+        self.assertIsNotNone(award_points(user1, 'site_approved', 'site_submission', 1))
+        self.assertIsNotNone(award_points(user2, 'site_approved', 'site_submission', 2))
+        self.assertEqual(self._profile(user1).points_balance, 20)
+        self.assertEqual(self._profile(user2).points_balance, 20)
+        codes = {
+            UserProfile.objects.get(user=user1).referral_code,
+            UserProfile.objects.get(user=user2).referral_code,
+        }
+        self.assertEqual(len(codes), 2)
+        self.assertTrue(all(codes))
+
+    # ---------- 注册奖励 ----------
+
+    def test_registration_grants_bonus(self):
+        resp = self._register('bonus@example.com')
+        self.assertEqual(resp.status_code, 201)
+        self.assertIn('access', resp.json())
+        user = User.objects.get(username='bonus@example.com')
+        self.assertEqual(self._profile(user).points_balance, 20)
+        self.assertEqual(self._profile(user).points_lifetime, 20)
+        tx = PointTransaction.objects.get(user=user, ref_type='registration')
+        self.assertEqual(tx.amount, 20)
+
+    def test_registration_bonus_only_once(self):
+        user = self._user('once@example.com')
+        from .points import grant_registration_bonus
+
+        self.assertIsNotNone(grant_registration_bonus(user))
+        self.assertIsNone(grant_registration_bonus(user))
+        self.assertEqual(self._profile(user).points_balance, 20)
+
+    def test_registration_bonus_via_email_verify(self):
+        from .models import AppSetting, EmailVerification
+
+        AppSetting.objects.update_or_create(
+            id=1, defaults={'require_email_verification': True}
+        )
+        import re as _re
+
+        from django.core import mail
+
+        with self.settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            resp = self._register('vbonus@example.com')
+            self.assertEqual(resp.status_code, 200)
+            record = EmailVerification.objects.get(
+                email='vbonus@example.com', purpose=EmailVerification.PURPOSE_REGISTER
+            )
+            code = _re.search(r'验证码是：(\d{6})', mail.outbox[-1].body).group(1)
+        resp = self.client.post(
+            '/api/auth/verify/',
+            {'email': 'vbonus@example.com', 'code': code, 'password': 'secret123'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        user = User.objects.get(username='vbonus@example.com')
+        self.assertEqual(self._profile(user).points_balance, 20)
+
+    def test_registration_bonus_rule_disabled_skipped(self):
+        PointRule.objects.filter(code='registration_bonus').update(enabled=False)
+        resp = self._register('nobonus@example.com')
+        self.assertEqual(resp.status_code, 201)
+        user = User.objects.get(username='nobonus@example.com')
+        self.assertEqual(self._profile(user).points_balance, 0)
+
+    # ---------- 积分转赠（邮箱直转） ----------
+
+    def test_transfer_points_by_email(self):
+        sender = self._user('sender@example.com')
+        recipient = self._user('recipient@example.com')
+        self._profile(sender).__class__.objects.filter(pk=self._profile(sender).pk).update(
+            points_balance=100
+        )
+        self.client.force_authenticate(sender)
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'recipient@example.com', 'amount': 30, 'message': '加油'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['amount'], 30)
+        self.assertEqual(self._profile(sender).points_balance, 70)
+        self.assertEqual(self._profile(recipient).points_balance, 30)
+        self.assertEqual(self._profile(recipient).points_lifetime, 30)
+        self.assertEqual(PointsGift.objects.count(), 1)
+        self.assertEqual(
+            PointTransaction.objects.get(user=sender, ref_type='points_gift_out').amount, -30
+        )
+        self.assertEqual(
+            PointTransaction.objects.get(user=recipient, ref_type='points_gift_in').amount, 30
+        )
+
+    def test_transfer_below_min_rejected(self):
+        sender = self._user('sender2@example.com')
+        recipient = self._user('recipient2@example.com')
+        self.client.force_authenticate(sender)
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'recipient2@example.com', 'amount': 5},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_transfer_insufficient_balance(self):
+        sender = self._user('sender3@example.com')
+        recipient = self._user('recipient3@example.com')
+        self.client.force_authenticate(sender)
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'recipient3@example.com', 'amount': 50},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '积分不足，无法转赠。')
+        self.assertEqual(self._profile(recipient).points_balance, 0)
+
+    def test_transfer_to_self_rejected(self):
+        sender = self._user('sender4@example.com')
+        self.client.force_authenticate(sender)
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'sender4@example.com', 'amount': 20},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_transfer_unknown_recipient(self):
+        sender = self._user('sender5@example.com')
+        self.client.force_authenticate(sender)
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'nobody@example.com', 'amount': 20},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_transfer_requires_auth(self):
+        resp = self.client.post(
+            '/api/points/transfer/',
+            {'to_email': 'x@example.com', 'amount': 20},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    # ---------- 积分兑换码 ----------
+
+    def test_voucher_create_deducts_balance(self):
+        creator = self._user('vc@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        self.client.force_authenticate(creator)
+        resp = self.client.post('/api/points/vouchers/', {'amount': 30}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['code'])
+        self.assertEqual(data['amount'], 30)
+        self.assertEqual(data['status'], 'active')
+        self.assertEqual(self._profile(creator).points_balance, 70)
+        tx = PointTransaction.objects.get(user=creator, ref_type='points_voucher_create')
+        self.assertEqual(tx.amount, -30)
+
+    def test_voucher_create_insufficient(self):
+        creator = self._user('vc2@example.com')
+        self.client.force_authenticate(creator)
+        resp = self.client.post('/api/points/vouchers/', {'amount': 50}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '积分不足。')
+        self.assertEqual(PointsVoucher.objects.count(), 0)
+
+    def test_voucher_below_min_rejected(self):
+        creator = self._user('vc3@example.com')
+        self.client.force_authenticate(creator)
+        resp = self.client.post('/api/points/vouchers/', {'amount': 5}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(PointsVoucher.objects.count(), 0)
+
+    def test_voucher_redeem_credits_redeemer(self):
+        from .points import create_voucher
+
+        creator = self._user('vc4@example.com')
+        redeemer = self._user('vc4r@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        voucher = create_voucher(creator, 30)
+        self.client.force_authenticate(redeemer)
+        resp = self.client.post(
+            '/api/points/vouchers/redeem/', {'code': voucher.code}, format='json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['amount'], 30)
+        self.assertEqual(data['balance_after'], 30)
+        voucher.refresh_from_db()
+        self.assertEqual(voucher.status, 'used')
+        self.assertEqual(voucher.redeemed_by, redeemer)
+        self.assertEqual(self._profile(redeemer).points_balance, 30)
+        self.assertEqual(self._profile(redeemer).points_lifetime, 30)
+
+    def test_voucher_redeem_own_rejected(self):
+        from .points import create_voucher
+
+        creator = self._user('vc5@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        voucher = create_voucher(creator, 20)
+        self.client.force_authenticate(creator)
+        resp = self.client.post(
+            '/api/points/vouchers/redeem/', {'code': voucher.code}, format='json'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '不能核销自己生成的兑换码。')
+
+    def test_voucher_redeem_twice_rejected(self):
+        from .points import create_voucher, redeem_voucher
+
+        creator = self._user('vc6@example.com')
+        redeemer = self._user('vc6r@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        voucher = create_voucher(creator, 20)
+        self.assertIsNotNone(redeem_voucher(redeemer, voucher.code))
+        self.client.force_authenticate(redeemer)
+        resp = self.client.post(
+            '/api/points/vouchers/redeem/', {'code': voucher.code}, format='json'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '兑换码已核销或已作废。')
+
+    def test_voucher_expired_rejected(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .points import create_voucher
+
+        creator = self._user('vc7@example.com')
+        redeemer = self._user('vc7r@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        voucher = create_voucher(creator, 20)
+        PointsVoucher.objects.filter(pk=voucher.pk).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
+        self.client.force_authenticate(redeemer)
+        resp = self.client.post(
+            '/api/points/vouchers/redeem/', {'code': voucher.code}, format='json'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '兑换码已过期。')
+
+    def test_voucher_list_mine(self):
+        from .points import create_voucher
+
+        creator = self._user('vc8@example.com')
+        self._profile(creator).__class__.objects.filter(pk=self._profile(creator).pk).update(
+            points_balance=100
+        )
+        create_voucher(creator, 20)
+        self.client.force_authenticate(creator)
+        resp = self.client.get('/api/points/vouchers/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['amount'], 20)
+
+    def test_voucher_redeem_requires_auth(self):
+        resp = self.client.post(
+            '/api/points/vouchers/redeem/', {'code': 'XXXX'}, format='json'
+        )
+        self.assertEqual(resp.status_code, 401)
+
+
+class ExperienceTestCase(TestCase):
+    """实战经验：发布即公开、付费购买转账、点赞 toggle、可见性控制。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.category = Category.objects.create(
+            name='DeFi', slug='defi', icon='🦄', sort_order=1
+        )
+        self.site = Site.objects.create(
+            name='Uniswap',
+            description='去中心化交易所',
+            url='https://uniswap.org',
+            category=self.category,
+            sort_order=1,
+        )
+        self.author = User.objects.create_user(
+            username='author@example.com', email='author@example.com', password='p'
+        )
+        self.buyer = User.objects.create_user(
+            username='buyer@example.com', email='buyer@example.com', password='p'
+        )
+        self.other = User.objects.create_user(
+            username='other@example.com', email='other@example.com', password='p'
+        )
+
+    def _profile(self, user):
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        if created:
+            profile.ensure_referral_code()
+        return profile
+
+    def _credit(self, user, amount=100):
+        profile = self._profile(user)
+        UserProfile.objects.filter(pk=profile.pk).update(
+            points_balance=profile.points_balance + amount
+        )
+        return profile
+
+    def _experience(self, title='实战经验', price=10, author=None, content='正文内容', **kwargs):
+        return Experience.objects.create(
+            site=self.site,
+            author=author or self.author,
+            title=title,
+            content=content,
+            price=price,
+            **kwargs,
+        )
+
+    def _publish(self, user, **payload):
+        self.client.force_authenticate(user)
+        data = {
+            'title': '我的实战经验',
+            'content': '第一手实战记录……',
+            'price': 10,
+        }
+        data.update(payload)
+        return self.client.post(
+            f'/api/sites/{self.site.id}/experiences/', data, format='json'
+        )
+
+    # ---------- 发布 ----------
+
+    def test_publish_requires_auth(self):
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/',
+            {'title': 't', 'content': 'c', 'price': 10},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_publish_creates_public_experience(self):
+        resp = self._publish(self.author)
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(data['title'], '我的实战经验')
+        self.assertEqual(data['price'], 10)
+        self.assertTrue(data['is_mine'])
+        self.assertFalse(data['has_purchased'])
+        self.assertEqual(data['content'], '第一手实战记录……')
+
+    def test_publish_rejects_price_out_of_range(self):
+        resp = self._publish(self.author, price=2)
+        self.assertEqual(resp.status_code, 400)
+        resp = self._publish(self.author, price=501)
+        self.assertEqual(resp.status_code, 400)
+        resp = self._publish(self.author, price=500)
+        self.assertEqual(resp.status_code, 201)
+
+    def test_publish_rejects_missing_content(self):
+        resp = self._publish(self.author, content='')
+        self.assertEqual(resp.status_code, 400)
+
+    # ---------- 列表与可见性 ----------
+
+    def test_list_public_but_content_locked(self):
+        exp = self._experience()
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['count'], 1)
+        item = data['results'][0]
+        self.assertEqual(item['title'], '实战经验')
+        self.assertIsNone(item['content'])
+        self.assertEqual(item['images'], [])
+        self.assertEqual(item['price'], 10)
+        self.assertFalse(item['is_mine'])
+        self.assertFalse(item['has_purchased'])
+
+    def test_list_sorted_by_likes_desc(self):
+        low = self._experience(title='低赞', like_count=1)
+        high = self._experience(title='高赞', like_count=99)
+        mid = self._experience(title='中赞', like_count=50)
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/')
+        self.assertEqual(resp.status_code, 200)
+        titles = [r['title'] for r in resp.json()['results']]
+        self.assertEqual(titles, ['高赞', '中赞', '低赞'])
+
+    def test_author_sees_own_content(self):
+        exp = self._experience()
+        self.client.force_authenticate(self.author)
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/{exp.id}/')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['content'], '正文内容')
+        self.assertTrue(data['is_mine'])
+        self.assertFalse(data['has_purchased'])
+
+    def test_purchaser_sees_content(self):
+        exp = self._experience()
+        ExperiencePurchase.objects.create(
+            experience=exp, user=self.buyer, price=exp.price
+        )
+        self.client.force_authenticate(self.buyer)
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/{exp.id}/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['content'], '正文内容')
+        self.assertTrue(resp.json()['has_purchased'])
+        self.assertFalse(resp.json()['is_mine'])
+
+    # ---------- 购买 ----------
+
+    def test_purchase_transfers_points(self):
+        exp = self._experience(price=30)
+        self._credit(self.buyer, 100)
+        self.client.force_authenticate(self.buyer)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data['has_purchased'])
+        self.assertEqual(data['content'], '正文内容')
+        # 余额核对
+        self.assertEqual(self._profile(self.buyer).points_balance, 70)
+        self.assertEqual(self._profile(self.author).points_balance, 30)
+        self.assertEqual(self._profile(self.author).points_lifetime, 30)
+        # 流水
+        tx = PointTransaction.objects.filter(ref_type='experience_purchase')
+        self.assertEqual(tx.count(), 1)
+        self.assertEqual(tx.first().amount, -30)
+        sale = PointTransaction.objects.filter(ref_type='experience_sale')
+        self.assertEqual(sale.count(), 1)
+        self.assertEqual(sale.first().amount, 30)
+        exp.refresh_from_db()
+        self.assertEqual(exp.sales_count, 1)
+
+    def test_purchase_insufficient_points(self):
+        exp = self._experience(price=30)
+        self._credit(self.buyer, 10)
+        self.client.force_authenticate(self.buyer)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        exp.refresh_from_db()
+        self.assertEqual(exp.sales_count, 0)
+        self.assertEqual(self._profile(self.author).points_balance, 0)
+
+    def test_purchase_requires_auth(self):
+        exp = self._experience()
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_purchase_own_experience_rejected(self):
+        exp = self._experience()
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_purchase_idempotent_no_double_charge(self):
+        exp = self._experience(price=30)
+        self._credit(self.buyer, 100)
+        self.client.force_authenticate(self.buyer)
+        url = f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        self.assertEqual(self.client.post(url).status_code, 200)
+        self.assertEqual(self.client.post(url).status_code, 200)
+        self.assertEqual(
+            PointTransaction.objects.filter(ref_type='experience_purchase').count(), 1
+        )
+        self.assertEqual(self._profile(self.buyer).points_balance, 70)
+        self.assertEqual(self._profile(self.author).points_balance, 30)
+
+    # ---------- 点赞 ----------
+
+    def test_like_toggle_by_purchaser(self):
+        exp = self._experience()
+        ExperiencePurchase.objects.create(
+            experience=exp, user=self.buyer, price=exp.price
+        )
+        self.client.force_authenticate(self.buyer)
+        url = f'/api/sites/{self.site.id}/experiences/{exp.id}/like/'
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['liked'])
+        self.assertEqual(resp.json()['like_count'], 1)
+        exp.refresh_from_db()
+        self.assertEqual(exp.like_count, 1)
+        # toggle off
+        resp = self.client.post(url)
+        self.assertFalse(resp.json()['liked'])
+        self.assertEqual(resp.json()['like_count'], 0)
+        exp.refresh_from_db()
+        self.assertEqual(exp.like_count, 0)
+
+    def test_like_requires_purchase(self):
+        exp = self._experience()
+        self.client.force_authenticate(self.buyer)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/like/'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_like_requires_auth(self):
+        exp = self._experience()
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/like/'
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_author_can_like_own(self):
+        exp = self._experience()
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/like/'
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['liked'])
+
+    def test_like_count_visible_anonymously(self):
+        exp = self._experience()
+        ExperienceLike.objects.create(experience=exp, user=self.buyer)
+        Experience.objects.filter(pk=exp.pk).update(like_count=1)
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/')
+        self.assertEqual(resp.json()['results'][0]['like_count'], 1)
+
+    # ---------- 编辑 / 删除 ----------
+
+    def test_edit_only_by_author(self):
+        exp = self._experience()
+        self.client.force_authenticate(self.buyer)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/',
+            {'title': '改标题', 'content': '改正文', 'price': 20},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        self.client.force_authenticate(self.author)
+        self._credit(self.author, 200)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/',
+            {'title': '改标题', 'content': '改正文', 'price': 20},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['title'], '改标题')
+        self.assertEqual(resp.json()['price'], 20)
+
+    def test_delete_hides_experience(self):
+        exp = self._experience()
+        self._credit(self.author, 100)
+        self.client.force_authenticate(self.author)
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 204)
+        exp.refresh_from_db()
+        self.assertFalse(exp.is_active)
+        resp = self.client.get(f'/api/sites/{self.site.id}/experiences/')
+        self.assertEqual(resp.json()['count'], 0)
+
+    # ---------- 编辑 / 删除扣费 ----------
+
+    def test_edit_deducts_price(self):
+        self._credit(self.author, 100)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/',
+            {'title': '新标题', 'content': '新正文', 'price': 10},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._profile(self.author).points_balance, 90)
+        tx = PointTransaction.objects.get(
+            user=self.author, ref_type='experience_edit_fee', ref_id=exp.id
+        )
+        self.assertEqual(tx.amount, -10)
+        self.assertEqual(tx.balance_after, 90)
+
+    def test_edit_insufficient_balance_rejected(self):
+        self._credit(self.author, 5)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/',
+            {'title': '新标题', 'content': '新正文', 'price': 10},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        exp.refresh_from_db()
+        self.assertEqual(exp.title, '实战经验')
+        self.assertFalse(
+            PointTransaction.objects.filter(
+                user=self.author, ref_type='experience_edit_fee', ref_id=exp.id
+            ).exists()
+        )
+
+    def test_each_edit_save_deducts(self):
+        self._credit(self.author, 100)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        for i in range(2):
+            resp = self.client.put(
+                f'/api/sites/{self.site.id}/experiences/{exp.id}/',
+                {'title': f'标题{i}', 'content': '正文', 'price': 10},
+                format='json',
+            )
+            self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._profile(self.author).points_balance, 80)
+        self.assertEqual(
+            PointTransaction.objects.filter(
+                user=self.author, ref_type='experience_edit_fee', ref_id=exp.id
+            ).count(),
+            2,
+        )
+
+    def test_delete_deducts_triple_price(self):
+        self._credit(self.author, 100)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(self._profile(self.author).points_balance, 70)
+        tx = PointTransaction.objects.get(
+            user=self.author, ref_type='experience_delete_fee', ref_id=exp.id
+        )
+        self.assertEqual(tx.amount, -30)
+        self.assertEqual(tx.balance_after, 70)
+
+    def test_delete_insufficient_balance_rejected(self):
+        self._credit(self.author, 20)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        exp.refresh_from_db()
+        self.assertTrue(exp.is_active)
+        self.assertFalse(
+            PointTransaction.objects.filter(
+                user=self.author, ref_type='experience_delete_fee', ref_id=exp.id
+            ).exists()
+        )
+
+    def test_purchase_new_user_no_profile_returns_friendly_400(self):
+        """全新购买者（无资料、0 积分）购买返回 400 友好文案，而非 500。"""
+        exp = self._experience(price=30)
+        self.client.force_authenticate(self.other)
+        self.assertFalse(UserProfile.objects.filter(user=self.other).exists())
+        resp = self.client.post(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/purchase/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '积分不足，无法购买。')
+        self.assertFalse(
+            ExperiencePurchase.objects.filter(experience=exp, user=self.other).exists()
+        )
+
+    def test_delete_new_author_no_profile_returns_friendly_400(self):
+        """无资料作者删除经验时积分不足返回 400 友好文案，而非 500。"""
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        self.assertFalse(UserProfile.objects.filter(user=self.author).exists())
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()['error'], '积分不足。')
+        exp.refresh_from_db()
+        self.assertTrue(exp.is_active)
+
+    def test_delete_retry_no_double_charge(self):
+        self._credit(self.author, 100)
+        exp = self._experience(price=10)
+        self.client.force_authenticate(self.author)
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 204)
+        # 再次删除：已软删 → 404，且不重复扣费
+        resp = self.client.delete(
+            f'/api/sites/{self.site.id}/experiences/{exp.id}/'
+        )
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(self._profile(self.author).points_balance, 70)
+        self.assertEqual(
+            PointTransaction.objects.filter(
+                user=self.author, ref_type='experience_delete_fee', ref_id=exp.id
+            ).count(),
+            1,
+        )
+
+    # ---------- 图片上传 ----------
+
+    def _png(self, name='a.png'):
+        import struct
+        import zlib
+
+        def chunk(tag, data):
+            c = tag + data
+            return (
+                struct.pack('>I', len(data))
+                + c
+                + struct.pack('>I', zlib.crc32(c) & 0xFFFFFFFF)
+            )
+
+        ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+        data = (
+            b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', ihdr)
+            + chunk(b'IDAT', zlib.compress(b'\x00' + b'\x00\x00\x00\x00' * 1))
+            + chunk(b'IEND', b'')
+        )
+        return SimpleUploadedFile(name, data, content_type='image/png')
+
+    def _large_png(self, width=2400, height=1200):
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new('RGB', (width, height), (200, 50, 50)).save(buf, format='PNG')
+        buf.seek(0)
+        return SimpleUploadedFile(
+            'large.png', buf.getvalue(), content_type='image/png'
+        )
+
+    def _animated_gif(self):
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        frames = [
+            Image.new('RGB', (10, 10), color)
+            for color in ((255, 0, 0), (0, 255, 0))
+        ]
+        frames[0].save(
+            buf,
+            format='GIF',
+            save_all=True,
+            append_images=frames[1:],
+            duration=100,
+            loop=0,
+        )
+        buf.seek(0)
+        return SimpleUploadedFile(
+            'a.gif', buf.getvalue(), content_type='image/gif'
+        )
+
+    def test_upload_image_requires_auth(self):
+        resp = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_upload_image_returns_url(self):
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        )
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertIn('url', data)
+        self.assertTrue(data['url'].endswith('.webp'))
+
+    def test_upload_normalizes_large_image(self):
+        from io import BytesIO
+
+        from PIL import Image
+
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            '/api/uploads/images/',
+            {'file': self._large_png(2400, 1200)},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertTrue(data['url'].endswith('.webp'))
+        obj = ExperienceImage.objects.get(pk=data['id'])
+        buf = BytesIO(obj.image.read())
+        with Image.open(buf) as im:
+            im.load()
+            self.assertEqual(im.format, 'WEBP')
+            self.assertLessEqual(max(im.size), 1080)
+            self.assertEqual(im.size, (1080, 540))
+
+    def test_upload_keeps_animated_gif(self):
+        from io import BytesIO
+
+        from PIL import Image
+
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            '/api/uploads/images/',
+            {'file': self._animated_gif()},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertTrue(data['url'].endswith('.gif'))
+        obj = ExperienceImage.objects.get(pk=data['id'])
+        buf = BytesIO(obj.image.read())
+        with Image.open(buf) as im:
+            im.load()
+            self.assertEqual(im.format, 'GIF')
+            self.assertGreater(getattr(im, 'n_frames', 1), 1)
+
+    def test_upload_image_rejects_non_image(self):
+        self.client.force_authenticate(self.author)
+        resp = self.client.post(
+            '/api/uploads/images/', {'file': SimpleUploadedFile('a.txt', b'hello')},
+            format='multipart',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_publish_with_images_and_orphan_cleanup(self):
+        self.client.force_authenticate(self.author)
+        first = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        second = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        resp = self._publish(self.author, image_ids=[first['id'], second['id']])
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        self.assertEqual(len(data['images']), 2)
+        self.assertTrue(data['content'])  # 作者可看
+        # 图片已关联
+        self.assertEqual(
+            ExperienceImage.objects.filter(experience__isnull=False).count(), 2
+        )
+        # 无孤儿残留
+        self.assertEqual(
+            ExperienceImage.objects.filter(experience__isnull=True).count(), 0
+        )
+
+    def test_publish_rejects_foreign_image(self):
+        self.client.force_authenticate(self.buyer)
+        uploaded = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        # author 用 buyer 上传的图片 → 400
+        self.client.force_authenticate(self.author)
+        resp = self._publish(self.author, image_ids=[uploaded['id']])
+        self.assertEqual(resp.status_code, 400)
+
+    def test_edit_replaces_images(self):
+        self.client.force_authenticate(self.author)
+        img1 = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        img2 = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        exp = self._experience()
+        ExperienceImage.objects.filter(pk=img1['id']).update(experience_id=exp.pk)
+        # 编辑：移除 img1、加入 img2（img2 为孤儿图）
+        self._credit(self.author, 100)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.pk}/',
+            {
+                'title': exp.title,
+                'content': exp.content,
+                'price': exp.price,
+                'image_ids': [img2['id']],
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual([i['id'] for i in resp.json()['images']], [img2['id']])
+        # img1 被删除，img2 已关联
+        self.assertFalse(ExperienceImage.objects.filter(pk=img1['id']).exists())
+        self.assertEqual(
+            ExperienceImage.objects.get(pk=img2['id']).experience_id, exp.pk
+        )
+        # 无孤儿残留
+        self.assertEqual(
+            ExperienceImage.objects.filter(experience__isnull=True).count(), 0
+        )
+
+    def test_edit_clears_images_when_empty(self):
+        self.client.force_authenticate(self.author)
+        img = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        exp = self._experience()
+        ExperienceImage.objects.filter(pk=img['id']).update(experience_id=exp.pk)
+        self._credit(self.author, 100)
+        resp = self.client.put(
+            f'/api/sites/{self.site.id}/experiences/{exp.pk}/',
+            {
+                'title': exp.title,
+                'content': exp.content,
+                'price': exp.price,
+                'image_ids': [],
+            },
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['images'], [])
+        self.assertFalse(ExperienceImage.objects.filter(pk=img['id']).exists())
+
+    def test_delete_orphan_image(self):
+        self.client.force_authenticate(self.author)
+        uploaded = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        resp = self.client.delete(f"/api/uploads/images/{uploaded['id']}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(
+            ExperienceImage.objects.filter(pk=uploaded['id']).exists()
+        )
+
+    def test_delete_orphan_image_foreign_user(self):
+        self.client.force_authenticate(self.buyer)
+        uploaded = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        # 其它用户不能删除
+        self.client.force_authenticate(self.author)
+        resp = self.client.delete(f"/api/uploads/images/{uploaded['id']}/")
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(
+            ExperienceImage.objects.filter(pk=uploaded['id']).exists()
+        )
+
+    def test_delete_attached_image_rejected(self):
+        self.client.force_authenticate(self.author)
+        uploaded = self.client.post(
+            '/api/uploads/images/', {'file': self._png()}, format='multipart'
+        ).json()
+        exp = self._experience()
+        ExperienceImage.objects.filter(pk=uploaded['id']).update(experience_id=exp.pk)
+        resp = self.client.delete(f"/api/uploads/images/{uploaded['id']}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(
+            ExperienceImage.objects.filter(pk=uploaded['id']).exists()
+        )

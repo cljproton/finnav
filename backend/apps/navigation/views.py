@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.db import transaction
 from django.db.models import F, Q
 from django.http import Http404
 from django.utils import timezone
@@ -7,6 +8,7 @@ from django.utils.translation import gettext as _
 from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,8 +18,13 @@ from .models import (
     AppLinkSubmission,
     AppSetting,
     Category,
+    Experience,
+    ExperienceImage,
+    ExperienceLike,
+    ExperiencePurchase,
     PointRule,
     PointTransaction,
+    PointsVoucher,
     Rating,
     Site,
     SiteSubmission,
@@ -31,8 +38,15 @@ from .serializers import (
     AppLinkSubmissionSerializer,
     AppSettingSerializer,
     CategorySerializer,
+    ExperienceCreateSerializer,
+    ExperienceImageSerializer,
+    ExperienceSerializer,
     PointRuleSerializer,
     PointTransactionSerializer,
+    PointsTransferSerializer,
+    PointsVoucherCreateSerializer,
+    PointsVoucherRedeemSerializer,
+    PointsVoucherSerializer,
     RatingReviewSerializer,
     RatingSerializer,
     SiteSerializer,
@@ -89,6 +103,14 @@ class TutorialsPagination(PageNumberPagination):
 
 class AppLinksPagination(PageNumberPagination):
     """我的 APP 下载链接提交分页：固定每页 10 条。"""
+
+    page_size = 10
+    page_size_query_param = None
+    max_page_size = 100
+
+
+class ExperiencesPagination(PageNumberPagination):
+    """经验列表分页：固定每页 10 条。"""
 
     page_size = 10
     page_size_query_param = None
@@ -506,6 +528,230 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
             ).data
         )
 
+    # ---------- 用户实战经验（付费内容） ----------
+
+    def _get_experience_or_404(self, site, experience_id):
+        experience = Experience.objects.filter(pk=experience_id, site=site).first()
+        if experience is None or not experience.is_active:
+            raise Http404(_('经验不存在'))
+        return experience
+
+    @action(detail=True, methods=['get', 'post'], url_path='experiences')
+    def experiences(self, request, pk=None):
+        """站点实战经验列表 / 发布新经验。
+
+        GET  /api/sites/{id}/experiences/      公开列表（仅可见经验，按点赞倒序分页），
+             正文与配图仅购买者/作者可见（序列化器按请求用户决定）。
+        POST /api/sites/{id}/experiences/      body {title, content, price,
+             image_ids?}；需登录，发布即公开（无审核），价格作者自定（5~500）。
+        """
+        site = self.get_object()
+        context = {'request': request}
+
+        if request.method == 'POST':
+            if not getattr(request.user, 'is_authenticated', False):
+                return Response(
+                    {'error': _('请先登录。')}, status=status.HTTP_401_UNAUTHORIZED
+                )
+            serializer = ExperienceCreateSerializer(
+                data=request.data, context=context
+            )
+            serializer.is_valid(raise_exception=True)
+            experience = serializer.save(site=site, author=request.user)
+            return Response(
+                ExperienceSerializer(experience, context=context).data,
+                status=status.HTTP_201_CREATED,
+            )
+
+        qs = (
+            Experience.objects.filter(site=site, is_active=True)
+            .select_related('author')
+            .prefetch_related('images')
+            .order_by('-like_count', '-created_at')
+        )
+        paginator = ExperiencesPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        if page is not None:
+            return paginator.get_paginated_response(
+                ExperienceSerializer(page, many=True, context=context).data
+            )
+        return Response(
+            ExperienceSerializer(qs, many=True, context=context).data
+        )
+
+    @action(
+        detail=True,
+        methods=['get', 'put', 'delete'],
+        url_path=r'experiences/(?P<experience_id>[^/.]+)',
+    )
+    def experience_detail(self, request, pk=None, experience_id=None):
+        """单条经验详情 / 编辑 / 删除（作者本人）。
+
+        GET    /api/sites/{id}/experiences/{eid}/  详情（购买态决定正文是否解锁）。
+        PUT    /api/sites/{id}/experiences/{eid}/  仅作者本人；已发布经验每次保存
+               扣减 price 积分（experience_edit_fee），余额不足返回 400。
+        DELETE /api/sites/{id}/experiences/{eid}/  作者删除（软删 is_active=False），
+               扣减 price × 3 积分（experience_delete_fee，幂等），
+               购买/点赞记录保留。
+        """
+        site = self.get_object()
+        experience = self._get_experience_or_404(site, experience_id)
+        context = {'request': request}
+
+        if request.method == 'GET':
+            return Response(
+                ExperienceSerializer(experience, context=context).data
+            )
+
+        if not getattr(request.user, 'is_authenticated', False):
+            return Response({'error': _('请先登录。')}, status=status.HTTP_401_UNAUTHORIZED)
+        if experience.author_id != request.user.pk:
+            return Response(
+                {'error': _('只能操作自己发布的经验。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if request.method == 'DELETE':
+            from .points import deduct_points
+
+            fee = experience.price * 3
+            try:
+                with transaction.atomic():
+                    deduct_points(
+                        request.user,
+                        fee,
+                        'experience_delete_fee',
+                        experience.pk,
+                        _('删除经验扣费（3 倍购买定价）'),
+                        idempotent=True,
+                    )
+                    experience.is_active = False
+                    experience.save(update_fields=['is_active', 'updated_at'])
+            except ValueError as exc:
+                return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        serializer = ExperienceCreateSerializer(
+            experience, data=request.data, partial=True, context=context
+        )
+        serializer.is_valid(raise_exception=True)
+        from .points import deduct_points
+
+        fee = experience.price
+        try:
+            with transaction.atomic():
+                deduct_points(
+                    request.user,
+                    fee,
+                    'experience_edit_fee',
+                    experience.pk,
+                    _('编辑经验扣费（购买定价）'),
+                    idempotent=False,
+                )
+                experience = serializer.save()
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            ExperienceSerializer(experience, context=context).data
+        )
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'experiences/(?P<experience_id>[^/.]+)/purchase',
+    )
+    def experience_purchase(self, request, pk=None, experience_id=None):
+        """POST /api/sites/{id}/experiences/{eid}/purchase/ 购买经验。
+
+        需登录；作者不可购买自己；余额不足返回 400；重复购买幂等返回当前详情。
+        成功后：买方扣 price 积分、作者得等额积分（transfer_points），sales_count+1。
+        """
+        from .points import transfer_points
+
+        site = self.get_object()
+        experience = self._get_experience_or_404(site, experience_id)
+        context = {'request': request}
+
+        if not getattr(request.user, 'is_authenticated', False):
+            return Response({'error': _('请先登录。')}, status=status.HTTP_401_UNAUTHORIZED)
+        if experience.author_id == request.user.pk:
+            return Response(
+                {'error': _('不能购买自己发布的经验。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        purchase = ExperiencePurchase.objects.filter(
+            experience=experience, user=request.user
+        ).first()
+        if purchase is not None:
+            return Response(
+                ExperienceSerializer(experience, context=context).data
+            )
+
+        try:
+            transfer_points(
+                request.user,
+                experience.author,
+                experience.price,
+                'experience_purchase',
+                'experience_sale',
+                experience.pk,
+                description=f'购买经验：{experience.title}',
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        ExperiencePurchase.objects.create(
+            experience=experience, user=request.user, price=experience.price
+        )
+        Experience.objects.filter(pk=experience.pk).update(
+            sales_count=F('sales_count') + 1
+        )
+        experience.refresh_from_db(fields=['sales_count'])
+        return Response(ExperienceSerializer(experience, context=context).data)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=r'experiences/(?P<experience_id>[^/.]+)/like',
+    )
+    def experience_like(self, request, pk=None, experience_id=None):
+        """POST /api/sites/{id}/experiences/{eid}/like/ 点赞/取消点赞（toggle）。
+
+        仅已购买者或作者本人可操作；未登录返回 401。返回 {liked, like_count}。
+        """
+        site = self.get_object()
+        experience = self._get_experience_or_404(site, experience_id)
+
+        if not getattr(request.user, 'is_authenticated', False):
+            return Response({'error': _('请先登录。')}, status=status.HTTP_401_UNAUTHORIZED)
+
+        can_like = experience.author_id == request.user.pk or ExperiencePurchase.objects.filter(
+            experience=experience, user=request.user
+        ).exists()
+        if not can_like:
+            return Response(
+                {'error': _('购买后才能点赞。')},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        like, created = ExperienceLike.objects.get_or_create(
+            experience=experience, user=request.user
+        )
+        if created:
+            Experience.objects.filter(pk=experience.pk).update(
+                like_count=F('like_count') + 1
+            )
+            liked = True
+        else:
+            like.delete()
+            Experience.objects.filter(pk=experience.pk).update(
+                like_count=F('like_count') - 1
+            )
+            liked = False
+        experience.refresh_from_db(fields=['like_count'])
+        return Response({'liked': liked, 'like_count': experience.like_count})
+
     # ---------- APP 下载链接提交 ----------
 
     @action(
@@ -614,6 +860,83 @@ class MyPointsTransactionsView(APIView):
         return Response(PointTransactionSerializer(qs, many=True).data)
 
 
+class PointsTransferView(APIView):
+    """POST /api/points/transfer/ 按邮箱转赠积分（免手续费）。
+
+    请求体：{to_email, amount, message?}。余额不足 / 收件人不存在 / 转给自己返回 400。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PointsTransferSerializer(
+            data=request.data, context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        from .points import gift_points
+
+        recipient = serializer.validated_data['recipient']
+        amount = serializer.validated_data['amount']
+        message = serializer.validated_data.get('message') or ''
+        try:
+            gift, _, _ = gift_points(request.user, recipient, amount, message)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                'id': gift.pk,
+                'to_email': recipient.email,
+                'amount': amount,
+                'message': message,
+                'created_at': gift.created_at.isoformat(),
+            }
+        )
+
+
+class PointsVoucherView(APIView):
+    """GET /api/points/vouchers/ 我的兑换码列表；POST 生成兑换码（{amount}）。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = PointsVoucher.objects.filter(creator=request.user).order_by('-created_at')
+        return Response(PointsVoucherSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = PointsVoucherCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        from .points import create_voucher
+
+        try:
+            voucher = create_voucher(request.user, serializer.validated_data['amount'])
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(PointsVoucherSerializer(voucher).data)
+
+
+class PointsVoucherRedeemView(APIView):
+    """POST /api/points/vouchers/redeem/ 核销兑换码（{code}），面额到账。"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PointsVoucherRedeemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        from .points import redeem_voucher
+
+        try:
+            voucher, tx = redeem_voucher(request.user, serializer.validated_data['code'])
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                'code': voucher.code,
+                'amount': voucher.amount,
+                'balance_after': tx.balance_after if tx else None,
+            }
+        )
+
+
 class SettingsView(APIView):
     """GET /api/settings/ 站点全局设置（首页标题/副标题）。"""
 
@@ -622,6 +945,80 @@ class SettingsView(APIView):
     def get(self, request):
         serializer = AppSettingSerializer(AppSetting.get(), context={'request': request})
         return Response(serializer.data)
+
+
+class UploadImageView(APIView):
+    """经验配图上传 / 删除（仅孤儿图片）。
+
+    POST   /api/uploads/images/          上传（multipart/form-data）
+    DELETE /api/uploads/images/{id}/     删除本人上传的孤儿图片（未关联经验）
+    """
+
+    MAX_SIZE = 5 * 1024 * 1024
+    ALLOWED_TYPES = {
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/heic',
+        'image/heif',
+    }
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        file = request.FILES.get('file')
+        if file is None:
+            return Response(
+                {'error': _('请选择要上传的图片。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        content_type = (getattr(file, 'content_type', '') or '').lower()
+        if content_type not in self.ALLOWED_TYPES:
+            return Response(
+                {'error': _('仅支持 JPG/PNG/GIF/WebP/HEIC 图片。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if file.size > self.MAX_SIZE:
+            return Response(
+                {'error': _('图片不能超过 5MB。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from .services import normalize_experience_image
+
+        try:
+            content = normalize_experience_image(file)
+        except ValueError as exc:
+            return Response(
+                {'error': _('图片文件无效或过大。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        image = ExperienceImage.objects.create(
+            image=content, uploaded_by=request.user
+        )
+        return Response(
+            ExperienceImageSerializer(image, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def delete(self, request, pk=None):
+        """删除本人上传的孤儿图片（experience__isnull=True 未发布）。"""
+        from .models import ExperienceImage
+
+        image = ExperienceImage.objects.filter(pk=pk, uploaded_by=request.user).first()
+        if image is None:
+            return Response(
+                {'error': _('图片不存在。')},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if image.experience_id is not None:
+            return Response(
+                {'error': _('已发布的图片不能删除。')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        image.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def admin_overview(request):

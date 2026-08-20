@@ -97,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ["site-invite"],
       ["site-tutorials"],
       ["site-tutorials-top"],
+      ["site-experiences"],
       ["my-app-links"],
       ["me-points"],
       ["me-points-transactions"],
