@@ -1030,3 +1030,57 @@ def _runner(site_id):
     except Exception as exc:
         if alive():
             _update_state(site_id, {'status': 'error', 'message': str(exc)})
+
+
+def normalize_experience_image(file, max_edge=1080):
+    """统一经验配图规格：最长边 ≤ max_edge、烘焙 EXIF 方向、转 WebP。
+
+    动画 GIF 原样保留（不转码，避免丢动画）。
+
+    返回 ContentFile（可直接写入 ExperienceImage.image）。
+    无效 / 超大图片抛 ValueError（带中文错误信息）。
+    """
+    import uuid
+    from io import BytesIO
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageOps
+
+    data = file.read()
+    try:
+        img = Image.open(BytesIO(data))
+        img.load()
+    except Image.DecompressionBombError:
+        raise ValueError('图片文件无效或过大。')
+    except Exception:
+        raise ValueError('图片文件无效。')
+
+    if img.format == 'GIF':
+        return ContentFile(data, name=f'exp-{uuid.uuid4().hex[:12]}.gif')
+
+    img = ImageOps.exif_transpose(img)
+
+    width, height = img.size
+    longest = max(width, height)
+    if longest > max_edge:
+        scale = max_edge / longest
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        img = img.resize(new_size, Image.LANCZOS)
+
+    if img.mode == 'P':
+        img = img.convert('RGBA' if 'transparency' in img.info else 'RGB')
+    elif img.mode in ('LA', 'PA'):
+        img = img.convert('RGBA')
+    elif img.mode not in ('RGB', 'RGBA'):
+        img = img.convert('RGB')
+
+    has_alpha = img.mode == 'RGBA'
+    buffer = BytesIO()
+    if has_alpha:
+        img.save(buffer, format='WEBP', lossless=True)
+    else:
+        img.save(buffer, format='WEBP', quality=82)
+
+    return ContentFile(
+        buffer.getvalue(), name=f'exp-{uuid.uuid4().hex[:12]}.webp'
+    )

@@ -21,8 +21,6 @@ import {
   reportAppDownload,
   saveSiteInvite,
   useSettings,
-  useSiteTutorialsTop,
-  reportTutorialVisit,
 } from "../../../../lib/api";
 import { useFavorites } from "../../../../lib/favorites";
 import { useAuth } from "../../../../lib/auth";
@@ -193,68 +191,6 @@ function HeroLogo({ site, colors }: { site: Site; colors: any }) {
         <Logo uri={null} name={site.name} size={size} />
       </View>
     );
-}
-
-function LinkSection({
-  title,
-  icon,
-  links,
-  colors,
-  onLinkPress,
-}: {
-  title: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  links: { name: string; url: string }[];
-  colors: any;
-  onLinkPress?: (link: { name: string; url: string }, index: number) => void;
-}) {
-  if (links.length === 0) return null;
-
-  return (
-    <View
-      style={[
-        styles.section,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <Ionicons name={icon} size={18} color={colors.primary} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          {title}
-        </Text>
-      </View>
-      {links.map((link, idx) => (
-        <Pressable
-          key={idx}
-          onPress={() =>
-            onLinkPress ? onLinkPress(link, idx) : openExternal(link.url)
-          }
-          style={[
-            styles.linkItem,
-            {
-              backgroundColor: colors.linkSectionBg,
-              borderColor: colors.linkSectionBorder,
-            },
-          ]}
-        >
-          <Text
-            style={[styles.linkItemText, { color: colors.linkItemText }]}
-            numberOfLines={1}
-          >
-            {link.name}
-          </Text>
-          <Ionicons
-            name="open-outline"
-            size={14}
-            color={colors.textTertiary}
-          />
-        </Pressable>
-      ))}
-    </View>
-  );
 }
 
 /* ---------- Star rating input ---------- */
@@ -627,6 +563,47 @@ function TutorialsEntry({
   );
 }
 
+/* ---------- Experiences entry ---------- */
+
+function ExperiencesEntry({
+  site,
+  colors,
+}: {
+  site: Site;
+  colors: any;
+}) {
+  const { t } = useTranslation();
+  const router = useRouter();
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/site/${site.id}/experiences`)}
+      style={({ pressed }) => [
+        styles.section,
+        styles.reviewsEntry,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <View style={[styles.sectionHeader, styles.reviewsEntryHeader]}>
+        <Ionicons name="flask-outline" size={18} color={colors.primary} />
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          {t("个人经验")}
+        </Text>
+        <View style={styles.reviewsEntryRight}>
+          <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
+            {t("实战经验 · 积分解锁")}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
 /* ---------- Invite section ---------- */
 
 function InviteSection({
@@ -894,8 +871,6 @@ export default function SiteDetailScreen() {
 
   const { data: invite } = useSiteInvite(siteId, loggedIn);
 
-  const { data: tutorialsTop } = useSiteTutorialsTop(siteId);
-
   useEffect(() => {
     if (site && !visitReported.current) {
       visitReported.current = true;
@@ -1113,53 +1088,8 @@ export default function SiteDetailScreen() {
         {/* User tutorials entry */}
         <TutorialsEntry site={site} colors={colors} />
 
-        {/* Text tutorials */}
-        <LinkSection
-          title={t("文字教程")}
-          icon="document-text-outline"
-          links={(tutorialsTop?.text ?? []).map((item) => ({
-            name: item.title,
-            url: item.url,
-          }))}
-          colors={colors}
-          onLinkPress={(link, idx) => {
-            const item = tutorialsTop?.text[idx];
-            if (item) reportTutorialVisit(siteId, item.id);
-            openExternal(link.url);
-          }}
-        />
-
-        {/* Video tutorials */}
-        <LinkSection
-          title={t("视频教程")}
-          icon="play-circle-outline"
-          links={(tutorialsTop?.video ?? []).map((item) => ({
-            name: item.title,
-            url: item.url,
-          }))}
-          colors={colors}
-          onLinkPress={(link, idx) => {
-            const item = tutorialsTop?.video[idx];
-            if (item) reportTutorialVisit(siteId, item.id);
-            openExternal(link.url);
-          }}
-        />
-
-        {/* Agent / proxy links */}
-        <LinkSection
-          title={t("辅助/代办")}
-          icon="people-outline"
-          links={(tutorialsTop?.agent ?? []).map((item) => ({
-            name: item.title,
-            url: item.url,
-          }))}
-          colors={colors}
-          onLinkPress={(link, idx) => {
-            const item = tutorialsTop?.agent[idx];
-            if (item) reportTutorialVisit(siteId, item.id);
-            openExternal(link.url);
-          }}
-        />
+        {/* User experiences entry */}
+        <ExperiencesEntry site={site} colors={colors} />
 
         {/* APP download */}
         <View
@@ -1689,22 +1619,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     letterSpacing: 0.2,
-  },
-  linkItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  linkItemText: {
-    fontSize: 14,
-    fontWeight: "500",
-    flex: 1,
-    marginRight: 8,
   },
 
   /* Download */

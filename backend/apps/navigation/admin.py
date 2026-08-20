@@ -17,8 +17,14 @@ from .models import (
     AppSetting,
     Captcha,
     Category,
+    Experience,
+    ExperienceImage,
+    ExperienceLike,
+    ExperiencePurchase,
     PointRule,
     PointTransaction,
+    PointsGift,
+    PointsVoucher,
     Rating,
     Referral,
     Site,
@@ -1058,6 +1064,48 @@ class ReferralAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(PointsGift)
+class PointsGiftAdmin(admin.ModelAdmin):
+    """积分转赠记录（只读，审计用）。"""
+
+    list_display = ('sender', 'recipient', 'amount', 'message', 'created_at')
+    search_fields = ('sender__email', 'sender__username', 'recipient__email', 'message')
+    autocomplete_fields = ('sender', 'recipient')
+    readonly_fields = ('sender', 'recipient', 'amount', 'message', 'created_at')
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PointsVoucher)
+class PointsVoucherAdmin(admin.ModelAdmin):
+    """积分兑换码（只读，审计用）。生成时已从创建者余额扣除，不退款。"""
+
+    list_display = (
+        'code', 'creator', 'amount', 'status', 'redeemed_by', 'redeemed_at', 'expires_at',
+        'created_at',
+    )
+    list_filter = ('status',)
+    search_fields = ('code', 'creator__email', 'creator__username',
+                     'redeemed_by__email', 'redeemed_by__username')
+    autocomplete_fields = ('creator', 'redeemed_by')
+    readonly_fields = (
+        'code', 'creator', 'amount', 'status', 'redeemed_by', 'redeemed_at',
+        'expires_at', 'created_at',
+    )
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """用户积分与推广资料。积分字段只读，调账通过页内「积分调账」按钮完成。"""
@@ -1115,6 +1163,84 @@ class UserProfileAdmin(admin.ModelAdmin):
                 'lifetime': profile.points_lifetime,
             }
         )
+
+
+class ExperienceImageInline(admin.TabularInline):
+    """经验配图内联（管理后台可直接维护图片）。"""
+
+    model = ExperienceImage
+    extra = 0
+    readonly_fields = ('uploaded_by',)
+
+
+@admin.register(Experience)
+class ExperienceAdmin(admin.ModelAdmin):
+    """实战经验（付费内容，无审核直接公开）。"""
+
+    list_display = (
+        'title', 'site', 'author', 'price', 'like_count', 'sales_count',
+        'is_active', 'created_at',
+    )
+    list_filter = ('is_active', 'site__category')
+    search_fields = ('title', 'content', 'author__email', 'author__username', 'site__name')
+    autocomplete_fields = ('site', 'author')
+    readonly_fields = ('like_count', 'sales_count', 'created_at', 'updated_at')
+    inlines = (ExperienceImageInline,)
+    list_per_page = 50
+
+    @admin.action(description='隐藏所选经验（soft delete）')
+    def hide_experiences(self, request, queryset):
+        hidden = queryset.update(is_active=False)
+        self.message_user(request, f'已隐藏 {hidden} 条经验。', messages.SUCCESS)
+
+    @admin.action(description='恢复显示所选经验')
+    def show_experiences(self, request, queryset):
+        shown = queryset.update(is_active=True)
+        self.message_user(request, f'已恢复 {shown} 条经验。', messages.SUCCESS)
+
+
+@admin.register(ExperienceImage)
+class ExperienceImageAdmin(admin.ModelAdmin):
+    """经验配图（孤儿图片管理）。"""
+
+    list_display = ('pk', 'experience', 'uploaded_by', 'image', 'created_at')
+    list_filter = ('experience', 'uploaded_by')
+    search_fields = ('experience__title', 'uploaded_by__email', 'uploaded_by__username')
+    list_per_page = 50
+
+
+@admin.register(ExperiencePurchase)
+class ExperiencePurchaseAdmin(admin.ModelAdmin):
+    """经验购买记录（只读，审计用）。"""
+
+    list_display = ('experience', 'user', 'price', 'purchased_at')
+    search_fields = ('experience__title', 'user__email', 'user__username')
+    autocomplete_fields = ('experience', 'user')
+    readonly_fields = ('experience', 'user', 'price', 'purchased_at')
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ExperienceLike)
+class ExperienceLikeAdmin(admin.ModelAdmin):
+    """经验点赞记录（只读）。"""
+
+    list_display = ('experience', 'user', 'created_at')
+    search_fields = ('experience__title', 'user__email', 'user__username')
+    autocomplete_fields = ('experience', 'user')
+    readonly_fields = ('experience', 'user', 'created_at')
+    list_per_page = 50
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 

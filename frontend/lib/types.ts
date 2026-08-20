@@ -182,3 +182,65 @@ export interface MyPoints {
   referral_code: string;
   referral_share_url: string;
 }
+
+export type PointsVoucherStatus = "active" | "used" | "revoked";
+
+export interface PointsVoucher {
+  id: number;
+  code: string;
+  amount: number;
+  status: PointsVoucherStatus;
+  is_expired: boolean;
+  expires_at: string | null;
+  redeemed_at: string | null;
+  created_at: string;
+}
+
+export interface TransferResult {
+  id: number;
+  to_email: string;
+  amount: number;
+  message: string;
+  created_at: string;
+}
+
+export interface VoucherRedeemResult {
+  code: string;
+  amount: number;
+  balance_after: number;
+}
+
+export interface ExperienceImage {
+  id: number;
+  url: string;
+}
+
+export interface Experience {
+  id: number;
+  site: number;
+  title: string;
+  content: string | null;
+  price: number;
+  like_count: number;
+  sales_count: number;
+  author_name: string;
+  is_mine: boolean;
+  has_purchased: boolean;
+  liked: boolean;
+  cover: string | null;
+  images: ExperienceImage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperiencePage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Experience[];
+}
+
+export interface LikeResult {
+  liked: boolean;
+  like_count: number;
+}

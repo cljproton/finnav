@@ -73,5 +73,30 @@ urlpatterns = [
         views.PointsRulesView.as_view(),
         name='points-rules',
     ),
+    path(
+        'points/transfer/',
+        views.PointsTransferView.as_view(),
+        name='points-transfer',
+    ),
+    path(
+        'points/vouchers/',
+        views.PointsVoucherView.as_view(),
+        name='points-vouchers',
+    ),
+    path(
+        'points/vouchers/redeem/',
+        views.PointsVoucherRedeemView.as_view(),
+        name='points-voucher-redeem',
+    ),
+    path(
+        'uploads/images/',
+        views.UploadImageView.as_view(),
+        name='uploads-images',
+    ),
+    path(
+        'uploads/images/<int:pk>/',
+        views.UploadImageView.as_view(),
+        name='uploads-image-detail',
+    ),
     path('', include(router.urls)),
 ]

@@ -752,6 +752,15 @@ class PointTransaction(models.Model):
         ('site_tutorial', '教程分享'),
         ('app_link_submission', 'APP 链接提交'),
         ('referral', '邀请推广'),
+        ('registration', '注册奖励'),
+        ('experience_purchase', '经验购买'),
+        ('experience_sale', '经验售卖'),
+        ('experience_edit_fee', '编辑经验扣费'),
+        ('experience_delete_fee', '删除经验扣费'),
+        ('points_gift_out', '积分转赠(转出)'),
+        ('points_gift_in', '积分转赠(收到)'),
+        ('points_voucher_create', '兑换码生成'),
+        ('points_voucher_redeem', '兑换码核销'),
         ('manual', '管理员调整'),
     )
 
@@ -837,6 +846,88 @@ class Referral(models.Model):
 
     def __str__(self):
         return f'{self.inviter} -> {self.referee}'
+
+
+class PointsGift(models.Model):
+    """积分转赠记录：按邮箱直接转给指定账号（免手续费，见 points.gift_points）。"""
+
+    sender = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='points_gifts_sent',
+        verbose_name='转赠人',
+    )
+    recipient = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='points_gifts_received',
+        verbose_name='接收人',
+    )
+    amount = models.PositiveIntegerField(verbose_name='转赠积分')
+    message = models.CharField(max_length=200, blank=True, default='', verbose_name='留言(可选)')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='转赠时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '积分转赠'
+        verbose_name_plural = '积分转赠'
+
+    def __str__(self):
+        return f'{self.sender} -> {self.recipient} +{self.amount}'
+
+
+class PointsVoucher(models.Model):
+    """积分兑换码：生成时从创建者余额扣除（平台回收，不退还），他人凭码核销到账。
+
+    - active 待核销 / used 已核销 / revoked 已作废（当前仅后台可作废，不退款）
+    - 禁止核销自己生成的码；expires_at 过期后不可核销
+    """
+
+    STATUS_ACTIVE = 'active'
+    STATUS_USED = 'used'
+    STATUS_REVOKED = 'revoked'
+    STATUS_CHOICES = (
+        (STATUS_ACTIVE, '待核销'),
+        (STATUS_USED, '已核销'),
+        (STATUS_REVOKED, '已作废'),
+    )
+
+    code = models.CharField(max_length=24, unique=True, verbose_name='兑换码')
+    creator = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='points_vouchers',
+        verbose_name='生成人',
+    )
+    amount = models.PositiveIntegerField(verbose_name='面额(积分)')
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE, verbose_name='状态'
+    )
+    redeemed_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='points_vouchers_redeemed',
+        verbose_name='核销人',
+    )
+    redeemed_at = models.DateTimeField(blank=True, null=True, verbose_name='核销时间')
+    expires_at = models.DateTimeField(blank=True, null=True, verbose_name='过期时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='生成时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '积分兑换码'
+        verbose_name_plural = '积分兑换码'
+
+    def __str__(self):
+        return f'{self.code} (+{self.amount}) {self.status}'
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+
+        return bool(self.expires_at and self.expires_at < timezone.now())
 
 
 class SiteSubmission(models.Model):
@@ -1081,6 +1172,158 @@ class AppLinkSubmission(models.Model):
             description=f'APP 链接审核通过：{site} · {self.get_platform_display()}',
         )
         return site
+
+
+class Experience(models.Model):
+    """用户发布的实战经验（付费内容）。
+
+    发布即公开（无需审核），未购买者看不到正文与图片。
+    购买价格为发布者自定（PRICE_MIN ~ PRICE_MAX），购买时从买方扣积分，
+    等额积分转入作者（transfer_points，见 points.py）。
+    like_count / sales_count 为缓存值，由点赞/购买接口原子更新。
+    作者删除走软删（is_active=False），保留购买与点赞记录。
+    """
+
+    PRICE_MIN = 5
+    PRICE_MAX = 500
+
+    site = models.ForeignKey(
+        Site,
+        on_delete=models.CASCADE,
+        related_name='experiences',
+        verbose_name='站点',
+    )
+    author = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='experiences',
+        verbose_name='作者',
+    )
+    title = models.CharField(max_length=80, verbose_name='标题')
+    content = models.TextField(verbose_name='正文(付费可见)')
+    price = models.PositiveIntegerField(default=10, verbose_name='价格(积分)')
+    like_count = models.PositiveIntegerField(default=0, verbose_name='点赞数')
+    sales_count = models.PositiveIntegerField(default=0, verbose_name='销量')
+    is_active = models.BooleanField(default=True, verbose_name='是否可见(作者删除后隐藏)')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        ordering = ['-like_count', '-created_at']
+        indexes = [
+            models.Index(fields=['site', 'is_active', '-like_count']),
+            models.Index(fields=['site', 'is_active', '-created_at']),
+            models.Index(fields=['site', '-sales_count']),
+        ]
+        verbose_name = '实战经验'
+        verbose_name_plural = '实战经验'
+
+    def __str__(self):
+        return f'{self.title} ({self.price}分)'
+
+
+class ExperienceImage(models.Model):
+    """经验的配图（上传后按 id 顺序展示，上限 MAX_IMAGES 张）。
+
+    uploaded_by 记录上传者，供发布时校验归属与清理未关联的孤儿图片。
+    """
+
+    MAX_IMAGES = 5
+
+    experience = models.ForeignKey(
+        Experience,
+        on_delete=models.CASCADE,
+        related_name='images',
+        blank=True,
+        null=True,
+        verbose_name='经验',
+    )
+    uploaded_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='experience_images',
+        verbose_name='上传者',
+    )
+    image = models.ImageField(upload_to='experiences/', verbose_name='图片')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = '经验配图'
+        verbose_name_plural = '经验配图'
+
+    def __str__(self):
+        return f'{self.experience_id} 图#{self.pk}'
+
+
+class ExperiencePurchase(models.Model):
+    """经验的购买记录（一次购买永久解锁）。
+
+    UniqueConstraint(experience, user) 保证同一用户只能购买一次，
+    配合 points.transfer_points 的锁内校验实现并发安全。
+    """
+
+    experience = models.ForeignKey(
+        Experience,
+        on_delete=models.CASCADE,
+        related_name='purchases',
+        verbose_name='经验',
+    )
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='experience_purchases',
+        verbose_name='购买者',
+    )
+    price = models.PositiveIntegerField(verbose_name='购买价格(积分快照)')
+    purchased_at = models.DateTimeField(auto_now_add=True, verbose_name='购买时间')
+
+    class Meta:
+        ordering = ['-purchased_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['experience', 'user'], name='unique_experience_user_purchase'
+            ),
+        ]
+        verbose_name = '经验购买记录'
+        verbose_name_plural = '经验购买记录'
+
+    def __str__(self):
+        return f'{self.user} -> {self.experience_id} ({self.price}分)'
+
+
+class ExperienceLike(models.Model):
+    """经验点赞（仅已购买者或作者本人可点赞/取消点赞）。
+
+    UniqueConstraint(experience, user) 保证每人最多一条点赞记录。
+    """
+
+    experience = models.ForeignKey(
+        Experience,
+        on_delete=models.CASCADE,
+        related_name='likes',
+        verbose_name='经验',
+    )
+    user = models.ForeignKey(
+        'auth.User',
+        on_delete=models.CASCADE,
+        related_name='experience_likes',
+        verbose_name='点赞者',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='点赞时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['experience', 'user'], name='unique_experience_user_like'
+            ),
+        ]
+        verbose_name = '经验点赞'
+        verbose_name_plural = '经验点赞'
+
+    def __str__(self):
+        return f'{self.user} -> {self.experience_id}'
 
 
 class AppDownload(models.Model):
