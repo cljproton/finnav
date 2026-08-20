@@ -7,7 +7,8 @@ services:
     build:
       context: ..
       dockerfile: docker/frontend/Dockerfile
-    image: finnav-frontend
+    image: "${FRONTEND_IMAGE:-finnav-frontend}"
+    pull_policy: missing
     restart: unless-stopped
     environment:
       BACKEND_URL: "${BACKEND_URL:?请在 docker/.env 中设置 BACKEND_URL，如 http://192.168.1.10:8000}"

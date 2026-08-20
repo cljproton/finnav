@@ -1,6 +1,7 @@
 # Docker 部署（docker/）
 
 提供三种部署方式：**前后端一体化（单端口）**、**后端独立**、**前端独立**。默认一体化；需要把前后端拆开部署（如不同主机）时用后两种。
+资源受限的服务器建议直接用第五节「服务器零构建部署」——CI/开发机构建镜像推送到 GHCR，服务器只 `docker compose pull`。
 
 所有模式共用 `docker/.env`（从 `docker/.env.example` 复制），构建上下文都是仓库根目录。
 
@@ -72,10 +73,42 @@ docker compose -f docker-compose.frontend.yml up -d --build
 
 > 若后端 `DEBUG=False` 且域名固定，请把后端 `ALLOWED_HOSTS` 设为实际域名/IP，否则后端会拒绝非白名单 Host。
 
+## 五、服务器零构建部署（镜像仓库，资源受限推荐）
+
+服务器只做 `pull`，**不本地构建**。镜像由 GitHub Actions（或开发机脚本）在 amd64 + arm64
+双架构构建后推送到 **GHCR**，服务器按架构自动拉取对应版本。
+
+### 构建侧（开发机 / CI）
+
+- **自动**：推送代码到 `main` 后，`.github/workflows/build-images.yml` 自动构建并推送
+  `ghcr.io/<owner>/finnav-{backend,frontend}:latest`（另带 `sha-xxxx` 短哈希标签）。
+  > 首次使用需在 GitHub 仓库 Settings → Actions → General → Workflow permissions 开启
+  > **Read and write** 权限。
+- **手动**：开发机上执行 `docker/build-push.sh`（需 buildx）。
+
+### 服务器侧（只拉取，不构建）
+
+```bash
+cd docker
+# docker/.env 中已预设（默认 ghcr.io/cljproton/finnav-*）：
+#   BACKEND_IMAGE=ghcr.io/cljproton/finnav-backend
+#   FRONTEND_IMAGE=ghcr.io/cljproton/finnav-frontend
+docker login ghcr.io          # 私有镜像需 PAT（read:packages）；公共镜像可跳过
+docker compose pull           # 拉取最新镜像
+docker compose up -d          # 注意：勿加 --build
+```
+
+- 独立后端：`docker compose -f docker-compose.backend.yml pull && docker compose -f docker-compose.backend.yml up -d`
+- 独立前端：`docker compose -f docker-compose.frontend.yml pull && docker compose -f docker-compose.frontend.yml up -d`
+- 升级：再执行一次 `docker compose pull && docker compose up -d` 即可（compose 文件里有
+  `pull_policy: missing`，缺镜像时只拉取、绝不本地构建）。
+- 服务器只需 Docker + Compose v2 与 `curl`，**无需构建工具链**。
+
 ## 常用命令
 
 ```bash
-docker compose up -d --build                # 一体化：构建并后台启动
+docker compose up -d --build                # 一体化：构建并后台启动（开发机）
+docker compose pull && docker compose up -d # 一体化：拉取镜像并启动（服务器零构建）
 docker compose -f docker-compose.backend.yml logs -f backend   # 独立后端日志
 docker compose -f docker-compose.frontend.yml logs -f frontend # 独立前端日志
 docker compose ps                           # 查看状态

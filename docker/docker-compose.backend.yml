@@ -6,7 +6,8 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
-    image: finnav-backend
+    image: "${BACKEND_IMAGE:-finnav-backend}"
+    pull_policy: missing
     restart: unless-stopped
     ports:
       - "${BACKEND_PORT:-8000}:8000"
