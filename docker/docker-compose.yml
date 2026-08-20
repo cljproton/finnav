@@ -3,7 +3,8 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
-    image: finnav-backend
+    image: "${BACKEND_IMAGE:-finnav-backend}"
+    pull_policy: missing
     restart: unless-stopped
     environment:
       # 生产环境建议关闭 DEBUG
@@ -36,7 +37,8 @@ services:
     build:
       context: ..
       dockerfile: docker/frontend/Dockerfile
-    image: finnav-frontend
+    image: "${FRONTEND_IMAGE:-finnav-frontend}"
+    pull_policy: missing
     restart: unless-stopped
     depends_on:
       - backend
