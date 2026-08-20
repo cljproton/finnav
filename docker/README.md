@@ -75,8 +75,7 @@ docker compose -f docker-compose.frontend.yml up -d --build
 
 ## 五、服务器零构建部署（镜像仓库，资源受限推荐）
 
-服务器只做 `pull`，**不本地构建**。镜像由 GitHub Actions（或开发机脚本）在 amd64 + arm64
-双架构构建后推送到 **GHCR**，服务器按架构自动拉取对应版本。
+服务器只做 `pull`，**不本地构建**。镜像由 GitHub Actions（或开发机脚本）构建后推送到 **GHCR**，服务器直接拉取运行。
 
 ### 构建侧（开发机 / CI）
 

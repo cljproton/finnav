@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 REGISTRY="${REGISTRY:-ghcr.io}"
 BACKEND_IMAGE="${BACKEND_IMAGE:-ghcr.io/cljproton/finnav-backend}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-ghcr.io/cljproton/finnav-frontend}"
-PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+PLATFORMS="${PLATFORMS:-linux/amd64}"
 TARGET="${1:-all}"
 
 # 确保 buildx 支持 multi-arch（服务器无需执行，此脚本只在开发机/CI 跑）
