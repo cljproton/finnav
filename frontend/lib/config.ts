@@ -15,7 +15,12 @@ function defaultBaseUrl(): string {
   return `http://localhost:${BACKEND_PORT}`;
 }
 
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? defaultBaseUrl();
+function normalizeBaseUrl(raw: string): string {
+  return raw.trim().replace(/\/+$/, "").replace(/\/api$/, "");
+}
+
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL
+  ? normalizeBaseUrl(process.env.EXPO_PUBLIC_API_BASE_URL)
+  : defaultBaseUrl();
 
 export const API_URL = `${API_BASE_URL}/api`;
