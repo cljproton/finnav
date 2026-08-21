@@ -3,8 +3,6 @@ name: Build & Push Docker Images
 # 服务器不本地构建：本 workflow 构建 amd64 镜像并推送到 GHCR，
 # 服务器只需 docker compose pull（见 docker/README.md「服务器零构建部署」）。
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 env:

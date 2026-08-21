@@ -17,7 +17,7 @@ on:
         type: string
         default: com.finnav.app
       api_base_url:
-        description: 后端 API 地址（如 https://api.example.com，留空用前端默认）
+        description: 后端主机地址（如 http://api.example.com 或带端口 http://192.168.1.100:8000，只填主机+端口，不要带 /api 路径，留空用前端默认）
         required: false
         type: string
       build_type:
