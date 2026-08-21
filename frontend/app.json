@@ -42,7 +42,8 @@
             "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "./plugins/with-gradle-properties"
     ],
     "extra": {
       "router": {},
