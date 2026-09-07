@@ -43,6 +43,11 @@ DEBUG = os.environ.get('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 
 # 开发环境允许所有 Host；生产环境应改为具体域名。
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
+# CSRF trusted origins – configured via environment variable.
+# Example: CSRF_TRUSTED_ORIGINS=fn.9418666.xyz,another.example.com
+# Only the domain part (no scheme) should be listed; Django will match both http and https.
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+
 # ---------------------------------------------------------------------------
 # Email（注册/找回密码验证码）
 # - 设置 RESEND_API_KEY 时通过 Resend 发送；
