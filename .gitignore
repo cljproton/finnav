@@ -11,6 +11,8 @@ backend/.env
 
 # Node / Expo
 frontend/node_modules/
+# Cloudflare worker (exclude entire directory)
+worker/
 frontend/.expo/
 frontend/dist/
 frontend/web-build/
