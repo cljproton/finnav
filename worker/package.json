@@ -1,0 +1,29 @@
+{
+  "name": "finnav-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply finnav-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply finnav-db --remote"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.2",
+    "hono": "^4.7.10"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.27",
+    "@cloudflare/workers-types": "^5.20260903.1",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.2",
+    "wrangler": "^4.19.1"
+  }
+}
