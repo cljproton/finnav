@@ -1,12 +1,13 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
+import { useTranslation } from "react-i18next";
 import { Logo } from "../components/Logo";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { usePathname, useRouter } from "expo-router";
 import type { Site } from "../lib/types";
 import { useFavorites } from "../lib/favorites";
 import { useThemeColors } from "../constants/colors";
+import ExternalLink from "./ExternalLink";
 
 
 
@@ -17,6 +18,7 @@ interface SiteCardProps {
 
 export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
   const colors = useThemeColors();
+  const { t } = useTranslation();
   const { isFavorite, toggle } = useFavorites();
   const fav = isFavorite(site.id);
   const router = useRouter();
@@ -51,20 +53,17 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
             >
               {site.name}
             </Text>
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation?.();
-                Linking.openURL(site.url);
-              }}
-              hitSlop={8}
+            <ExternalLink
+              url={site.url}
               style={styles.externalBtn}
+              accessibilityLabel={t("打开 {{name}}", { name: site.name })}
             >
               <Ionicons
                 name="open-outline"
                 size={13}
                 color={colors.textTertiary}
               />
-            </Pressable>
+            </ExternalLink>
           </View>
           <Text
             style={[styles.desc, { color: colors.textSecondary }]}
@@ -104,6 +103,8 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
             onPress={() => toggle(site)}
             hitSlop={12}
             style={styles.starBtn}
+            accessibilityRole="button"
+            accessibilityLabel={fav ? t("取消收藏") : t("收藏站点")}
           >
             <Ionicons
               name={fav ? "star" : "star-outline"}
@@ -126,17 +127,8 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  logoWrap: {
     alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-    overflow: "hidden",
-  },
-  logoText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
+    gap: 12,
   },
   info: {
     flex: 1,
@@ -153,7 +145,7 @@ const styles = StyleSheet.create({
   },
   externalBtn: {
     marginLeft: 6,
-    padding: 2,
+    padding: 6,
   },
   desc: {
     fontSize: 12.5,
@@ -177,6 +169,5 @@ const styles = StyleSheet.create({
   },
   starBtn: {
     marginLeft: 8,
-    marginTop: 2,
   },
 });

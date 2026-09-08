@@ -7,8 +7,8 @@ import {
   Pressable,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -26,14 +26,8 @@ import type { CaptchaPayload } from "../../../../../lib/auth";
 import { useThemeColors } from "../../../../../constants/colors";
 import type { SiteTutorial, TutorialType } from "../../../../../lib/types";
 import AuthModal from "../../../../../components/AuthModal";
-
-function openExternal(url: string) {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  Linking.openURL(url);
-}
+import { centeredContent } from "../../../../../constants/layout";
+import { openExternal } from "../../../../../lib/utils";
 
 /* ---------- tutorial item ---------- */
 
@@ -255,6 +249,7 @@ export default function SiteTutorialsScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -452,7 +447,7 @@ export default function SiteTutorialsScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 52 }]}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -485,7 +480,7 @@ export default function SiteTutorialsScreen() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, centeredContent.container]}
         >
           <Text style={[styles.hint, { color: colors.textTertiary }]}>
             {t("分享你的教程链接，标题将自动获取；如不正确可手动修改。分享后需管理员审核通过才会公开展示。")}
@@ -542,7 +537,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 52,
     paddingBottom: 8,
     paddingHorizontal: 20,
   },

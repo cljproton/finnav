@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, useColorScheme, Share, Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -28,75 +28,61 @@ import type { CaptchaPayload } from "../../../../lib/auth";
 import { useThemeColors } from "../../../../constants/colors";
 import type { Site, UserSiteInvite } from "../../../../lib/types";
 import AuthModal from "../../../../components/AuthModal";
+import ErrorState from "../../../../components/ErrorState";
 import { Logo } from "../../../../components/Logo";
+import ExternalLink from "../../../../components/ExternalLink";
+import { centeredContent } from "../../../../constants/layout";
+import {
+  copyText,
+  formatBytes,
+  formatDateTime,
+  openExternal,
+  siteDetailUrl,
+} from "../../../../lib/utils";
 
 /* ---------- helpers ---------- */
 
 
 
-function formatBytes(bytes: number | null | undefined): string {
-  if (!bytes || bytes <= 0) return "";
-  const mb = bytes / (1024 * 1024);
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
-  return `${(mb / 1024).toFixed(2)} GB`;
-}
+function setSeo({ title, description, url }: { title: string; description: string; url: string }) {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  document.title = title;
+  const desc = description || (document.querySelector('meta[name="description"]') as HTMLMetaElement | null)?.content || "";
 
-function formatCachedAt(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function siteDetailUrl(id: number, shareBaseUrl?: string | null): string {
-  if (
-    Platform.OS === "web" &&
-    typeof window !== "undefined" &&
-    window.location?.origin
-  ) {
-    return `${window.location.origin}/site/${id}`;
-  }
-  // 后端配置了转发来源域名时用 https/http 链接（装了 App 打开网页版、没装也能看）；否则保持 finnav 深链。
-  if (shareBaseUrl) {
-    return `${shareBaseUrl.replace(/\/+$/, "")}/site/${id}`;
-  }
-  return Linking.createURL(`/site/${id}`);
-}
-
-function openExternal(url: string) {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  Linking.openURL(url);
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      return true;
+  const upsertMeta = (name: string, content: string) => {
+    if (!content) return;
+    let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = name;
+      document.head.appendChild(meta);
     }
-  } catch {
-    // fall through to legacy copy
-  }
-  try {
-    if (typeof document !== "undefined") {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return ok;
+    meta.content = content;
+  };
+  const upsertProperty = (property: string, content: string) => {
+    if (!content) return;
+    let meta = document.querySelector<HTMLMetaElement>(`meta[property="${property}"]`);
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("property", property);
+      document.head.appendChild(meta);
     }
-  } catch {
-    // ignore
+    meta.content = content;
+  };
+
+  upsertMeta("description", desc);
+  upsertProperty("og:title", title);
+  upsertProperty("og:description", desc);
+  upsertProperty("og:type", "article");
+  upsertProperty("og:url", url);
+
+  let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "canonical";
+    document.head.appendChild(link);
   }
-  return false;
+  link.href = url;
 }
 
 async function shareSite(site: Site, invite: UserSiteInvite | null | undefined, shareBaseUrl?: string | null) {
@@ -204,6 +190,7 @@ function StarRatingInput({
   onChange: (v: number) => void;
   colors: any;
 }) {
+  const { t } = useTranslation();
   const displayValue = value;
 
   return (
@@ -219,6 +206,9 @@ function StarRatingInput({
               onChange(newVal === value ? 0 : newVal);
             }}
             style={styles.starWrap}
+            accessibilityRole="button"
+            accessibilityLabel={t("{{star}} 星", { star: starIdx + 1 })}
+            accessibilityState={{ selected: filled }}
           >
             {filled ? (
               <Ionicons name="star" size={32} color={colors.starActive} />
@@ -819,6 +809,7 @@ export default function SiteDetailScreen() {
   const colors = useThemeColors();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isFavorite, toggle } = useFavorites();
   const auth = useAuth();
@@ -864,7 +855,7 @@ export default function SiteDetailScreen() {
     }
   }
 
-  const { data: fetchedSite, isLoading, error } = useSiteDetail(siteId);
+  const { data: fetchedSite, isLoading, error, refetch } = useSiteDetail(siteId);
   const site = fetchedSite ?? cachedSite;
   const fav = site ? isFavorite(site.id) : false;
 
@@ -875,6 +866,18 @@ export default function SiteDetailScreen() {
       visitReported.current = true;
       reportVisit(site.id);
     }
+  }, [site]);
+
+  // 站点详情页 SEO：用站点名称/描述覆盖全局标题与描述，并写入 canonical + OG。
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    if (!site || typeof window === "undefined") return;
+    const { origin, pathname } = window.location;
+    setSeo({
+      title: site.name,
+      description: site.description,
+      url: `${origin}${pathname}`,
+    });
   }, [site]);
 
   // 图标为空时，后台可能正在异步拉取：延迟多次重试刷新接口，
@@ -944,7 +947,7 @@ export default function SiteDetailScreen() {
       <View
         style={[
           styles.screen,
-          { backgroundColor: colors.background, paddingTop: 60 },
+          { backgroundColor: colors.background, paddingTop: insets.top + 40 },
         ]}
       >
         <View style={styles.centerLoading}>
@@ -960,15 +963,10 @@ export default function SiteDetailScreen() {
       <View
         style={[
           styles.screen,
-          { backgroundColor: colors.background, paddingTop: 60 },
+          { backgroundColor: colors.background, paddingTop: insets.top + 40 },
         ]}
       >
-        <View style={styles.centerLoading}>
-          <Text style={{ color: colors.error }}>{t("加载失败")}</Text>
-          <Pressable onPress={goBack} style={{ marginTop: 16 }}>
-            <Text style={{ color: colors.primary }}>{t("返回")}</Text>
-          </Pressable>
-        </View>
+        <ErrorState message={t("加载失败")} onRetry={() => refetch()} />
       </View>
     );
   }
@@ -977,11 +975,20 @@ export default function SiteDetailScreen() {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          centeredContent.container,
+        ]}
       >
         {/* Back + favorite + share header */}
-        <View style={styles.topBar}>
-          <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
+        <View style={[styles.topBar, { paddingTop: insets.top + 52 }]}>
+          <Pressable
+            onPress={goBack}
+            hitSlop={12}
+            style={styles.backBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t("返回")}
+          >
             <Ionicons
               name="chevron-back"
               size={24}
@@ -993,6 +1000,8 @@ export default function SiteDetailScreen() {
               onPress={() => shareSite(site, invite, settings?.share_base_url)}
               hitSlop={12}
               style={styles.shareBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t("分享")}
             >
               <Ionicons
                 name="arrow-redo-outline"
@@ -1004,6 +1013,8 @@ export default function SiteDetailScreen() {
               onPress={() => site && toggle(site)}
               hitSlop={12}
               style={styles.favBtn}
+              accessibilityRole="button"
+              accessibilityLabel={fav ? t("取消收藏") : t("收藏站点")}
             >
               <Ionicons
                 name={fav ? "star" : "star-outline"}
@@ -1203,7 +1214,7 @@ export default function SiteDetailScreen() {
                         <Text
                           style={[styles.cacheHint, { color: colors.textTertiary }]}
                         >
-                          {t("本站缓存于 {{time}}", { time: formatCachedAt(site.app_android_cached_at) })}
+                          {t("本站缓存于 {{time}}", { time: formatDateTime(site.app_android_cached_at) })}
                         </Text>
                       ) : null}
 
@@ -1248,14 +1259,18 @@ export default function SiteDetailScreen() {
                                 {t("缓存来源")}
                               </Text>
                               <View style={styles.verifyUrlBox}>
-                                <Text
-                                  style={[styles.verifyUrl, { color: colors.primary }]}
-                                  numberOfLines={1}
-                                  ellipsizeMode="middle"
-                                  onPress={() => openExternal(site.app_android_url!)}
+                                <ExternalLink
+                                  url={site.app_android_url!}
+                                  style={styles.verifyUrlAnchor}
                                 >
-                                  {site.app_android_url}
-                                </Text>
+                                  <Text
+                                    style={[styles.verifyUrl, { color: colors.primary }]}
+                                    numberOfLines={1}
+                                    ellipsizeMode="middle"
+                                  >
+                                    {site.app_android_url}
+                                  </Text>
+                                </ExternalLink>
                                 <Text
                                   style={[styles.verifyCopy, { color: colors.primary }]}
                                   onPress={async () => {
@@ -1279,7 +1294,7 @@ export default function SiteDetailScreen() {
                                 {t("缓存时间")}
                               </Text>
                               <Text style={[styles.verifyValue, { color: colors.text }]}>
-                                {formatCachedAt(site.app_android_cached_at)}
+                                {formatDateTime(site.app_android_cached_at)}
                               </Text>
                             </View>
                           ) : null}
@@ -1319,18 +1334,17 @@ export default function SiteDetailScreen() {
                     </>
                   )
                 ) : (
-                  <Button
-                    onPress={() => {
-                      if (site.app_android_url) {
-                        openExternal(site.app_android_url);
-                        reportAppDownload(site.id, "android_original");
-                      } else if (site.app_android_cache_url) {
-                        openExternal(site.app_android_cache_url);
-                        reportAppDownload(site.id, "android_cache");
-                      }
-                    }}
+                  <ExternalLink
+                    url={site.app_android_url || site.app_android_cache_url || ""}
+                    onPress={() =>
+                      reportAppDownload(
+                        site.id,
+                        site.app_android_url ? "android_original" : "android_cache",
+                      )
+                    }
                     style={{
                       ...styles.downloadBtn,
+                      ...styles.downloadAnchor,
                       backgroundColor: colors.primaryLight,
                       borderColor: colors.primary,
                     }}
@@ -1345,7 +1359,7 @@ export default function SiteDetailScreen() {
                         {t("安卓版 原始下载")}
                       </Text>
                     </View>
-                  </Button>
+                  </ExternalLink>
                 )}
               </View>
             )}
@@ -1359,13 +1373,12 @@ export default function SiteDetailScreen() {
                     Google Play
                   </Text>
                 </View>
-                <Button
-                  onPress={() => {
-                    openExternal(site.app_google_play_url);
-                    reportAppDownload(site.id, "google_play");
-                  }}
+                <ExternalLink
+                  url={site.app_google_play_url}
+                  onPress={() => reportAppDownload(site.id, "google_play")}
                   style={{
                     ...styles.downloadBtn,
+                    ...styles.downloadAnchor,
                     backgroundColor: colors.primaryLight,
                     borderColor: colors.primary,
                   }}
@@ -1380,7 +1393,7 @@ export default function SiteDetailScreen() {
                       {t("Google Play 下载")}
                     </Text>
                   </View>
-                </Button>
+                </ExternalLink>
               </View>
             ) : null}
 
@@ -1393,13 +1406,12 @@ export default function SiteDetailScreen() {
                     iOS
                   </Text>
                 </View>
-                <Button
-                  onPress={() => {
-                    openExternal(site.app_ios_url);
-                    reportAppDownload(site.id, "ios");
-                  }}
+                <ExternalLink
+                  url={site.app_ios_url}
+                  onPress={() => reportAppDownload(site.id, "ios")}
                   style={{
                     ...styles.downloadBtn,
+                    ...styles.downloadAnchor,
                     backgroundColor: colors.primaryLight,
                     borderColor: colors.primary,
                   }}
@@ -1414,17 +1426,18 @@ export default function SiteDetailScreen() {
                       {t("App Store 下载")}
                     </Text>
                   </View>
-                </Button>
+                </ExternalLink>
               </View>
             ) : null}
           </View>
 
-        {/* Primary CTA: visit website (invite link overrides) */}
-        <Button
-          type="primary"
-          onPress={() => openExternal(site.invite_link || site.url)}
+        {/* Primary CTA: visit website (invite link overrides).
+            Web 端渲染为真实 <a href> 出站链接，供搜索引擎抓取。 */}
+        <ExternalLink
+          url={site.invite_link || site.url}
           style={{
             ...styles.visitBtn,
+            ...styles.visitAnchor,
             backgroundColor: isDark
               ? "rgba(129,140,248,0.12)"
               : "rgba(79,70,229,0.08)",
@@ -1438,7 +1451,7 @@ export default function SiteDetailScreen() {
             </Text>
             <Ionicons name="open-outline" size={16} color={colors.primary} />
           </View>
-        </Button>
+        </ExternalLink>
 
         {site.invite_code ? (
           <View style={[styles.inviteCodeBlock, { marginTop: 14 }]}>
@@ -1516,7 +1529,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 52,
     paddingBottom: 8,
   },
   topBarRight: {
@@ -1625,6 +1637,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     height: 48,
   },
+  downloadAnchor: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    textDecorationLine: "none",
+  },
   downloadInner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1714,6 +1734,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flexShrink: 1,
   },
+  verifyUrlAnchor: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
   verifyValue: {
     fontSize: 12,
   },
@@ -1742,6 +1766,14 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderRadius: 12,
     height: 52,
+  },
+  visitAnchor: {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    textDecorationLine: "none",
   },
   visitInner: {
     flexDirection: "row",

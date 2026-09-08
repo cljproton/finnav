@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
+import { centeredContent } from "../../constants/layout";
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
@@ -90,7 +91,10 @@ export default function ProfileScreen() {
         onScroll={handleScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={[
+          centeredContent.container,
+          { paddingBottom: insets.bottom + 24 },
+        ]}
       >
         <View style={{ paddingTop: insets.top + 16 }}>
           <PageHero title={t("个人中心")} />

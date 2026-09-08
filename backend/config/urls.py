@@ -7,8 +7,12 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 
 from apps.navigation import views
+from apps.navigation.seo import robots_txt, sitemap_xml
 
 urlpatterns = [
+    # SEO：robots.txt / sitemap.xml（由前端 nginx 单独反代，避免被 SPA 回退吞掉）
+    path('robots.txt', robots_txt, name='robots_txt'),
+    path('sitemap.xml', sitemap_xml, name='sitemap_xml'),
     # Django 语言切换视图（POST /i18n/setlang/，后台中文/英文切换）
     path('i18n/', include('django.conf.urls.i18n')),
     # SimpleUI 首页看板（独立页面，放在 admin include 之前避免被吞）

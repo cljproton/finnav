@@ -14,6 +14,19 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # SEO 文件：由后端动态生成，避免被 SPA 回退吞掉
+    location = /robots.txt {
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /sitemap.xml {
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location ^~ /admin/ {
         proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;

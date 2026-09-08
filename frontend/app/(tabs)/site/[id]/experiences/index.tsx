@@ -11,6 +11,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import Modal from "@ant-design/react-native/es/modal";
 import Toast from "@ant-design/react-native/es/toast";
@@ -23,14 +24,8 @@ import { useAuth } from "../../../../../lib/auth";
 import { useThemeColors } from "../../../../../constants/colors";
 import type { Experience } from "../../../../../lib/types";
 import AuthModal from "../../../../../components/AuthModal";
-
-function formatTime(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+import { centeredContent } from "../../../../../constants/layout";
+import { formatDate } from "../../../../../lib/utils";
 
 const DEFAULT_ASPECT = 3 / 4;
 const MIN_ASPECT = 0.6;
@@ -140,7 +135,7 @@ function WaterfallCard({
         numberOfLines={1}
         style={[styles.cardAuthor, { color: colors.textTertiary }]}
       >
-        {item.author_name} · {formatTime(item.created_at)}
+        {item.author_name} · {formatDate(item.created_at)}
       </Text>
 
       {item.is_mine ? (
@@ -183,6 +178,7 @@ export default function SiteExperiencesScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -283,7 +279,7 @@ export default function SiteExperiencesScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -339,7 +335,7 @@ export default function SiteExperiencesScreen() {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, centeredContent.container]}
           onScroll={({ nativeEvent }) => {
             const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
             if (
@@ -403,7 +399,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 12,
     paddingBottom: 8,
   },
   backBtn: {

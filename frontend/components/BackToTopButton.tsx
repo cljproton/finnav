@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { useThemeColors } from "../constants/colors";
 
 export interface BackToTopHandle {
@@ -33,6 +34,7 @@ const BackToTopButton = forwardRef<BackToTopHandle, BackToTopButtonProps>(
   function BackToTopButton({ scrollRef, threshold = 400 }, ref) {
     const colors = useThemeColors();
     const insets = useSafeAreaInsets();
+    const { t } = useTranslation();
     const [visible, setVisible] = useState(false);
     const opacity = useRef(new Animated.Value(0)).current;
 
@@ -80,7 +82,7 @@ const BackToTopButton = forwardRef<BackToTopHandle, BackToTopButtonProps>(
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="返回顶部"
+            accessibilityLabel={t("返回顶部")}
             onPress={scrollToTop}
             style={({ pressed }) => [
               styles.button,

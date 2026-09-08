@@ -9,7 +9,6 @@ import {
   Share,
   TextInput,
 } from "react-native";
-import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,49 +28,12 @@ import {
 import type { PointsVoucher } from "../../lib/types";
 import { useAuth } from "../../lib/auth";
 import AuthModal from "../../components/AuthModal";
+import { centeredContent } from "../../constants/layout";
+import { copyText, inviteUrl } from "../../lib/utils";
 
 const MIN_TRANSFER_AMOUNT = 10;
 const MIN_VOUCHER_AMOUNT = 10;
 const VOUCHER_VALID_DAYS = 30;
-
-function inviteUrl(shareUrl: string, code: string): string {
-  if (shareUrl) return shareUrl;
-  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin}/?ref=${code}`;
-  }
-  try {
-    return `${Linking.createURL("/")}?ref=${code}`;
-  } catch {
-    return `finnav:///?ref=${code}`;
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // fall through to legacy copy
-  }
-  try {
-    if (typeof document !== "undefined") {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return ok;
-    }
-  } catch {
-    // ignore
-  }
-  return false;
-}
 
 function ShareInvite({
   code,
@@ -127,8 +89,11 @@ function ShareInvite({
         onPress={handleShare}
         style={({ pressed }) => [
           styles.inviteBtn,
-          styles.inviteBtnPrimary,
-          { opacity: pressed ? 0.85 : 1 },
+          {
+            backgroundColor: colors.primary,
+            borderColor: colors.primary,
+            opacity: pressed ? 0.85 : 1,
+          },
         ]}
       >
         <Ionicons name="share-social-outline" size={16} color={colors.surfaceSolid} />
@@ -554,7 +519,10 @@ export default function PointsScreen() {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={[
+          centeredContent.container,
+          { paddingBottom: insets.bottom + 24 },
+        ]}
         onScroll={({ nativeEvent }) => {
           const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
           if (
@@ -658,7 +626,7 @@ export default function PointsScreen() {
                 <Text style={[styles.sectionDesc, { color: colors.textTertiary }]}>
                   {t("好友通过你的邀请链接注册，你与好友各得奖励积分")}
                 </Text>
-                <View style={styles.codeRow}>
+                <View style={[styles.codeRow, { backgroundColor: colors.primaryLight }]}>
                   <Text style={[styles.codeLabel, { color: colors.textTertiary }]}>
                     {t("我的邀请码")}
                   </Text>
@@ -871,7 +839,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: "rgba(79,70,229,0.06)",
   },
   codeLabel: {
     fontSize: 13,
@@ -895,10 +862,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     borderWidth: 1,
-  },
-  inviteBtnPrimary: {
-    backgroundColor: "#4F46E5",
-    borderColor: "#4F46E5",
   },
   inviteBtnText: {
     fontSize: 14,

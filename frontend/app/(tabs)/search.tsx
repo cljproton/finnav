@@ -23,6 +23,7 @@ import PageHero from "../../components/PageHero";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
+import { centeredContent } from "../../constants/layout";
 
 export default function SearchScreen() {
   const { t } = useTranslation();
@@ -132,7 +133,7 @@ export default function SearchScreen() {
       </View>
 
       {isLoading && showResults ? (
-        <View style={styles.list}>
+        <View style={[styles.list, centeredContent.container]}>
           {[1, 2, 3].map((i) => (
             <SkeletonCard key={i} />
           ))}
@@ -143,7 +144,7 @@ export default function SearchScreen() {
           onRetry={() => refetch()}
         />
       ) : !showResults ? (
-        <View>
+        <View style={centeredContent.container}>
           {historyLoaded && historyTerms.length > 0 ? (
             <View style={styles.hot}>
               <View style={styles.hotHeader}>
@@ -232,6 +233,7 @@ export default function SearchScreen() {
           }
           contentContainerStyle={[
             styles.list,
+            centeredContent.container,
             { paddingBottom: insets.bottom + 20 },
           ]}
           showsVerticalScrollIndicator={false}

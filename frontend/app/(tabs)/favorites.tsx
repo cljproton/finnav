@@ -12,6 +12,7 @@ import PageHero from "../../components/PageHero";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
+import { centeredContent } from "../../constants/layout";
 
 export default function FavoritesScreen() {
   const { t } = useTranslation();
@@ -62,6 +63,7 @@ export default function FavoritesScreen() {
           scrollEventThrottle={16}
           contentContainerStyle={[
             styles.list,
+            centeredContent.container,
             { paddingTop: 12, paddingBottom: insets.bottom + 20 },
           ]}
           showsVerticalScrollIndicator={false}

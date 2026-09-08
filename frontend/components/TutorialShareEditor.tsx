@@ -21,6 +21,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useThemeColors } from "../constants/colors";
+import { centeredContent } from "../constants/layout";
 import type { SiteTutorial, TutorialType } from "../lib/types";
 import AuthModal from "./AuthModal";
 
@@ -304,7 +305,7 @@ export default function TutorialShareEditor({
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, centeredContent.container]}
       >
         <Text style={[styles.intro, { color: colors.textSecondary }]}>
           {t(

@@ -78,6 +78,12 @@ export const en: Record<string, string> = {
   "之后点击右上角分享，邀请码即随站点一起转发。":
     "Tap share in the top-right corner and your invite code will be included.",
   "返回": "Back",
+  "分享": "Share",
+  "收藏站点": "Add to favorites",
+  "取消收藏": "Remove from favorites",
+  "返回顶部": "Back to top",
+  "打开 {{name}}": "Open {{name}}",
+  "{{star}} 星": "{{star}} stars",
   "APP 下载": "APP Download",
   "安卓": "Android",
   "本站缓存校验失败，可能已被篡改，已暂停本站下载，请使用官网原始链接。":

@@ -25,6 +25,7 @@ import {
 } from "../../lib/api";
 import { useTranslation } from "react-i18next";
 import type { SiteSubmission, SiteSubmissionStatus } from "../../lib/types";
+import { centeredContent } from "../../constants/layout";
 
 export default function SubmitSiteScreen() {
   const { t } = useTranslation();
@@ -161,7 +162,10 @@ export default function SubmitSiteScreen() {
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={[
+          centeredContent.container,
+          { paddingBottom: insets.bottom + 24 },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>

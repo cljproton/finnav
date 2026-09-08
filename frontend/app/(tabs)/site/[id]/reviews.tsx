@@ -9,6 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
 import { useSiteReviews } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth";
@@ -16,19 +17,42 @@ import type { CaptchaPayload } from "../../../../lib/auth";
 import { useThemeColors } from "../../../../constants/colors";
 import type { SiteReview } from "../../../../lib/types";
 import AuthModal from "../../../../components/AuthModal";
+import ErrorState from "../../../../components/ErrorState";
+import { centeredContent } from "../../../../constants/layout";
 
 function ReviewStars({ score, colors, size = 12 }: { score: number; colors: any; size?: number }) {
-  const full = Math.round(score);
   return (
     <View style={styles.reviewStars}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Ionicons
-          key={i}
-          name={i <= full ? "star" : "star-outline"}
-          size={size}
-          color={i <= full ? colors.starActive : colors.textTertiary}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map((i) => {
+        const filled = score >= i;
+        const halfFilled = !filled && score >= i - 0.5;
+        if (halfFilled) {
+          return (
+            <View
+              key={i}
+              style={[styles.halfStarContainer, { width: size, height: size }]}
+            >
+              <Ionicons name="star-outline" size={size} color={colors.textTertiary} />
+              <View
+                style={[
+                  styles.halfStarOverlay,
+                  { width: size / 2, height: size },
+                ]}
+              >
+                <Ionicons name="star" size={size} color={colors.starActive} />
+              </View>
+            </View>
+          );
+        }
+        return (
+          <Ionicons
+            key={i}
+            name={filled ? "star" : "star-outline"}
+            size={size}
+            color={filled ? colors.starActive : colors.textTertiary}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -55,6 +79,7 @@ export default function SiteReviewsScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -130,7 +155,7 @@ export default function SiteReviewsScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 52 }]}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -145,12 +170,10 @@ export default function SiteReviewsScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : error ? (
-        <View style={styles.center}>
-          <Text style={{ color: colors.error }}>{t("加载失败")}</Text>
-          <Pressable onPress={() => refetch()} style={{ marginTop: 16 }}>
-            <Text style={{ color: colors.primary }}>{t("重试")}</Text>
-          </Pressable>
-        </View>
+        <ErrorState
+          message={error.message || t("加载失败")}
+          onRetry={() => refetch()}
+        />
       ) : (
         <FlatList
           data={reviews}
@@ -200,7 +223,7 @@ export default function SiteReviewsScreen() {
               {t("暂无其它评价")}
             </Text>
           }
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, centeredContent.container]}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -227,7 +250,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 52,
     paddingBottom: 8,
     paddingHorizontal: 20,
   },
@@ -279,6 +301,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 1,
+  },
+  halfStarContainer: {
+    position: "relative",
+    overflow: "hidden",
+  },
+  halfStarOverlay: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    overflow: "hidden",
   },
   empty: {
     textAlign: "center",

@@ -30,6 +30,8 @@ import {
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useThemeColors } from "../constants/colors";
+import { centeredContent } from "../constants/layout";
+import { formatDateTime } from "../lib/utils";
 import type { Experience } from "../lib/types";
 import AuthModal from "./AuthModal";
 
@@ -55,14 +57,6 @@ interface PendingImage {
   localUri?: string;
   uploading: boolean;
   error?: boolean;
-}
-
-function formatTime(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function ExperienceEditor({
@@ -183,7 +177,7 @@ export default function ExperienceEditor({
         draftImagesRef.current = data.image_ids ?? [];
         Modal.alert(
           t("检测到未发布的草稿，是否继续？"),
-          t("上次编辑于 {{time}}", { time: formatTime(data.updated_at) }),
+          t("上次编辑于 {{time}}", { time: formatDateTime(data.updated_at) }),
           [
             { text: t("放弃"), style: "destructive" as const, onPress: discardDraft },
             {
@@ -395,7 +389,7 @@ export default function ExperienceEditor({
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, centeredContent.container]}
       >
         {/* 封面（第一张图） */}
         <Pressable
@@ -545,7 +539,7 @@ export default function ExperienceEditor({
               </Text>
             ) : draftStatus === "saved" && lastSavedAt ? (
               <Text style={[styles.draftText, { color: colors.success }]}>
-                {t("草稿已保存 {{time}}", { time: formatTime(new Date(lastSavedAt).toISOString()) })}
+                {t("草稿已保存 {{time}}", { time: formatDateTime(new Date(lastSavedAt).toISOString()) })}
               </Text>
             ) : draftStatus === "error" ? (
               <Text style={[styles.draftText, { color: colors.error }]}>

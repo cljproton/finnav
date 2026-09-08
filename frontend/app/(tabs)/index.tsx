@@ -23,6 +23,7 @@ import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
 import { Logo } from "../../components/Logo";
+import { centeredContent } from "../../constants/layout";
 
 export default function HomeScreen() {
   const { t } = useTranslation();
@@ -122,7 +123,7 @@ export default function HomeScreen() {
         ]}
       >
         {header}
-        <View style={styles.list}>
+        <View style={[styles.list, centeredContent.container]}>
           {[1, 2, 3, 4].map((i) => (
             <SkeletonCard key={i} />
           ))}
@@ -190,6 +191,7 @@ export default function HomeScreen() {
         }
         contentContainerStyle={[
           styles.list,
+          centeredContent.container,
           { paddingBottom: insets.bottom + 20 },
         ]}
         refreshControl={

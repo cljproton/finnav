@@ -11,6 +11,7 @@ import { Image as ExpoImage } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import Modal from "@ant-design/react-native/es/modal";
 import Toast from "@ant-design/react-native/es/toast";
@@ -26,19 +27,15 @@ import type { CaptchaPayload } from "../../../../../../lib/auth";
 import { useThemeColors } from "../../../../../../constants/colors";
 import type { Experience } from "../../../../../../lib/types";
 import AuthModal from "../../../../../../components/AuthModal";
-
-function formatTime(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import ErrorState from "../../../../../../components/ErrorState";
+import { centeredContent } from "../../../../../../constants/layout";
+import { formatDateTime } from "../../../../../../lib/utils";
 
 export default function ExperienceDetailScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const queryClient = useQueryClient();
@@ -197,20 +194,7 @@ export default function ExperienceDetailScreen() {
   if (!item) {
     return (
       <View style={[styles.screen, styles.center, { backgroundColor: colors.background }]}>
-        <Text style={[styles.emptyDesc, { color: colors.textTertiary }]}>
-          {t("加载失败")}
-        </Text>
-        <Pressable
-          onPress={goBack}
-          style={({ pressed }) => [
-            styles.backHomeBtn,
-            { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-          ]}
-        >
-          <Text style={[styles.backHomeText, { color: colors.primary }]}>
-            {t("返回")}
-          </Text>
-        </Pressable>
+        <ErrorState message={t("加载失败")} onRetry={load} />
       </View>
     );
   }
@@ -220,7 +204,7 @@ export default function ExperienceDetailScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -250,7 +234,7 @@ export default function ExperienceDetailScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, centeredContent.container]}
       >
         {item.cover ? (
           <ExpoImage
@@ -264,7 +248,7 @@ export default function ExperienceDetailScreen() {
 
         <View style={styles.metaRow}>
           <Text style={[styles.meta, { color: colors.textTertiary }]}>
-            {t("作者：{{name}}", { name: item.author_name })} · {formatTime(item.created_at)}
+            {t("作者：{{name}}", { name: item.author_name })} · {formatDateTime(item.created_at)}
           </Text>
         </View>
 
@@ -419,7 +403,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop: 12,
     paddingBottom: 8,
   },
   backBtn: {

@@ -1322,6 +1322,77 @@ class SettingsTestCase(TestCase):
             setting.full_clean()
 
 
+class SeoTestCase(TestCase):
+    """robots.txt / sitemap.xml 动态生成。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.category = Category.objects.create(
+            name='DeFi', slug='defi', icon='🦄', sort_order=1
+        )
+
+    def _site(self, **kwargs):
+        defaults = {
+            'name': 'Binance',
+            'description': '交易所',
+            'url': 'https://www.binance.com',
+            'category': self.category,
+            'sort_order': 1,
+        }
+        defaults.update(kwargs)
+        return Site.objects.create(**defaults)
+
+    def test_robots_txt_uses_share_base_url_and_points_sitemap(self):
+        from .models import AppSetting
+
+        AppSetting.get()
+        AppSetting.objects.filter(id=1).update(
+            share_base_url='https://finnav.app'
+        )
+        resp = self.client.get('/robots.txt')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp['Content-Type'], 'text/plain')
+        body = resp.content.decode()
+        self.assertIn('User-agent: *', body)
+        self.assertIn('Allow: /', body)
+        self.assertIn('Sitemap: https://finnav.app/sitemap.xml', body)
+
+    def test_robots_txt_falls_back_to_request_host(self):
+        resp = self.client.get('/robots.txt')
+        body = resp.content.decode()
+        self.assertIn('Sitemap: http://testserver/sitemap.xml', body)
+
+    def test_sitemap_honors_forwarded_proto_header(self):
+        # 部署在 HTTPS 反代之后：nginx 注入 X-Forwarded-Proto，后端应据此构建 https 地址
+        resp = self.client.get('/robots.txt', HTTP_X_FORWARDED_PROTO='https')
+        body = resp.content.decode()
+        self.assertIn('Sitemap: https://testserver/sitemap.xml', body)
+
+    def test_sitemap_lists_home_and_active_sites(self):
+        from .models import AppSetting
+
+        AppSetting.get()
+        AppSetting.objects.filter(id=1).update(
+            share_base_url='https://finnav.app'
+        )
+        active = self._site(name='Active')
+        inactive = self._site(name='Inactive', is_active=False)
+        resp = self.client.get('/sitemap.xml')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('<loc>https://finnav.app/</loc>', resp.content.decode())
+        self.assertIn(
+            f'<loc>https://finnav.app/site/{active.pk}</loc>', resp.content.decode()
+        )
+        self.assertNotIn(
+            f'<loc>https://finnav.app/site/{inactive.pk}</loc>',
+            resp.content.decode(),
+        )
+
+    def test_sitemap_xml_content_type(self):
+        resp = self.client.get('/sitemap.xml')
+        self.assertIn('application/xml', resp['Content-Type'])
+
+
 class AppDownloadTestCase(TestCase):
     """安卓 APP 拉取缓存（专用目录、刷新覆盖）+ 序列化字段。"""
 

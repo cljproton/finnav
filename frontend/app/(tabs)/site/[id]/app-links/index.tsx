@@ -6,11 +6,10 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  Platform,
   ActivityIndicator as RNActivityIndicator,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -28,22 +27,8 @@ import type { CaptchaPayload } from "../../../../../lib/auth";
 import { useThemeColors } from "../../../../../constants/colors";
 import type { AppLinkPlatform, AppLinkSubmission } from "../../../../../lib/types";
 import AuthModal from "../../../../../components/AuthModal";
-
-function openExternal(url: string) {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  Linking.openURL(url);
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { centeredContent } from "../../../../../constants/layout";
+import { formatDateTime, openExternal } from "../../../../../lib/utils";
 
 const PLATFORM_OPTIONS: {
   key: AppLinkPlatform;
@@ -89,6 +74,7 @@ export default function SiteAppLinksScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -229,7 +215,7 @@ export default function SiteAppLinksScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: insets.top + 52 }]}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
@@ -242,7 +228,7 @@ export default function SiteAppLinksScreen() {
       <ScrollView
         ref={formRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, centeredContent.container]}
       >
         <Text style={[styles.hint, { color: colors.textTertiary }]}>
           {t("提交后需管理员审核，审核通过后自动更新到本站。")}
@@ -559,7 +545,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 52,
     paddingBottom: 8,
     paddingHorizontal: 20,
   },
