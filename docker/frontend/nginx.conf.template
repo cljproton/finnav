@@ -5,7 +5,7 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # 反向代理到后端（默认 http://backend:8000 一体化；独立部署时由 BACKEND_URL 覆盖）
+    # 反向代理到后端（http://backend:8000，由 envsubst 注入 ${BACKEND_URL}）
     location ^~ /api/ {
         proxy_pass ${BACKEND_URL};
         proxy_set_header Host $host;

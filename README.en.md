@@ -322,38 +322,21 @@ The project includes a Docker‑Compose based one‑click deployment for product
    | Admin panel | http://localhost/admin/ |
    | API | http://localhost/api/ |
 
-### Deploying backend and frontend separately
+### Mobile apps connecting to the backend
 
-By default everything is deployed together. To deploy **backend and frontend independently** (e.g. on different hosts), two standalone compose files are included:
-
-```bash
-# Backend only (public port BACKEND_PORT, default 8000; serves API/admin/static/media)
-docker compose -f docker-compose.backend.yml up -d --build
-
-# Frontend only (public port PORT, default 80; reverse-proxies /api /admin /static /media to a remote backend)
-# First set BACKEND_URL=http://<backend-ip>:8000 in docker/.env
-docker compose -f docker-compose.frontend.yml up -d --build
-```
-
-- The standalone frontend needs no shared data directory; `BACKEND_URL` can point at any backend (same host or remote)
-- `/media/` is reverse-proxied by the frontend nginx to the backend, which also serves `/media/` in production (cache headers preserved)
-- See [`docker/README.md`](docker/README.md) for details
-
-### Mobile apps connecting to a backend-only deployment
-
-The Android/iOS apps are independent of the web frontend and only call the backend API, so they work fine with a **backend-only deployment**:
+The Android/iOS apps are independent of the web frontend and only call the backend API. With the all-in-one deployment, the apps reach the backend through the same domain/IP:
 
 ```bash
-# 1. Deploy backend only (public port BACKEND_PORT, default 8000)
-docker compose -f docker-compose.backend.yml up -d --build
-# 2. Build the app pointing at the backend
-EXPO_PUBLIC_API_BASE_URL=http://<backend-ip-or-domain>:8000 ./scripts/build_android.sh   # or build_ios.sh
+# Build the app pointing at the backend (domain or LAN IP, no 8000 port; public port default 80)
+EXPO_PUBLIC_API_BASE_URL=https://<domain-or-ip> ./scripts/build_android.sh   # or build_ios.sh
 ```
 
-- Open `BACKEND_PORT` in the firewall/security group; `ALLOWED_HOSTS=*` accepts any Host by default (set it to the real domain/IP in production)
+- The default public port is 80 (`PORT` in `docker/.env`); API calls land on `https://<domain>/api/`;
+  `ALLOWED_HOSTS=*` accepts any Host by default (set it to the real domain/IP in production)
 - Media is served by the backend in production; absolute media URLs in the API are generated from the access address automatically
 - **iOS**: connecting to an HTTP backend works out of the box (Expo allows arbitrary loads by default)
-- **Android**: release builds block cleartext HTTP by default (Android 9+). For a non‑TLS `http://IP:8000` backend, enable `ANDROID_ALLOW_CLEARTEXT=1` and rebuild for local/LAN debugging; **for production, put the backend behind HTTPS** (no flag needed)
+- **Android**: release builds block cleartext HTTP by default (Android 9+). For a non‑TLS `http://IP:80` backend, enable `ANDROID_ALLOW_CLEARTEXT=1` and rebuild for local/LAN debugging; **for production, put the backend behind HTTPS** (no flag needed)
+- See [`docker/README.md`](docker/README.md) for details
 
 4. **Common management commands**  
 

@@ -322,39 +322,22 @@ sudo ./deploy_finnav.sh
    | 管理后台 | http://localhost/admin/ |
    | API | http://localhost/api/ |
 
-### 前后端分开部署
+### 移动端 App 直连后端
 
-默认一体化部署；如需**前后端分别独立部署**（例如不同主机），仓库附带两个独立 compose 文件：
-
-```bash
-# 后端独立（对外端口 BACKEND_PORT，默认 8000；提供 API/管理后台/静态/媒体）
-docker compose -f docker-compose.backend.yml up -d --build
-
-# 前端独立（对外端口 PORT 默认 80；把 /api /admin /static /media 反代到远端后端）
-# 需先在 docker/.env 中设置 BACKEND_URL=http://<后端IP>:8000
-docker compose -f docker-compose.frontend.yml up -d --build
-```
-
-- 前端独立部署无需共享数据目录，`BACKEND_URL` 可指向任意后端（同机或远端）
-- 媒体 `/media/` 由前端 nginx 反代到后端，后端在生产环境也会提供 `/media/`（缓存头保留）
-- 详见 [`docker/README.md`](docker/README.md)
-
-### 移动端 App 直连后端（仅部署后端时）
-
-Android / iOS App 与 Web 前端无关，只调用后端 API，因此**只部署后端时 App 也能正常使用**：
+Android / iOS App 与 Web 前端无关，只调用后端 API。一体化部署后，App 直接通过同一域名/IP 访问后端：
 
 ```bash
-# 1. 仅部署后端（对外端口 BACKEND_PORT，默认 8000）
-docker compose -f docker-compose.backend.yml up -d --build
-# 2. 打包 App 时指定后端地址
-EXPO_PUBLIC_API_BASE_URL=http://<后端IP或域名>:8000 ./scripts/build_android.sh   # 或 build_ios.sh
+# 打包 App 时指定后端地址（域名或局域网 IP，不要写 8000 端口；默认对外端口 80）
+EXPO_PUBLIC_API_BASE_URL=https://<域名或IP> ./scripts/build_android.sh   # 或 build_ios.sh
 ```
 
-- 需在防火墙/安全组放行 `BACKEND_PORT`；`ALLOWED_HOSTS=*` 默认接受任意 Host（生产建议改为实际域名/IP）
+- 一体化部署默认对外端口 80（`docker/.env` 的 `PORT`），App 请求落到 `https://<域名>/api/`；
+  `ALLOWED_HOSTS=*` 默认接受任意 Host（生产建议改为实际域名/IP）
 - 媒体已由后端在生产环境提供，API 返回的绝对媒体 URL 自动基于访问地址生成
 - **iOS**：直连 HTTP 后端可用（项目已通过 `ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads` 开启明文放行，见 `frontend/app.json`）。注意：RN 0.83 模板默认只放行本地网络，若移除该配置，对**公网 IP 的明文 HTTP 会被 ATS 拦截**报 "Network request failed"，此时应改用 HTTPS 或加回 ATS 例外
-- **Android**：release 包默认拦截明文 HTTP（Android 9+）。若后端为无 TLS 的 `http://IP:8000`，
+- **Android**：release 包默认拦截明文 HTTP（Android 9+）。若后端为无 TLS 的 `http://IP:80`，
   本地/内网联调可设 `ANDROID_ALLOW_CLEARTEXT=1` 重新打包；**正式上架请让后端走 HTTPS**（无需该开关）
+- 详见 [`docker/README.md`](docker/README.md)
 
 4. **常用运维命令**  
 

@@ -44,8 +44,8 @@ DEBUG = os.environ.get('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 # CSRF trusted origins – configured via environment variable.
-# Example: CSRF_TRUSTED_ORIGINS=fn.9418666.xyz,another.example.com
-# Only the domain part (no scheme) should be listed; Django will match both http and https.
+# Example: CSRF_TRUSTED_ORIGINS=https://fn.example.com,https://another.example.com
+# Values must be full origins (scheme + host); trailing slash not required.
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
 
 # ---------------------------------------------------------------------------
