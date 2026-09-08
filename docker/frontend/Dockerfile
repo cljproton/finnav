@@ -8,8 +8,9 @@ COPY frontend/.npmrc ./
 RUN npm ci
 
 COPY frontend/ .
-# 空值 + ??(config.ts) → API_BASE_URL 保持空串，Web 端以相对路径 /api 请求，
-# 经 nginx 反代到后端（同源单端口 80）。不设置时默认跟随主机名 :8000（开发模式）。
+# 置空 EXPO_PUBLIC_API_BASE_URL：Web 生产构建下 API_BASE_URL 保持空串，以相对路径 /api
+# 同源请求，经 nginx 反代到后端（同源单端口，外层 nginx 可接入域名/HTTPS，不再硬拼 :8000）。
+# 本地开发（expo start）未设置时仍走主机名 :8000。
 ENV EXPO_PUBLIC_API_BASE_URL=""
 RUN npx expo export --platform web
 
