@@ -70,7 +70,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: 'none'
 
       - name: 安装前端依赖
         working-directory: frontend
