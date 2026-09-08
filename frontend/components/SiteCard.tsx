@@ -31,7 +31,7 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
       ]}
-      onPress={() => router.push(`/site/${site.id}`)}
+      onPress={() => router.replace(`/site/${site.id}`)}
     >
       <View style={styles.row}>
         <Logo uri={site.logo} name={site.name} />
