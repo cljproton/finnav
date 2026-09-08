@@ -815,7 +815,7 @@ function InviteSection({
 
 export default function SiteDetailScreen() {
   const { t } = useTranslation();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   const colors = useThemeColors();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
@@ -828,11 +828,10 @@ export default function SiteDetailScreen() {
   const visitReported = useRef(false);
 
   const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/");
-    }
+    // 明确导航回来源列表页，避免浏览器/原生栈中残留的上一个站点记录
+    const fromUrl = typeof from === "string" ? from : "";
+    const target = fromUrl === "/search" || fromUrl === "/favorites" ? fromUrl : "/";
+    router.replace(target);
   };
 
   const siteId = Number(id);

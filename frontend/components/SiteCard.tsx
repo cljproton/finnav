@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Logo } from "../components/Logo";
 import { Ionicons } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import type { Site } from "../lib/types";
 import { useFavorites } from "../lib/favorites";
 import { useThemeColors } from "../constants/colors";
@@ -20,6 +20,14 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
   const { isFavorite, toggle } = useFavorites();
   const fav = isFavorite(site.id);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // 记录来源列表页，返回时导航回对应 tab（而非依赖可能残留的栈历史）
+  const from = pathname.startsWith("/search")
+    ? "/search"
+    : pathname.startsWith("/favorites")
+      ? "/favorites"
+      : "/";
 
   return (
     <Pressable
@@ -31,7 +39,7 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
       ]}
-      onPress={() => router.replace(`/site/${site.id}`)}
+      onPress={() => router.replace({ pathname: `/site/${site.id}`, params: { from } })}
     >
       <View style={styles.row}>
         <Logo uri={site.logo} name={site.name} />
