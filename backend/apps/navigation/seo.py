@@ -46,8 +46,12 @@ def robots_txt(request):
 def sitemap_xml(request):
     """GET /seo/sitemap.xml  站点地图。
 
-    首页 + 搜索页 + 全部启用站点详情页与其子页，lastmod 取站点更新时间，
+    首页 + 搜索页 + 全部启用站点详情页，lastmod 取站点更新时间，
     优先按活跃度排序。
+
+    注意：子页（/site/{id}/reviews|tutorials|experiences）为登录态薄内容，
+    且无独立静态 SEO 渲染，列入 sitemap 会被 Ahrefs 判为「Non-canonical page
+    in sitemap」，故此处仅收录父页详情页。
     """
     base = _site_base_url(request)
     setting = AppSetting.get()
@@ -72,9 +76,6 @@ def sitemap_xml(request):
     for site in sites:
         lastmod = site.updated_at.strftime('%Y-%m-%d') if site.updated_at else ''
         urls.append((f'{base}/site/{site.pk}', lastmod, '0.8'))
-        urls.append((f'{base}/site/{site.pk}/reviews', lastmod, '0.6'))
-        urls.append((f'{base}/site/{site.pk}/tutorials', lastmod, '0.6'))
-        urls.append((f'{base}/site/{site.pk}/experiences', lastmod, '0.6'))
 
     # XML 转义（url/date 本身安全，防御性处理）
     from xml.sax.saxutils import escape

@@ -1387,13 +1387,14 @@ class SeoTestCase(TestCase):
         self.assertIn(
             f'<loc>https://finnav.app/site/{active.pk}</loc>', body
         )
-        self.assertIn(
+        # 子页为登录态薄内容，不再列入 sitemap（避免 Ahrefs Non-canonical 报错）
+        self.assertNotIn(
             f'<loc>https://finnav.app/site/{active.pk}/reviews</loc>', body
         )
-        self.assertIn(
+        self.assertNotIn(
             f'<loc>https://finnav.app/site/{active.pk}/tutorials</loc>', body
         )
-        self.assertIn(
+        self.assertNotIn(
             f'<loc>https://finnav.app/site/{active.pk}/experiences</loc>', body
         )
         self.assertNotIn(

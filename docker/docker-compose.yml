@@ -42,6 +42,11 @@ services:
     build:
       context: ..
       dockerfile: docker/frontend/Dockerfile
+      # SPA 壳兜底 SEO；服务器零构建部署不受影响，仅本地 --build 时生效
+      args:
+        SEO_ORIGIN: "${SEO_ORIGIN:-https://fn.9418666.xyz}"
+        SEO_TITLE: "${SEO_TITLE:-金融与 Web3 站点导航 | FinNav}"
+        SEO_DESCRIPTION: "${SEO_DESCRIPTION:-FinNav：一个金融与 Web3 站点导航，收录官网入口、APP 下载、新手教程与用户评价。}"
     image: "${FRONTEND_IMAGE:-finnav-frontend}"
     pull_policy: missing
     restart: unless-stopped

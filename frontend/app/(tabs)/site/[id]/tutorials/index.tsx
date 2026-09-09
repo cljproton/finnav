@@ -32,7 +32,7 @@ import { centeredContent } from "../../../../../constants/layout";
 import { openExternal } from "../../../../../lib/utils";
 import SeoHeading from "../../../../../components/SeoHeading";
 import { usePageSeo, canonicalFromPath } from "../../../../../lib/seo";
-import { tutorialsTitle, tutorialsDescription } from "../../../../../lib/seoCopy";
+import { tutorialsTitle, tutorialsDescription, NOINDEX_ROBOTS } from "../../../../../lib/seoCopy";
 
 /* ---------- tutorial item ---------- */
 
@@ -269,11 +269,12 @@ export default function SiteTutorialsScreen() {
 
   const { data: site } = useSiteDetail(siteId);
   const { data: settings } = useSettings();
-  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  // 子页 SEO：登录态薄内容，noindex 防止搜索引擎收录/判为非规范页。
   usePageSeo({
     title: site ? tutorialsTitle(t, settings, site.name) : undefined,
     description: site ? tutorialsDescription(t, settings, site.name) : undefined,
     canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/tutorials`) : undefined,
+    robots: NOINDEX_ROBOTS,
   });
 
   const sections = useMemo(

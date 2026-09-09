@@ -30,7 +30,7 @@ import { centeredContent } from "../../../../../constants/layout";
 import { formatDate } from "../../../../../lib/utils";
 import SeoHeading from "../../../../../components/SeoHeading";
 import { usePageSeo, canonicalFromPath } from "../../../../../lib/seo";
-import { experiencesTitle, experiencesDescription } from "../../../../../lib/seoCopy";
+import { experiencesTitle, experiencesDescription, NOINDEX_ROBOTS } from "../../../../../lib/seoCopy";
 
 const DEFAULT_ASPECT = 3 / 4;
 const MIN_ASPECT = 0.6;
@@ -198,11 +198,12 @@ export default function SiteExperiencesScreen() {
     useSiteExperiences(siteId);
   const { data: site } = useSiteDetail(siteId);
   const { data: settings } = useSettings();
-  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  // 子页 SEO：登录态薄内容，noindex 防止搜索引擎收录/判为非规范页。
   usePageSeo({
     title: site ? experiencesTitle(t, settings, site.name) : undefined,
     description: site ? experiencesDescription(t, site.name) : undefined,
     canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/experiences`) : undefined,
+    robots: NOINDEX_ROBOTS,
   });
 
   const experiences = pages?.pages.flatMap((p) => p.results) ?? [];

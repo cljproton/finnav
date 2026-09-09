@@ -20,7 +20,7 @@ import AuthModal from "../../../../components/AuthModal";
 import ErrorState from "../../../../components/ErrorState";
 import SeoHeading from "../../../../components/SeoHeading";
 import { usePageSeo, canonicalFromPath } from "../../../../lib/seo";
-import { reviewsTitle, reviewsDescription } from "../../../../lib/seoCopy";
+import { reviewsTitle, reviewsDescription, NOINDEX_ROBOTS } from "../../../../lib/seoCopy";
 import { centeredContent } from "../../../../constants/layout";
 
 function ReviewStars({ score, colors, size = 12 }: { score: number; colors: any; size?: number }) {
@@ -108,11 +108,12 @@ export default function SiteReviewsScreen() {
 
   const { data: site } = useSiteDetail(siteId);
   const { data: settings } = useSettings();
-  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  // 子页 SEO：登录态薄内容，noindex 防止搜索引擎收录/判为非规范页。
   usePageSeo({
     title: site ? reviewsTitle(t, settings, site.name) : undefined,
     description: site ? reviewsDescription(t, site.name, totalCount) : undefined,
     canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/reviews`) : undefined,
+    robots: NOINDEX_ROBOTS,
   });
 
   const goBack = () => {

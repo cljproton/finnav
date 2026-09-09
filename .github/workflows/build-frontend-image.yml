@@ -5,6 +5,19 @@ name: Build & Push Frontend Image
 # （见 docker/README.md「服务器零构建部署」）。
 on:
   workflow_dispatch:
+    inputs:
+      seo_origin:
+        description: 'SPA 壳 canonical 根域名（含 https://，如 https://fn.9418666.xyz）'
+        required: false
+        default: 'https://fn.9418666.xyz'
+      seo_title:
+        description: 'SPA 壳兜底 <title>'
+        required: false
+        default: '金融与 Web3 站点导航 | FinNav'
+      seo_description:
+        description: 'SPA 壳兜底 meta description'
+        required: false
+        default: 'FinNav：一个金融与 Web3 站点导航，收录官网入口、APP 下载、新手教程与用户评价。'
 
 concurrency:
   group: build-frontend-${{ github.ref }}
@@ -46,6 +59,10 @@ jobs:
           file: docker/frontend/Dockerfile
           platforms: linux/amd64
           push: true
+          build-args: |-
+            SEO_ORIGIN=${{ inputs.seo_origin }}
+            SEO_TITLE=${{ inputs.seo_title }}
+            SEO_DESCRIPTION=${{ inputs.seo_description }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ steps.meta.outputs.sha_tag }}

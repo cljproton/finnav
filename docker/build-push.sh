@@ -13,6 +13,11 @@ FRONTEND_IMAGE="${FRONTEND_IMAGE:-ghcr.io/cljproton/finnav-frontend}"
 PLATFORMS="${PLATFORMS:-linux/amd64}"
 TARGET="${1:-all}"
 
+# 前端 SPA 壳兜底 SEO（canonical 根域名等）；换域名改这里或导出环境变量后执行。
+SEO_ORIGIN="${SEO_ORIGIN:-https://fn.9418666.xyz}"
+SEO_TITLE="${SEO_TITLE:-金融与 Web3 站点导航 | FinNav}"
+SEO_DESCRIPTION="${SEO_DESCRIPTION:-FinNav：一个金融与 Web3 站点导航，收录官网入口、APP 下载、新手教程与用户评价。}"
+
 # 确保 buildx 支持 multi-arch（服务器无需执行，此脚本只在开发机/CI 跑）
 docker buildx version >/dev/null 2>&1 || { echo "需要 Docker Buildx（docker buildx version 可运行）" >&2; exit 1; }
 
@@ -21,12 +26,14 @@ docker info 2>/dev/null | grep -q ghcr.io || echo "提示：若尚未登录，�
 
 build_push() {
   local name="$1" dockerfile="$2"
+  shift 2
   echo "==> 构建并推送 ${name} (${PLATFORMS})"
   docker buildx build \
     --platform "${PLATFORMS}" \
     --push \
     -f "${dockerfile}" \
     -t "${name}:latest" \
+    "$@" \
     .
 }
 
@@ -34,7 +41,10 @@ if [[ "$TARGET" == "backend" || "$TARGET" == "all" ]]; then
   build_push "${BACKEND_IMAGE}" docker/backend/Dockerfile
 fi
 if [[ "$TARGET" == "frontend" || "$TARGET" == "all" ]]; then
-  build_push "${FRONTEND_IMAGE}" docker/frontend/Dockerfile
+  build_push "${FRONTEND_IMAGE}" docker/frontend/Dockerfile \
+    --build-arg "SEO_ORIGIN=${SEO_ORIGIN}" \
+    --build-arg "SEO_TITLE=${SEO_TITLE}" \
+    --build-arg "SEO_DESCRIPTION=${SEO_DESCRIPTION}"
 fi
 
 echo "完成。服务器部署：docker compose pull && docker compose up -d（勿加 --build）"
