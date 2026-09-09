@@ -428,4 +428,82 @@ export const en: Record<string, string> = {
   "草稿保存失败": "Failed to save draft",
   "每 30 秒自动保存草稿": "Draft auto-saved every 30s",
   "只能编辑自己发布的经验": "You can only edit your own experiences",
+  // seo copy（新增 SEO 文案的中英文对）
+  "APP下载": "App download",
+  "{{brand}} {{countText}}金融与 Web3 相关网站与手机 APP，覆盖交易所、钱包、借贷协议、行情资讯、券商与银行等方向。本页只提供入口整理与用户使用记录，不代理任何充值、提现或交易操作。":
+    "{{brand}} catalogs {{countText}} fintech & Web3 sites and apps across exchanges, wallets, lending protocols, market data, brokers and banks. This page only curates entry points and user records; we never handle deposits, withdrawals or trades.",
+  "{{brand}}收录的 {{name}} 用户分享教程：注册开户、充值提现、功能使用与避坑要点，支持文字教程、视频教程与辅助代办三类入口。":
+    "User-shared tutorials for {{name}} curated by {{brand}}: sign-up, deposits/withdrawals, feature guides and pitfalls, covering text, video and assistant/errand types.",
+  "{{brand}}是一个金融与 Web3 站点导航：{{countText}}优质网站与 APP，提供官网入口、APP 下载、新手教程、实战经验和真实用户评价，帮你少走弯路。":
+    "{{brand}} is a fintech & Web3 directory: {{countText}} quality sites and apps with official links, app downloads, beginner tutorials, hands-on experiences and real reviews to keep you on track.",
+  "{{brand}}是交易平台吗？": "Is {{brand}} a trading platform?",
+  "{{brand}}是面向普通用户的金融与 Web3 站点导航，帮你更快找到官网入口、官方 APP 与真实使用经验。":
+    "{{brand}} is a fintech & Web3 directory for everyday users, helping you find official links, official apps and real-world experience faster.",
+  "{{count}} 条实战经验": "{{count}} hands-on experiences",
+  "{{count}}位用户对 {{name}} 的打分与评论，涵盖手续费、产品体验、客服响应与充提速度等反馈，帮你判断是否值得使用。":
+    "{{count}} users rated {{name}} on fees, product experience, support response and deposit/withdrawal speed, so you can judge if it’s worth using.",
+  "{{name}}{{category}}站点导航页": "{{name}}{{category}} directory page",
+  "{{name}}官网": "{{name}} official site",
+  "{{name}}实战经验": "{{name}} hands-on experience",
+  "{{name}}教程": "{{name}} tutorials",
+  "{{name}}是 {{brand}}收录的{{category}}站点。{{desc}}": "{{name}} is a {{category}} site listed on {{brand}}. {{desc}}",
+  "{{name}}有手机 APP 吗？": "Does {{name}} have a mobile app?",
+  "{{name}}用户评价": "{{name}} user reviews",
+  "{{name}}的官网入口在哪里？": "Where is the official {{name}} link?",
+  "、{{count}} 条实战经验": ", {{count}} hands-on experiences",
+  "、{{count}} 条评价（平均 {{score}} 分）": ", {{count}} reviews (avg {{score}})",
+  "、{{count}} 篇用户上传的教程": ", {{count}} user-shared tutorials",
+  "、{{labels}} 下载渠道": ", download channels ({{labels}})",
+  "不是。{{brand}}只做站点导航与信息整理，不提供撮合、理财或投资建议，也不接触你的资金与私钥；所有业务都在第三方站点完成，请先小额试用并自行评估风险。":
+    "No. {{brand}} only curates a directory; we do not match orders, give financial advice, or touch your funds or private keys. All services happen on third-party sites — start small and assess risk yourself.",
+  "与 {{count}} 条用户评价": "and {{count}} user reviews",
+  "以及 {{count}} 篇用户教程": "and {{count}} user tutorials",
+  "你可以用顶部分类筛选、用搜索框按名称、描述或标签查找；进入站点详情页可查看官网入口、APP 下载渠道（含本站缓存与 SHA-256 校验值）、用户分享的教程与实战经验，以及其他用户的打分评价。登录后收藏与搜索记录可多端同步。":
+    "Filter by category at the top, or search by name, description or tags. On each site page you’ll find the official link, app downloads (including cached builds with SHA-256), user-shared tutorials and experiences, plus ratings. Favorites and search history sync across devices after sign-in.",
+  "使用前建议：先确认 {{name}} 的域名与官方公告再注册；涉及资产时开启双重验证、小额尝试；{{cacheNote}}教程与经验由用户提供，仅代表个人经历，不构成投资建议。":
+    "Before using: verify {{name}}’s domain and official announcements first; enable two-factor authentication and test with small amounts when assets are involved. {{cacheNote}} Tutorials and experiences are user-contributed and reflect personal experience only, not investment advice.",
+  "使用本站缓存的安卓安装包时，可在详情页核对 SHA-256 校验值是否与官方一致，不一致时请改用官网原始链接。":
+    "For cached Android APKs here, check the SHA-256 against the official one on the detail page; if they differ, use the official original link instead.",
+  "信息由 {{brand}} 整理维护。": "Maintained by {{brand}}.",
+  "各平台": "all platforms",
+  "在 {{brand}} 中按名称、描述或标签搜索{{countText}}金融与 Web3 站点，快速进入官网、APP 下载页与用户评价。":
+    "Search {{brand}} by name, description or tags across {{countText}} fintech & Web3 sites, jumping straight to official links, app downloads and user reviews.",
+  "如何提交新站点、教程或下载链接？": "How do I submit a site, tutorial or download link?",
+  "如何查看 {{name}} 的真实评价？": "How do I see real reviews of {{name}}?",
+  "安卓版（原始链接）": "Android (original link)",
+  "安卓版（本站缓存）": "Android (cached here)",
+  "安装包请优先选择官网、Google Play 或 App Store 等官方渠道下载。":
+    "Prefer downloading APKs from the official site, Google Play or the App Store.",
+  "已收录 {{count}} 个": "{{count}} listed",
+  "已收录的": "listed",
+  "已收录的 {{count}} 个": "{{count}} listed",
+  "持续收录": "continuously growing",
+  "收录多个": "featuring",
+  "新手图文与视频教程": "beginner guides and video tutorials",
+  "新手教程": "beginner tutorials",
+  "暂无标签": "no tags yet",
+  "有，本页提供{{labels}}的下载入口，均来自官方渠道或官网原始链接。":
+    "Yes — this page offers downloads for {{labels}}, all from official channels or the original links.",
+  "本站整理了它的基础资料与访问入口。": "This page aggregates its basic info and access links.",
+  "本页暂未收录 {{name}} 的 APP 下载链接。如果你找到官方下载地址，可以在「提交下载链接」入口补充，审核通过后即对所有人可见。":
+    "No app download link is listed for {{name}} yet. If you find the official download, add it via “Submit download link” and it’ll be public once approved.",
+  "本页汇总了 {{name}} 的官网入口{{platforms}}{{tutorials}}{{experiences}}{{rating}}，方便你在一处完成核实与跳转；标签包括{{tags}}，点击标签可以看到同类站点。":
+    "This page gathers {{name}}’s official link{{platforms}}{{tutorials}}{{experiences}}{{rating}} so you can verify and jump in one place; tags include {{tags}}. Tap a tag to see similar sites.",
+  "汇总官网入口与{{platforms}}下载渠道": "official links and {{platforms}} download channels",
+  "点击本页「访问官网」按钮即可跳转到 {{name}} 官方站点；若该站点配置了邀请链接，按钮会自动切换为邀请入口，注册时填写邀请码可获得对应权益。":
+    "Tap “Visit official site” on this page to jump to {{name}}. If the site has an invite link, the button switches to it automatically — use the invite code when signing up for extra perks.",
+  "用户评价": "User reviews",
+  "登录后在个人中心提交新站点，或在站点详情页分享文字/视频教程、补充 APP 下载链接、撰写实战经验；管理员审核通过后即对所有人可见，并可获得积分奖励。":
+    "After signing in, submit new sites from your profile, or share text/video tutorials, app download links and experiences on site pages; once approved by an admin they become public and reward you with points.",
+  "真实打分与反馈": "real ratings & feedback",
+  "真实用户撰写的 {{name}} 实战经验与踩坑记录，使用平台积分即可解锁阅读，作者获得等额积分奖励。":
+    "First-hand {{name}} experiences and pitfall notes from real users, unlockable with points; authors earn the same in points.",
+  "站点信息和 APP 安装包多久更新一次？":
+    "How often are site info and APKs updated?",
+  "站点入口与下载链接由管理员维护；本站缓存的安卓安装包会定期与官方原始链接比对 SHA-256 校验值，校验失败时自动暂停本站下载并提示改用官方原始链接。":
+    "Site links are curated by admins; cached Android APKs are periodically cross-checked against the official SHA-256 and auto-suspend downloads on mismatch, prompting you to use the official link.",
+  "进入「大家的评价」可以看到其他用户的星级与评论，登录后也能提交自己的打分；{{brand}}不对第三方站点的经营状况作担保，请结合自身判断使用。":
+    "Open “All reviews” to see other users’ star ratings and comments — you can also rate after signing in. {{brand}} does not guarantee third-party operations, so use your own judgment.",
+  "金融/Web3": "Fintech / Web3",
+  "金融与 Web3 站点导航": "Fintech & Web3 site directory",
 };
