@@ -1,4 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
+import { usePageSeo } from "../../../../../lib/seo";
+import { NOINDEX_ROBOTS } from "../../../../../lib/seoCopy";
 import {
   View,
   Text,
@@ -72,6 +74,8 @@ function appStatusLabel(
 
 export default function SiteAppLinksScreen() {
   const { t } = useTranslation();
+  // 私有或内容较薄的页面：不参与索引，但允许爬虫继续跟踪页内链接
+  usePageSeo({ robots: NOINDEX_ROBOTS });
   const colors = useThemeColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();

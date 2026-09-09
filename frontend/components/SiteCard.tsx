@@ -8,6 +8,7 @@ import type { Site } from "../lib/types";
 import { useFavorites } from "../lib/favorites";
 import { useThemeColors } from "../constants/colors";
 import ExternalLink from "./ExternalLink";
+import InternalLink from "./InternalLink";
 
 
 
@@ -47,12 +48,19 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
         <Logo uri={site.logo} name={site.name} />
         <View style={styles.info}>
           <View style={styles.nameRow}>
-            <Text
-              style={[styles.name, { color: colors.text }]}
-              numberOfLines={1}
+            <InternalLink
+              href={`/site/${site.id}`}
+              navigate={() => router.replace({ pathname: `/site/${site.id}`, params: { from } })}
+              accessibilityLabel={t("打开 {{name}} 详情页", { name: site.name })}
+              style={styles.nameLink}
             >
-              {site.name}
-            </Text>
+              <Text
+                style={[styles.name, { color: colors.text }]}
+                numberOfLines={1}
+              >
+                {site.name}
+              </Text>
+            </InternalLink>
             <ExternalLink
               url={site.url}
               style={styles.externalBtn}
@@ -137,6 +145,10 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  nameLink: {
+    minWidth: 0,
+    flexShrink: 1,
   },
   name: {
     fontSize: 15,

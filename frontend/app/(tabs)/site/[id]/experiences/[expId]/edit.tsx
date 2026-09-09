@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { usePageSeo } from "../../../../../../lib/seo";
+import { NOINDEX_ROBOTS } from "../../../../../../lib/seoCopy";
 import { View, Text, StyleSheet } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -11,6 +13,8 @@ import type { Experience } from "../../../../../../lib/types";
 
 export default function EditExperienceScreen() {
   const { t } = useTranslation();
+  // 私有或内容较薄的页面：不参与索引，但允许爬虫继续跟踪页内链接
+  usePageSeo({ robots: NOINDEX_ROBOTS });
   const colors = useThemeColors();
   const { id, expId } = useLocalSearchParams<{ id: string; expId: string }>();
   const siteId = Number(id);

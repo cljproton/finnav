@@ -11,13 +11,16 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
-import { useSiteReviews } from "../../../../lib/api";
+import { useSiteReviews, useSiteDetail, useSettings } from "../../../../lib/api";
 import { useAuth } from "../../../../lib/auth";
 import type { CaptchaPayload } from "../../../../lib/auth";
 import { useThemeColors } from "../../../../constants/colors";
 import type { SiteReview } from "../../../../lib/types";
 import AuthModal from "../../../../components/AuthModal";
 import ErrorState from "../../../../components/ErrorState";
+import SeoHeading from "../../../../components/SeoHeading";
+import { usePageSeo, canonicalFromPath } from "../../../../lib/seo";
+import { reviewsTitle, reviewsDescription } from "../../../../lib/seoCopy";
 import { centeredContent } from "../../../../constants/layout";
 
 function ReviewStars({ score, colors, size = 12 }: { score: number; colors: any; size?: number }) {
@@ -103,6 +106,15 @@ export default function SiteReviewsScreen() {
   );
   const totalCount = data?.pages[0]?.count ?? 0;
 
+  const { data: site } = useSiteDetail(siteId);
+  const { data: settings } = useSettings();
+  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  usePageSeo({
+    title: site ? reviewsTitle(t, settings, site.name) : undefined,
+    description: site ? reviewsDescription(t, site.name, totalCount) : undefined,
+    canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/reviews`) : undefined,
+  });
+
   const goBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -159,9 +171,9 @@ export default function SiteReviewsScreen() {
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>
+        <SeoHeading level={1} style={[styles.title, { color: colors.text }]}>
           {t("大家的评价")}
-        </Text>
+        </SeoHeading>
         <View style={styles.backBtn} />
       </View>
 

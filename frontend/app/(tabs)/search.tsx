@@ -12,23 +12,28 @@ import SearchBar from "@ant-design/react-native/es/search-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useLocalSearchParams } from "expo-router";
-import { useSitesInfinite, useCategories } from "../../lib/api";
+import { useSitesInfinite, useCategories, useSettings } from "../../lib/api";
 import { useThemeColors } from "../../constants/colors";
 import { useSearchHistory } from "../../lib/searchHistory";
 import SiteCard from "../../components/SiteCard";
 import SkeletonCard from "../../components/SkeletonCard";
 import ErrorState from "../../components/ErrorState";
 import EmptyState from "../../components/EmptyState";
+import InternalLink from "../../components/InternalLink";
 import PageHero from "../../components/PageHero";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
 import { centeredContent } from "../../constants/layout";
+import SiteFooter from "../../components/SiteFooter";
+import { usePageSeo, canonicalFromPath } from "../../lib/seo";
+import { searchTitle, searchDescription } from "../../lib/seoCopy";
 
 export default function SearchScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
+  const { data: settings } = useSettings();
   const params = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -80,6 +85,12 @@ export default function SearchScreen() {
     [sitePages],
   );
   const totalCount = sitePages?.pages[0]?.count ?? 0;
+
+  usePageSeo({
+    title: searchTitle(t, settings),
+    description: searchDescription(t, settings, totalCount || undefined),
+    canonical: canonicalFromPath("/search"),
+  });
 
   const { data: categories } = useCategories();
 
@@ -211,6 +222,14 @@ export default function SearchScreen() {
               message={t("输入关键词查找金融和 Web3 工具")}
             />
           )}
+
+          <InternalLink href="/" style={styles.backHome}>
+            <Text style={{ color: colors.primary, fontSize: 15 }}>
+              ← {t("返回首页")}
+            </Text>
+          </InternalLink>
+
+          <SiteFooter showNav={false} />
         </View>
       ) : sites && sites.length > 0 ? (
         <FlatList
@@ -229,7 +248,9 @@ export default function SearchScreen() {
               <Text style={[styles.resultCount, { color: colors.textTertiary }]}>
                 {t("加载中…")}
               </Text>
-            ) : null
+            ) : (
+              <SiteFooter showNav={false} />
+            )
           }
           contentContainerStyle={[
             styles.list,
@@ -289,6 +310,14 @@ const styles = StyleSheet.create({
   },
   clearText: {
     fontSize: 12,
+  },
+  backHome: {
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 6,
+    paddingHorizontal: 20,
   },
   hotChips: {
     flexDirection: "row",

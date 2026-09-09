@@ -20,6 +20,8 @@ import {
   reportTutorialVisit,
   requestTutorialDelete,
   useSiteTutorials,
+  useSiteDetail,
+  useSettings,
 } from "../../../../../lib/api";
 import { useAuth } from "../../../../../lib/auth";
 import type { CaptchaPayload } from "../../../../../lib/auth";
@@ -28,6 +30,9 @@ import type { SiteTutorial, TutorialType } from "../../../../../lib/types";
 import AuthModal from "../../../../../components/AuthModal";
 import { centeredContent } from "../../../../../constants/layout";
 import { openExternal } from "../../../../../lib/utils";
+import SeoHeading from "../../../../../components/SeoHeading";
+import { usePageSeo, canonicalFromPath } from "../../../../../lib/seo";
+import { tutorialsTitle, tutorialsDescription } from "../../../../../lib/seoCopy";
 
 /* ---------- tutorial item ---------- */
 
@@ -262,6 +267,15 @@ export default function SiteTutorialsScreen() {
   const videoQ = useSiteTutorials(siteId, "video");
   const agentQ = useSiteTutorials(siteId, "agent");
 
+  const { data: site } = useSiteDetail(siteId);
+  const { data: settings } = useSettings();
+  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  usePageSeo({
+    title: site ? tutorialsTitle(t, settings, site.name) : undefined,
+    description: site ? tutorialsDescription(t, settings, site.name) : undefined,
+    canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/tutorials`) : undefined,
+  });
+
   const sections = useMemo(
     () => [
       {
@@ -451,7 +465,7 @@ export default function SiteTutorialsScreen() {
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>{t("教程")}</Text>
+        <SeoHeading level={1} style={[styles.title, { color: colors.text }]}>{t("教程")}</SeoHeading>
         <View style={styles.topBarRight}>
           <Pressable
             onPress={handleSharePress}

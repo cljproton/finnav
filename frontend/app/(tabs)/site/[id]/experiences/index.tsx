@@ -19,6 +19,8 @@ import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
 import {
   deleteExperience,
   useSiteExperiences,
+  useSiteDetail,
+  useSettings,
 } from "../../../../../lib/api";
 import { useAuth } from "../../../../../lib/auth";
 import { useThemeColors } from "../../../../../constants/colors";
@@ -26,6 +28,9 @@ import type { Experience } from "../../../../../lib/types";
 import AuthModal from "../../../../../components/AuthModal";
 import { centeredContent } from "../../../../../constants/layout";
 import { formatDate } from "../../../../../lib/utils";
+import SeoHeading from "../../../../../components/SeoHeading";
+import { usePageSeo, canonicalFromPath } from "../../../../../lib/seo";
+import { experiencesTitle, experiencesDescription } from "../../../../../lib/seoCopy";
 
 const DEFAULT_ASPECT = 3 / 4;
 const MIN_ASPECT = 0.6;
@@ -191,6 +196,14 @@ export default function SiteExperiencesScreen() {
 
   const { data: pages, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useSiteExperiences(siteId);
+  const { data: site } = useSiteDetail(siteId);
+  const { data: settings } = useSettings();
+  // 子页 SEO：标题代入站点名，canonical 固定到标准路径。
+  usePageSeo({
+    title: site ? experiencesTitle(t, settings, site.name) : undefined,
+    description: site ? experiencesDescription(t, site.name) : undefined,
+    canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}/experiences`) : undefined,
+  });
 
   const experiences = pages?.pages.flatMap((p) => p.results) ?? [];
 
@@ -283,7 +296,7 @@ export default function SiteExperiencesScreen() {
         <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>{t("个人经验")}</Text>
+        <SeoHeading level={1} style={[styles.title, { color: colors.text }]}>{t("个人经验")}</SeoHeading>
         <View style={styles.topBarRight}>
           <Pressable
             onPress={openPublish}

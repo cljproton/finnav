@@ -11,8 +11,10 @@ import PageHero from "../../components/PageHero";
 import AuthModal from "../../components/AuthModal";
 import SiteFooter from "../../components/SiteFooter";
 import TwoFactorManager from "../../components/TwoFactorManager";
+import InternalLink from "../../components/InternalLink";
+import { usePageSeo } from "../../lib/seo";
+import { NOINDEX_ROBOTS, accountTitle } from "../../lib/seoCopy";
 import { useMyPoints } from "../../lib/api";
-import { useRouter } from "expo-router";
 import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
@@ -23,9 +25,12 @@ export default function ProfileScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const auth = useAuth();
-  const router = useRouter();
   const { data: points } = useMyPoints(!!auth.user);
-  const [authVisible, setAuthVisible] = useState(false);
+  const [authVisible, setAuthVisible] = useState(false)
+  usePageSeo({
+    title: accountTitle(t, undefined, t("个人中心")),
+    robots: NOINDEX_ROBOTS,
+  });
   const scrollRef = useRef<ScrollView | null>(null);
   const backToTopRef = useRef<BackToTopHandle>(null);
 
@@ -149,42 +154,28 @@ export default function ProfileScreen() {
               </View>
 
               {/* 提交站点 */}
-              <Pressable
-                onPress={() => router.push("/submit-site")}
-                style={({ pressed }) => [
-                  styles.menuBtn,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
+              <InternalLink
+                href="/submit-site"
+                style={[styles.menuBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
                 <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   {t("提交新站点")}
                 </Text>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
+              </InternalLink>
 
               {/* 积分与邀请 */}
-              <Pressable
-                onPress={() => router.push("/points")}
-                style={({ pressed }) => [
-                  styles.menuBtn,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
+              <InternalLink
+                href="/points"
+                style={[styles.menuBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
                 <Ionicons name="trophy-outline" size={20} color={colors.primary} />
                 <Text style={[styles.menuText, { color: colors.text }]}>
                   {t("积分与邀请")}
                 </Text>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
-              </Pressable>
+              </InternalLink>
 
               {/* 两步验证设置 */}
               <TwoFactorManager />
@@ -244,7 +235,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <SiteFooter />
+        <SiteFooter showNav={false} />
       </ScrollView>
 
       <BackToTopButton scrollRef={scrollRef} ref={backToTopRef} />

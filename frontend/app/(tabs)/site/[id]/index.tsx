@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, useColorScheme, Share, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,7 +21,21 @@ import {
   reportAppDownload,
   saveSiteInvite,
   useSettings,
+  useSiteTutorialsTop,
+  useSiteExperiences,
+  useSitesInfinite,
 } from "../../../../lib/api";
+import { usePageSeo, canonicalFromPath } from "../../../../lib/seo";
+import {
+  siteTitle,
+  siteDescription,
+  siteAboutParagraphs,
+  siteUsageTipsParagraph,
+  siteFaq,
+} from "../../../../lib/seoCopy";
+import SeoHeading from "../../../../components/SeoHeading";
+import InternalLink from "../../../../components/InternalLink";
+import SiteFooter from "../../../../components/SiteFooter";
 import { useFavorites } from "../../../../lib/favorites";
 import { useAuth } from "../../../../lib/auth";
 import type { CaptchaPayload } from "../../../../lib/auth";
@@ -43,47 +57,6 @@ import {
 /* ---------- helpers ---------- */
 
 
-
-function setSeo({ title, description, url }: { title: string; description: string; url: string }) {
-  if (Platform.OS !== "web" || typeof document === "undefined") return;
-  document.title = title;
-  const desc = description || (document.querySelector('meta[name="description"]') as HTMLMetaElement | null)?.content || "";
-
-  const upsertMeta = (name: string, content: string) => {
-    if (!content) return;
-    let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.name = name;
-      document.head.appendChild(meta);
-    }
-    meta.content = content;
-  };
-  const upsertProperty = (property: string, content: string) => {
-    if (!content) return;
-    let meta = document.querySelector<HTMLMetaElement>(`meta[property="${property}"]`);
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.setAttribute("property", property);
-      document.head.appendChild(meta);
-    }
-    meta.content = content;
-  };
-
-  upsertMeta("description", desc);
-  upsertProperty("og:title", title);
-  upsertProperty("og:description", desc);
-  upsertProperty("og:type", "article");
-  upsertProperty("og:url", url);
-
-  let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-  if (!link) {
-    link = document.createElement("link");
-    link.rel = "canonical";
-    document.head.appendChild(link);
-  }
-  link.href = url;
-}
 
 async function shareSite(site: Site, invite: UserSiteInvite | null | undefined, shareBaseUrl?: string | null) {
   const lines: string[] = [site.name];
@@ -382,7 +355,7 @@ function RatingSection({
     >
       <View style={styles.sectionHeader}>
         <Ionicons name="star-outline" size={18} color={colors.starActive} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{t("评价")}</Text>
+        <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>{t("评价")}</SeoHeading>
         <View style={styles.aggregateInline}>
           <Ionicons name="star" size={14} color={colors.starActive} />
           <Text style={[styles.aggregateInlineText, { color: colors.text }]}>
@@ -497,14 +470,19 @@ function ReviewsEntry({
     >
       <View style={[styles.sectionHeader, styles.reviewsEntryHeader]}>
         <Ionicons name="chatbubbles-outline" size={18} color={colors.starActive} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
           {t("大家的评价")}
-        </Text>
+        </SeoHeading>
         <View style={styles.reviewsEntryRight}>
-          <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
-            {site.rating_count > 0 ? `${site.rating_count} ` : ""}
-            {t("查看全部评价")}
-          </Text>
+          <InternalLink
+            href={`/site/${site.id}/reviews`}
+            accessibilityLabel={t("查看全部评价")}
+          >
+            <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
+              {site.rating_count > 0 ? `${site.rating_count} ` : ""}
+              {t("查看全部评价")}
+            </Text>
+          </InternalLink>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </View>
       </View>
@@ -539,13 +517,18 @@ function TutorialsEntry({
     >
       <View style={[styles.sectionHeader, styles.reviewsEntryHeader]}>
         <Ionicons name="book-outline" size={18} color={colors.primary} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
           {t("教程")}
-        </Text>
+        </SeoHeading>
         <View style={styles.reviewsEntryRight}>
-          <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
-            {t("用户分享的教程")}
-          </Text>
+          <InternalLink
+            href={`/site/${site.id}/tutorials`}
+            accessibilityLabel={t("用户分享的教程")}
+          >
+            <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
+              {t("用户分享的教程")}
+            </Text>
+          </InternalLink>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </View>
       </View>
@@ -580,13 +563,18 @@ function ExperiencesEntry({
     >
       <View style={[styles.sectionHeader, styles.reviewsEntryHeader]}>
         <Ionicons name="flask-outline" size={18} color={colors.primary} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
           {t("个人经验")}
-        </Text>
+        </SeoHeading>
         <View style={styles.reviewsEntryRight}>
-          <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
-            {t("实战经验 · 积分解锁")}
-          </Text>
+          <InternalLink
+            href={`/site/${site.id}/experiences`}
+            accessibilityLabel={t("实战经验 · 积分解锁")}
+          >
+            <Text style={[styles.reviewsEntryCount, { color: colors.textTertiary }]}>
+              {t("实战经验 · 积分解锁")}
+            </Text>
+          </InternalLink>
           <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         </View>
       </View>
@@ -702,9 +690,9 @@ function InviteSection({
       >
         <View style={styles.sectionHeader}>
           <Ionicons name="gift-outline" size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
             {t("邀请码")}
-          </Text>
+          </SeoHeading>
         </View>
         <Button
           onPress={onLoginPress}
@@ -737,9 +725,9 @@ function InviteSection({
     >
       <View style={styles.sectionHeader}>
         <Ionicons name="gift-outline" size={18} color={colors.primary} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
           {t("我的邀请码")}
-        </Text>
+        </SeoHeading>
         <View style={styles.inviteStatus}>
           {saved ? (
             <Text style={[styles.ratingSaved, { color: colors.success }]}>{t("已保存")}</Text>
@@ -861,23 +849,43 @@ export default function SiteDetailScreen() {
 
   const { data: invite } = useSiteInvite(siteId, loggedIn);
 
+  // 拉取教程/经验/同类站点数据，用于撰写「关于」「常见问题」SEO 文案与「同类推荐」内链。
+  const { data: tutorialsTop } = useSiteTutorialsTop(siteId);
+  const { data: experiencesPage } = useSiteExperiences(siteId);
+  const { data: relatedPages } = useSitesInfinite({
+    category: site?.category_slug || "__pending__",
+  });
+
+  const tutorialCount = tutorialsTop
+    ? tutorialsTop.text.length + tutorialsTop.video.length + tutorialsTop.agent.length
+    : undefined;
+  const experienceCount = experiencesPage?.pages?.[0]?.count;
+  const relatedSites = useMemo(() => {
+    const list = (relatedPages?.pages ?? []).flatMap((p) => p.results);
+    return list.filter((s) => s.id !== siteId).slice(0, 6);
+  }, [relatedPages, siteId]);
+
+  // 详情页 SEO：站点名/描述构造标题与描述，canonical 固定到不带查询参数的标准路径。
+  usePageSeo({
+    title: site ? siteTitle(t, settings, site) : undefined,
+    description: site ? siteDescription(t, settings, site, { tutorials: tutorialCount, experiences: experienceCount }) : undefined,
+    canonical: Number.isFinite(siteId) && siteId > 0 ? canonicalFromPath(`/site/${siteId}`) : undefined,
+    ogType: "article",
+    image: site?.logo || undefined,
+  });
+
+  // 「关于」「常见问题」正文：纯挂载文本，同时提升抓取到的有效信息量。
+  const aboutParagraphs = site
+    ? siteAboutParagraphs(t, settings, site, { tutorials: tutorialCount, experiences: experienceCount })
+    : [];
+  const usageTips = site ? siteUsageTipsParagraph(t, site) : "";
+  const faqItems = site ? siteFaq(t, settings, site) : [];
+
   useEffect(() => {
     if (site && !visitReported.current) {
       visitReported.current = true;
       reportVisit(site.id);
     }
-  }, [site]);
-
-  // 站点详情页 SEO：用站点名称/描述覆盖全局标题与描述，并写入 canonical + OG。
-  useEffect(() => {
-    if (Platform.OS !== "web" || typeof document === "undefined") return;
-    if (!site || typeof window === "undefined") return;
-    const { origin, pathname } = window.location;
-    setSeo({
-      title: site.name,
-      description: site.description,
-      url: `${origin}${pathname}`,
-    });
   }, [site]);
 
   // 图标为空时，后台可能正在异步拉取：延迟多次重试刷新接口，
@@ -1028,16 +1036,17 @@ export default function SiteDetailScreen() {
         {/* Hero */}
         <View style={styles.heroSection}>
           <HeroLogo site={site} colors={colors} />
-          <Text style={[styles.siteName, { color: colors.text }]}>
+          <SeoHeading level={1} style={[styles.siteName, { color: colors.text }]}>
             {site.name}
-          </Text>
+          </SeoHeading>
           <Text style={[styles.siteDesc, { color: colors.textSecondary }]}>
             {site.description}
           </Text>
 
           {/* Tags */}
           <View style={styles.tagRow}>
-            <View
+            <InternalLink
+              href={`/?category=${encodeURIComponent(site.category_slug || "")}`}
               style={[
                 styles.detailTag,
                 styles.categoryTag,
@@ -1050,28 +1059,25 @@ export default function SiteDetailScreen() {
               <Text style={[styles.detailTagText, { color: colors.primary }]}>
                 {site.category_name}
               </Text>
-            </View>
+            </InternalLink>
             {(site.tags ?? []).map((tag, idx) => (
-              <Pressable
+              <InternalLink
                 key={`${tag}-${idx}`}
-                onPress={() =>
-                  router.push(`/search?q=${encodeURIComponent(tag)}`)
-                }
+                href={`/search?q=${encodeURIComponent(tag)}`}
                 hitSlop={4}
-                style={({ pressed }) => [
+                style={[
                   styles.detailTag,
                   styles.tagChip,
                   {
                     backgroundColor: colors.tagBg,
-                    borderColor: "transparent",
-                    opacity: pressed ? 0.7 : 1,
+                    borderColor: colors.border,
                   },
                 ]}
               >
                 <Text style={[styles.detailTagText, { color: colors.tagText }]}>
                   {tag}
                 </Text>
-              </Pressable>
+              </InternalLink>
             ))}
           </View>
         </View>
@@ -1113,9 +1119,9 @@ export default function SiteDetailScreen() {
         >
           <View style={styles.sectionHeader}>
             <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
               {t("APP 下载")}
-            </Text>
+            </SeoHeading>
             <Pressable
               onPress={openAppLinkSubmit}
               hitSlop={6}
@@ -1129,9 +1135,14 @@ export default function SiteDetailScreen() {
               ]}
             >
               <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={[styles.appLinkSubmitText, { color: colors.primary }]}>
-                {t("提交下载链接")}
-              </Text>
+              <InternalLink
+                href={`/site/${siteId}/app-links`}
+                accessibilityLabel={t("提交下载链接")}
+              >
+                <Text style={[styles.appLinkSubmitText, { color: colors.primary }]}>
+                  {t("提交下载链接")}
+                </Text>
+              </InternalLink>
             </Pressable>
           </View>
 
@@ -1264,8 +1275,16 @@ export default function SiteDetailScreen() {
                                   style={styles.verifyUrlAnchor}
                                 >
                                   <Text
-                                    style={[styles.verifyUrl, { color: colors.primary }]}
-                                    numberOfLines={1}
+                                    style={[
+                                      styles.verifyUrl,
+                                      { color: colors.primary },
+                                      // Web: 长链接强制单行省略号截断（RNWeb 忽略 ellipsizeMode，
+                                      // 需显式 CSS；原生端仍走 numberOfLines + ellipsizeMode="middle"）
+                                      Platform.OS === "web"
+                                        ? ({ display: "block", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" } as any)
+                                        : null,
+                                    ]}
+                                    numberOfLines={Platform.OS === "web" ? undefined : 1}
                                     ellipsizeMode="middle"
                                   >
                                     {site.app_android_url}
@@ -1492,6 +1511,95 @@ export default function SiteDetailScreen() {
           </View>
         ) : null}
 
+        {/* 关于：可见正文，提升抓取到的有效文本量 */}
+        <View
+          style={[
+            styles.section,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+            <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
+              {t("关于 {{name}}", { name: site.name })}
+            </SeoHeading>
+          </View>
+          {aboutParagraphs.map((paragraph, idx) => (
+            <Text key={idx} style={[styles.aboutParagraph, { color: colors.textSecondary }]}>
+              {paragraph}
+            </Text>
+          ))}
+          <Text style={[styles.aboutParagraph, { color: colors.textSecondary }]}>
+            {usageTips}
+          </Text>
+        </View>
+
+        {/* 常见问题 */}
+        <View
+          style={[
+            styles.section,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeader}>
+            <Ionicons name="help-circle-outline" size={18} color={colors.primary} />
+            <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
+              {t("常见问题")}
+            </SeoHeading>
+          </View>
+          {faqItems.map((item, idx) => (
+            <View
+              key={idx}
+              style={[styles.faqItem, { borderTopColor: colors.border }]}
+            >
+              <Text style={[styles.faqQ, { color: colors.text }]}>{item.q}</Text>
+              <Text style={[styles.faqA, { color: colors.textSecondary }]}>{item.a}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* 同类推荐：同分类站点内链，同时解决「页面没有指向其他页面的链接」 */}
+        {relatedSites.length > 0 ? (
+          <View
+            style={[
+              styles.section,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.sectionHeader}>
+              <Ionicons name="albums-outline" size={18} color={colors.primary} />
+              <SeoHeading level={2} style={[styles.sectionTitle, { color: colors.text }]}>
+                {t("同类推荐")}
+              </SeoHeading>
+            </View>
+            {relatedSites.map((related) => (
+              <InternalLink
+                key={related.id}
+                href={`/site/${related.id}`}
+                style={[styles.relatedItem, { borderTopColor: colors.border }]}
+              >
+                <Text style={[styles.relatedName, { color: colors.primary }]}>
+                  {related.name}
+                </Text>
+                <Text style={[styles.relatedDesc, { color: colors.textTertiary }]} numberOfLines={2}>
+                  {related.description}
+                </Text>
+              </InternalLink>
+            ))}
+          </View>
+        ) : null}
+
+        <SiteFooter showNav={false} />
+
         <WhiteSpace size="lg" />
       </ScrollView>
 
@@ -1594,21 +1702,24 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   detailTag: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
+    gap: 4,
   },
   categoryTag: {
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
   },
   tagChip: {
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
   },
   detailTagText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: "500",
     lineHeight: 18,
   },
@@ -1973,5 +2084,39 @@ const styles = StyleSheet.create({
   appLinkSubmitText: {
     fontSize: 12,
     fontWeight: "600",
+  },
+
+  /* SEO 可见正文 */
+  aboutParagraph: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginTop: 10,
+  },
+  faqItem: {
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+  },
+  faqQ: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  faqA: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginTop: 6,
+  },
+  relatedItem: {
+    paddingVertical: 12,
+    borderTopWidth: 1,
+  },
+  relatedName: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  relatedDesc: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 4,
   },
 });

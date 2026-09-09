@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef } from "react";
+import { usePageSeo } from "../../lib/seo";
+import { NOINDEX_ROBOTS } from "../../lib/seoCopy";
 import { View, StyleSheet, FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
@@ -16,6 +18,8 @@ import { centeredContent } from "../../constants/layout";
 
 export default function FavoritesScreen() {
   const { t } = useTranslation();
+  // 私有或内容较薄的页面：不参与索引，但允许爬虫继续跟踪页内链接
+  usePageSeo({ robots: NOINDEX_ROBOTS });
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const { loaded, favoriteSites, pruneMissing } = useFavorites();

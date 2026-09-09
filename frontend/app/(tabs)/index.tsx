@@ -23,7 +23,11 @@ import BackToTopButton, {
   type BackToTopHandle,
 } from "../../components/BackToTopButton";
 import { Logo } from "../../components/Logo";
+import SeoHeading from "../../components/SeoHeading";
+import SiteFooter from "../../components/SiteFooter";
 import { centeredContent } from "../../constants/layout";
+import { usePageSeo, canonicalFromPath } from "../../lib/seo";
+import { homeTitle, homeDescription } from "../../lib/seoCopy";
 
 export default function HomeScreen() {
   const { t } = useTranslation();
@@ -50,7 +54,7 @@ export default function HomeScreen() {
     refetch: refetchCats,
   } = useCategories();
 
-  const { data: settings } = useSettings();
+const { data: settings } = useSettings();
 
   const {
     data: sitePages,
@@ -58,10 +62,24 @@ export default function HomeScreen() {
     error: sitesError,
     refetch: refetchSites,
     isRefetching,
+
+    // FlatList 无限加载的翻页逻辑
     fetchNextPage,
     hasNextPage,
+    isLoading: sitesFetchingMore,
     isFetchingNextPage,
+    isError: sitesFetchError,
   } = useSitesInfinite(selectedSlug ? { category: selectedSlug } : undefined);
+
+  const totalCount = sitePages?.pages[0]?.count ?? 0;
+  // 首页 SEO：分类过滤时 canonical 保留分类参数（分类页是有价值内容的独立页）。
+  usePageSeo({
+    title: homeTitle(t, settings),
+    description: homeDescription(t, settings, selectedSlug ? undefined : totalCount),
+    canonical: selectedSlug
+      ? `${canonicalFromPath("/")}?category=${encodeURIComponent(selectedSlug)}`
+      : canonicalFromPath("/"),
+  });
 
   const sites = useMemo(
     () => (sitePages?.pages ?? []).flatMap((p) => p.results),
@@ -86,9 +104,9 @@ export default function HomeScreen() {
         {/* Hero title area */}
         <View style={styles.heroSection}>
           <Logo uri={settings?.logo ?? null} size={64} />
-          <Text style={[styles.greeting, { color: colors.text }]}>
+          <SeoHeading level={1} style={[styles.greeting, { color: colors.text }]}>
             {settings?.site_title || t("探索好站")}
-          </Text>
+          </SeoHeading>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             {settings?.site_subtitle || t("发现优质的金融与 Web3 工具")}
           </Text>
@@ -173,7 +191,9 @@ export default function HomeScreen() {
                 {t("加载中…")}
               </Text>
             </View>
-          ) : null
+          ) : (
+            <SiteFooter />
+          )
         }
         ListHeaderComponent={
           <View style={{ paddingTop: insets.top + 16 }}>{header}</View>
