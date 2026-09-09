@@ -5,6 +5,7 @@ backend/.venv/
 backend/db.sqlite3
 docker/data/db.sqlite3
 docker/data/media/
+docker/data/web-seo/
 backend/media/
 backend/staticfiles/
 backend/.env

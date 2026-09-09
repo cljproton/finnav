@@ -43,6 +43,15 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 预渲染 SEO 页面：由后端 render_seo_pages 生成，
+    # bind-mount 到 /usr/share/nginx/html/seo-generated（只读）。
+    location ^~ /seo-generated/ {
+        try_files $uri =404;
+        expires 1h;
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
     # 上传的媒体文件：反代到后端（后端生产环境也会提供 /media/），缓存头保留
     location ^~ /media/ {
         proxy_pass ${BACKEND_URL};
@@ -60,8 +69,14 @@ server {
         try_files $uri =404;
     }
 
-    # 单页应用路由回退
+    # 单页应用路由回退；搜索引擎/分享抓取时优先返回预渲染静态页面，
+    # 否则返回 SPA 壳（index.html 内已注入基础 title/meta 作为兜底）。
     location / {
+        if ($http_user_agent ~* "(googlebot|bingbot|baiduspider|yandex|duckduckbot|petalbot|bytespider|slurp|bingpreview|facebookexternalhit|twitterbot|discordbot|telegrambot|ahrefsrb|AhrefsBot|semrush|mj12bot|lighthouse)") {
+            rewrite ^/$ /seo-generated/home.html break;
+            rewrite ^/search/?$ /seo-generated/search.html break;
+            rewrite ^/site/([0-9]+)/?$ /seo-generated/site/$1/index.html break;
+        }
         try_files $uri $uri/ /index.html;
     }
 }

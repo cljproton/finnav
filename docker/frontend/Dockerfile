@@ -14,6 +14,16 @@ COPY frontend/ .
 ENV EXPO_PUBLIC_API_BASE_URL=""
 RUN npx expo export --platform web
 
+# 构建期注入基础 SEO 兜底标签：正式环境的精确 SEO 由后端预渲染页面
+# (/seo-generated) 提供，这里的 title/description/canonical 仅作 SPA 壳兜底。
+ARG SEO_TITLE="FinNav"
+ARG SEO_DESCRIPTION="FinNav一个金融导航应用"
+ARG SEO_ORIGIN="https://finnav.app"
+RUN if ! grep -q "meta name=\"robots\"" dist/index.html; then \
+      sed -i "s|<head>|<head>\\n  <meta name=\"robots\" content=\"index,follow\" />\\n  <meta name=\"description\" content=\"$SEO_DESCRIPTION\" />\\n  <link rel=\"canonical\" href=\"$SEO_ORIGIN/\" />|" dist/index.html; \
+      sed -i "s|<title>FinNav[^<]*</title>|<title>$SEO_TITLE</title>|" dist/index.html; \
+    fi
+
 # ---- 运行阶段：Nginx 托管静态站 ----
 FROM nginx:1.27-alpine
 # envsubst 仅替换 BACKEND_URL（避免误替换 $host/$uri 等 nginx 变量）
