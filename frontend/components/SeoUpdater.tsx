@@ -1,89 +1,111 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { usePathname } from "expo-router";
+import { useTranslation } from "react-i18next";
 import { useSettings } from "../lib/api";
+import { brandOf, composeTitle, NOINDEX_ROBOTS } from "../lib/seoCopy";
+import { canonicalFromPath, currentPageSeo, useSeoVersion } from "../lib/seo";
 
 /**
- * Web 端 SEO 元信息注入：
- * - document.title = seo_title ?? site_title
- * - meta description / keywords
- * - link rel=canonical（基于当前 URL 的 pathname，去除查询串）
- * - Open Graph 基础标签（og:title/description/type/url/image，image 用 settings.logo）
- * - 动态 favicon（settings.logo）
+ * Web 端 SEO 元信息的唯一写入者。
  *
- * 站点详情页（/site/:id）的标题/描述/canonical/OG 由详情页组件结合站点数据覆盖，
- * 详见 app/(tabs)/site/[id]/index.tsx 中的 useEffect。
- * 仅在有 DOM 的 Web 平台生效（native 端直接跳过）。
+ * 输入：全局设置（AppSetting）+ 页面声明的覆盖项（lib/seo.ts 的 usePageSeo）。
+ * 输出：document.title、description/keywords/robots、canonical、OG/Twitter、favicon。
+ *
+ * 之所以集中在这里写 DOM：多处各自写入会互相覆盖（详情页 vs 全站默认），
+ * 曾经导致 canonical/描述在某些时序下缺失，从而触发 ahrefs
+ * 「Duplicate pages without canonical」「Meta description missing」。
  */
 export default function SeoUpdater() {
   const { data: settings } = useSettings();
+  const { t, i18n } = useTranslation();
   const pathname = usePathname();
-  // 站点详情页（/site/<数字id>）由详情页单独注入 SEO，这里跳过避免互相覆盖。
-  const isSiteDetail = /^\/site\/\d+$/.test(pathname);
+  useSeoVersion();
+
+  const page = currentPageSeo();
+
+  const brand = brandOf(settings);
+  let title = page.title || settings?.seo_title || settings?.site_title || brand;
+  // 兜底：后台只填了品牌名时标题过短（ahrefs「Title too short」）。
+  if (!page.title && title.trim().length < 20) {
+    title = composeTitle(t, brand);
+  }
+
+  const description =
+    page.description ||
+    settings?.seo_description ||
+    t("{{brand}}提供金融与 Web3 站点导航：官网入口、APP 下载、教程与真实用户评价。", { brand });
+  const keywords = page.keywords || settings?.seo_keywords || "";
+  const canonical = page.canonical || canonicalFromPath(pathname);
+  const robots = page.robots || (canonical ? "index,follow" : NOINDEX_ROBOTS);
+  const ogType = page.ogType ?? "website";
+  const image = page.image || settings?.logo || "";
+
+  const signature = JSON.stringify({
+    title,
+    description,
+    keywords,
+    canonical,
+    robots,
+    ogType,
+    image,
+  });
 
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return;
-    if (!settings) return;
 
-    const title = settings.seo_title || settings.site_title || "FinNav";
     if (document.title !== title) document.title = title;
+    upsertMeta("description", description);
+    upsertMeta("keywords", keywords);
+    upsertMeta("robots", robots);
 
-    // 详情页会以站点信息覆盖，此处仅为兜底（settings 加载先于站点数据）。
-    upsertMeta("description", settings.seo_description);
-    upsertMeta("keywords", settings.seo_keywords);
+    upsertOg("og:site_name", brand);
+    upsertOg("og:title", title);
+    upsertOg("og:description", description);
+    upsertOg("og:type", ogType);
+    upsertOg("og:locale", i18n.language?.startsWith("en") ? "en_US" : "zh_CN");
+    if (canonical) upsertOg("og:url", canonical);
+    if (image) upsertOg("og:image", image);
 
-    upsertOgProperty("og:title", title);
-    upsertOgProperty("og:description", settings.seo_description);
-    upsertOgProperty("og:type", "website");
+    upsertMeta("twitter:card", "summary_large_image");
+    upsertMeta("twitter:title", title);
+    upsertMeta("twitter:description", description);
+    if (image) upsertMeta("twitter:image", image);
 
-    if (isSiteDetail) {
-      return;
+    if (canonical) upsertLink("canonical", canonical);
+    if (settings?.logo) {
+      upsertLink("icon", settings.logo);
     }
 
-    // canonical 基于真实浏览器地址（去掉查询参数），便于搜索引擎独立 URL 归一。
-    const canonical = canonicalUrl();
-    if (canonical) {
-      let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-      if (!link) {
-        link = document.createElement("link");
-        link.rel = "canonical";
-        document.head.appendChild(link);
-      }
-      link.href = canonical;
-      upsertOgProperty("og:url", canonical);
-    }
-
-    if (settings.logo) {
-      let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-      if (!link) {
-        link = document.createElement("link");
-        link.rel = "icon";
-        document.head.appendChild(link);
-      }
-      link.href = settings.logo;
-      upsertOgProperty("og:image", settings.logo);
-    }
-  }, [settings, isSiteDetail]);
+    // 文档语言与当前界面语言保持一致（导出模板写死 lang="en"，中文站会被误判）。
+    document.documentElement.setAttribute(
+      "lang",
+      i18n.language?.startsWith("en") ? "en" : "zh-CN",
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature, settings?.logo]);
 
   return null;
 }
 
 function upsertMeta(name: string, content: string) {
-  if (!content) return;
   let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
   if (!meta) {
     meta = document.createElement("meta");
     meta.name = name;
     document.head.appendChild(meta);
   }
-  meta.content = content;
+  // 允许空值时删除标签（例如 keywords 未配置），但 description 始终有兜底值。
+  if (content) {
+    meta.content = content;
+  } else if (meta.parentNode) {
+    meta.parentNode.removeChild(meta);
+  }
 }
 
-function upsertOgProperty(property: string, content: string) {
+function upsertOg(property: string, content: string) {
   if (!content) return;
-  let meta = document.querySelector<HTMLMetaElement>(
-    `meta[property="${property}"]`,
-  );
+  let meta = document.querySelector<HTMLMetaElement>(`meta[property="${property}"]`);
   if (!meta) {
     meta = document.createElement("meta");
     meta.setAttribute("property", property);
@@ -92,8 +114,12 @@ function upsertOgProperty(property: string, content: string) {
   meta.content = content;
 }
 
-function canonicalUrl(): string {
-  if (typeof window === "undefined" || typeof document === "undefined") return "";
-  const { origin, pathname } = window.location;
-  return `${origin}${pathname}`;
+function upsertLink(rel: string, href: string) {
+  let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = rel;
+    document.head.appendChild(link);
+  }
+  link.href = href;
 }

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { useSettings } from "../lib/api";
 import { useThemeColors } from "../constants/colors";
 import { Logo } from "./Logo";
+import SeoHeading from "./SeoHeading";
 
 export default function PageHero({ title }: { title: string }) {
   const colors = useThemeColors();
@@ -16,9 +17,9 @@ export default function PageHero({ title }: { title: string }) {
       <View style={styles.logo}>
         <Logo uri={settings?.logo ?? null} size={48} />
       </View>
-      <Text style={[styles.greeting, { color: colors.text }]}>
+      <SeoHeading level={1} style={[styles.greeting, { color: colors.text }]}>
         {displayTitle}
-      </Text>
+      </SeoHeading>
       {subtitle ? (
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           {subtitle}

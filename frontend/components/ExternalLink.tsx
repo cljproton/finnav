@@ -1,6 +1,7 @@
 import React from "react";
 import { Platform, Pressable, type StyleProp, type ViewStyle } from "react-native";
 import * as Linking from "expo-linking";
+import { flattenLinkStyle } from "../lib/utils";
 
 /**
  * 跨平台「外链」组件：
@@ -37,8 +38,10 @@ export default function ExternalLink({
         href={url}
         target="_blank"
         rel={rel}
+        // 重置浏览器默认锚链样式（去掉蓝色下划线），先压平避免数组样式
+        // 触发 react-native-web 的 DOM 运行时错误
+        style={{ textDecorationLine: "none", color: "inherit", ...flattenLinkStyle(style) } as any}
         onClick={handleClick}
-        style={style as any}
         aria-label={accessibilityLabel}
       >
         {children}

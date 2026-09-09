@@ -6,6 +6,7 @@ export interface Site {
   logo: string | null;
   category: number;
   category_name: string;
+  category_slug: string;
   tags: string[];
   sort_order: number;
   app_android_url: string;
