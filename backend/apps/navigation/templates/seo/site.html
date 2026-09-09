@@ -1,0 +1,93 @@
+{% extends "seo/base.html" %}
+{% block title %}{{ seo_title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ seo_description }}" />
+<link rel="canonical" href="{{ base_url }}/site/{{ site.id }}" />
+{% endblock %}
+{% block content %}
+  <main>
+    <div class="hero">
+      <h1>{{ site.name }}</h1>
+      <p class="lead">{{ site.description }}</p>
+      <p class="site-count">
+        {% if site.category %}分类：<a href="{{ base_url }}/?category={{ site.category.slug }}">{{ site.category.name }}</a>{% endif %}
+        {% if tags %} · 标签：{% for tag in tags %}<a href="{{ base_url }}/search?q={{ tag|urlencode }}">{{ tag }}</a>{% if not forloop.last %}、{% endif %}{% endfor %}{% endif %}
+        {% if site.rating_count %} · {{ site.rating_count }} 条用户评价（平均 {{ site.rating_avg|floatformat:1 }} 分）{% endif %}
+      </p>
+    </div>
+
+    <section class="block">
+      <h2>关于 {{ site.name }}</h2>
+      <p>{{ site.name }} 是 FinNav 收录的{% if site.category %}{{ site.category.name }}{% else %}金融/Web3{% endif %}站点。{% if site.description %}{{ site.description }}{% else %}本站整理了它的基础资料与访问入口。{% endif %}</p>
+      <p>本页汇总了 {{ site.name }} 的官网入口{% if has_android %}、安卓下载{% endif %}{% if has_ios %}、iOS App Store{% endif %}{% if tutorial_count %}、{{ tutorial_count }} 篇用户分享的教程{% endif %}{% if experience_count %}、{{ experience_count }} 条实战经验{% endif %}{% if site.rating_count %}、{{ site.rating_count }} 条评价{% endif %}，方便你在一处完成核实与跳转。</p>
+      <p>使用前建议：先确认 {{ site.name }} 的域名与官方公告再注册；涉及资产时开启双重验证、小额尝试；教程与经验由用户提供，仅代表个人经历，不构成投资建议。</p>
+    </section>
+
+    <section class="block">
+      <h2>官网与下载</h2>
+      <ul class="site-list">
+        <li><span class="site-name">官网地址</span>
+          <div class="site-desc"><a href="{{ site.url }}" rel="nofollow noopener">{{ site.url }}</a></div>
+        </li>
+        {% if has_android %}
+        <li><span class="site-name">安卓 APP</span>
+          <div class="site-desc">安卓版（本站缓存）与安卓版（原始链接）下载入口在网页版可体验。</div>
+        </li>
+        {% endif %}
+        {% if has_ios %}
+        <li><span class="site-name">iOS App</span>
+          <div class="site-desc">App Store 下载入口在网页版可体验。</div>
+        </li>
+        {% endif %}
+        {% if site.invite_code or site.invite_link %}
+        <li><span class="site-name">邀请信息</span>
+          <div class="site-desc">该站点配置了邀请链接，注册时填写邀请码可获得对应权益。</div>
+        </li>
+        {% endif %}
+      </ul>
+    </section>
+
+    <section class="block">
+      <h2>用户内容</h2>
+      <ul class="site-list">
+        <li>
+          <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}/reviews">大家的评价</a></div>
+          <div class="site-desc">{% if site.rating_count %}{{ site.rating_count }} 条评分与评论，涵盖手续费、产品体验、客服响应与充提速度等反馈。{% else %}还没有其它评价，访问后即可查看并参与。{% endif %}</div>
+        </li>
+        <li>
+          <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}/tutorials">用户分享的教程</a></div>
+          <div class="site-desc">{% if tutorial_count %}{{ tutorial_count }} 篇注册开户、充值提现、功能使用与避坑要点教程，支持文字、视频与辅助代办三类。{% else %}该站点暂未有用户分享教程。{% endif %}</div>
+        </li>
+        <li>
+          <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}/experiences">实战经验</a></div>
+          <div class="site-desc">{% if experience_count %}{{ experience_count }} 条真实用户撰写的实战经验与踩坑记录，使用平台积分即可解锁阅读。{% else %}该站点暂未有实战经验。{% endif %}</div>
+        </li>
+        <li>
+          <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}/app-links">APP 下载链接</a></div>
+          <div class="site-desc">如你有该站点官方 APP 下载地址，可以在此补充，审核通过后即对所有人可见。</div>
+        </li>
+      </ul>
+    </section>
+
+    {% if related_sites %}
+    <section class="block">
+      <h2>同类推荐</h2>
+      <ul class="site-list">
+        {% for rel in related_sites %}
+          <li>
+            <div class="site-name"><a href="{{ base_url }}/site/{{ rel.id }}">{{ rel.name }}</a></div>
+            <div class="site-desc">{{ rel.description }}</div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="block">
+      <h2>常见问题</h2>
+      <div class="faq-item"><h3>{{ site.name }}的官网入口在哪里？</h3><p>点击网页版「访问官网」按钮即可跳转到 {{ site.name }} 官方站点；若该站点配置了邀请链接，按钮会自动切换为邀请入口。</p></div>
+      <div class="faq-item"><h3>{{ site.name }}有手机 APP 吗？</h3><p>{% if has_android or has_ios %}有，本站提供了{{ platforms }}下载入口，均来自官方渠道或官网原始链接。{% else %}本页暂未收录 {{ site.name }} 的 APP 下载链接；如你找到官方下载地址，可在「提交下载链接」入口补充。{% endif %}</p></div>
+      <div class="faq-item"><h3>如何查看 {{ site.name }} 的真实评价？</h3><p>进入「大家的评价」可以看到其他用户的星级与评论，登录后也能提交自己的打分；FinNav 不对第三方站点的经营状况作担保，请结合自身判断使用。</p></div>
+    </section>
+  </main>
+{% endblock %}

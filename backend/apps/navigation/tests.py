@@ -1355,6 +1355,8 @@ class SeoTestCase(TestCase):
         body = resp.content.decode()
         self.assertIn('User-agent: *', body)
         self.assertIn('Allow: /', body)
+        self.assertIn('Disallow: /api/', body)
+        self.assertIn('Disallow: /admin/', body)
         self.assertIn('Sitemap: https://finnav.app/sitemap.xml', body)
 
     def test_robots_txt_falls_back_to_request_host(self):
@@ -1379,18 +1381,61 @@ class SeoTestCase(TestCase):
         inactive = self._site(name='Inactive', is_active=False)
         resp = self.client.get('/sitemap.xml')
         self.assertEqual(resp.status_code, 200)
-        self.assertIn('<loc>https://finnav.app/</loc>', resp.content.decode())
+        body = resp.content.decode()
+        self.assertIn('<loc>https://finnav.app/</loc>', body)
+        self.assertIn('<loc>https://finnav.app/search</loc>', body)
         self.assertIn(
-            f'<loc>https://finnav.app/site/{active.pk}</loc>', resp.content.decode()
+            f'<loc>https://finnav.app/site/{active.pk}</loc>', body
+        )
+        self.assertIn(
+            f'<loc>https://finnav.app/site/{active.pk}/reviews</loc>', body
+        )
+        self.assertIn(
+            f'<loc>https://finnav.app/site/{active.pk}/tutorials</loc>', body
+        )
+        self.assertIn(
+            f'<loc>https://finnav.app/site/{active.pk}/experiences</loc>', body
         )
         self.assertNotIn(
             f'<loc>https://finnav.app/site/{inactive.pk}</loc>',
-            resp.content.decode(),
+            body,
         )
 
     def test_sitemap_xml_content_type(self):
         resp = self.client.get('/sitemap.xml')
         self.assertIn('application/xml', resp['Content-Type'])
+
+    def test_render_seo_pages_writes_static_html(self):
+        """render_seo_pages 命令应生成：首页 / 搜索页 / 每站点 index.html。"""
+        import tempfile
+        from pathlib import Path
+
+        from django.core.management import call_command
+
+        self._site(name='SEO Site', description='描述文字')
+        with tempfile.TemporaryDirectory() as tmp:
+            call_command('render_seo_pages', output=tmp, verbosity=0)
+            root = Path(tmp)
+
+            home = root / 'home.html'
+            search = root / 'search.html'
+            self.assertTrue(home.exists(), '应生成 home.html')
+            self.assertTrue(search.exists(), '应生成 search.html')
+            home_html = home.read_text(encoding='utf-8')
+            self.assertIn('<h1>', home_html)
+            self.assertIn('<meta name="description"', home_html)
+            self.assertIn('<link rel="canonical"', home_html)
+            self.assertIn('<a href=', home_html)
+
+            site_dir = root / 'site'
+            self.assertTrue(site_dir.exists(), '应生成 site 目录')
+            site_files = list(site_dir.glob('*/index.html'))
+            self.assertEqual(len(site_files), 1, '1 个启用站点对应 1 个 index.html')
+            site_html = site_files[0].read_text(encoding='utf-8')
+            self.assertIn('<h1>SEO Site</h1>', site_html)
+            self.assertIn('/reviews', site_html)
+            self.assertIn('/tutorials', site_html)
+            self.assertIn('/experiences', site_html)
 
 
 class AppDownloadTestCase(TestCase):

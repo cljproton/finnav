@@ -35,6 +35,7 @@ class SiteSerializer(serializers.ModelSerializer):
     app_android_cache_url = serializers.SerializerMethodField()
     app_android_sha256 = serializers.SerializerMethodField()
     category_name = serializers.CharField(source='category.name', read_only=True)
+    category_slug = serializers.SlugField(source='category.slug', read_only=True)
     tags = serializers.SerializerMethodField()
 
     class Meta:
@@ -47,6 +48,7 @@ class SiteSerializer(serializers.ModelSerializer):
             'logo',
             'category',
             'category_name',
+            'category_slug',
             'tags',
             'sort_order',
             'app_android_url',

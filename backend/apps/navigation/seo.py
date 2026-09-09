@@ -27,11 +27,17 @@ def _site_base_url(request) -> str:
 
 
 def robots_txt(request):
-    """GET /seo/robots.txt  搜索引擎抓取指引。"""
+    """GET /seo/robots.txt  搜索引擎抓取指引。
+
+    API 与后台管理不应对搜索引擎开放；同时允许爬虫跟踪内部链接
+    （noindex 页面的链接仍会被跟踪，保证整站抓取连通性）。
+    """
     base = _site_base_url(request)
     lines = [
         'User-agent: *',
         'Allow: /',
+        'Disallow: /api/',
+        'Disallow: /admin/',
         f'Sitemap: {base}/sitemap.xml',
     ]
     return HttpResponse('\n'.join(lines) + '\n', content_type='text/plain')
@@ -40,7 +46,8 @@ def robots_txt(request):
 def sitemap_xml(request):
     """GET /seo/sitemap.xml  站点地图。
 
-    首页 + 全部启用站点详情页，lastmod 取站点更新时间，优先按活跃度排序。
+    首页 + 搜索页 + 全部启用站点详情页与其子页，lastmod 取站点更新时间，
+    优先按活跃度排序。
     """
     base = _site_base_url(request)
     setting = AppSetting.get()
@@ -50,7 +57,12 @@ def sitemap_xml(request):
             f'{base}/',
             setting.updated_at.strftime('%Y-%m-%d') if setting.updated_at else '',
             '1.0',
-        )
+        ),
+        (
+            f'{base}/search',
+            setting.updated_at.strftime('%Y-%m-%d') if setting.updated_at else '',
+            '0.8',
+        ),
     ]
     sites = (
         Site.objects.filter(is_active=True)
@@ -60,6 +72,9 @@ def sitemap_xml(request):
     for site in sites:
         lastmod = site.updated_at.strftime('%Y-%m-%d') if site.updated_at else ''
         urls.append((f'{base}/site/{site.pk}', lastmod, '0.8'))
+        urls.append((f'{base}/site/{site.pk}/reviews', lastmod, '0.6'))
+        urls.append((f'{base}/site/{site.pk}/tutorials', lastmod, '0.6'))
+        urls.append((f'{base}/site/{site.pk}/experiences', lastmod, '0.6'))
 
     # XML 转义（url/date 本身安全，防御性处理）
     from xml.sax.saxutils import escape

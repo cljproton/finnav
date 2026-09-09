@@ -79,6 +79,9 @@
 {% endblock %}
 
 {% block object-tools-items %}
+    <li>
+        <a href="{% url opts|admin_urlname:'rebuild_seo' %}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--fn-border);border-radius:12px;font-size:12px;color:#4F46E5;background:#EEF2FF;">重建静态 SEO 页面</a>
+    </li>
     <li>{% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}<a href="{% add_preserved_filters history_url %}" class="historylink">{% trans "历史" %}</a></li>
 {% endblock %}
 

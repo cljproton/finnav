@@ -1,0 +1,47 @@
+{% extends "seo/base.html" %}
+{% block title %}{{ seo_title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ seo_description }}" />
+<link rel="canonical" href="{{ base_url }}/" />
+{% endblock %}
+{% block content %}
+  <main>
+    <div class="hero">
+      <h1>{{ setting.site_title|default:"FinNav" }}</h1>
+      <p class="lead">{{ setting.site_subtitle|default:"发现优质的金融与 Web3 工具" }}</p>
+      <p class="site-count">已收录 {{ site_count }} 个金融与 Web3 相关网站与手机 APP，覆盖交易所、钱包、借贷协议、行情资讯、券商与银行等方向。本页只提供入口整理与用户使用记录，不代理任何充值、提现或交易操作。</p>
+    </div>
+
+    <section class="block">
+      <h2>按分类浏览</h2>
+      <p>
+        {% for cat in categories %}
+          <a href="{{ base_url }}/?category={{ cat.slug }}">{{ cat.name }}</a>{% if not forloop.last %} · {% endif %}
+        {% empty %}
+          暂无分类
+        {% endfor %}
+      </p>
+    </section>
+
+    <section class="block">
+      <h2>热门站点</h2>
+      <ul class="site-list">
+        {% for site in top_sites %}
+          <li>
+            <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}">{{ site.name }}</a></div>
+            <div class="site-desc">{{ site.description }}</div>
+          </li>
+        {% empty %}
+          <li>还没有收录任何站点</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="block">
+      <h2>常见问题</h2>
+      <div class="faq-item"><h3>FinNav 是交易平台吗？</h3><p>不是。FinNav 只做站点导航与信息整理，不提供撮合、理财或投资建议，也不接触你的资金与私钥；所有业务都在第三方站点完成，请先小额试用并自行评估风险。</p></div>
+      <div class="faq-item"><h3>如何提交新站点、教程或下载链接？</h3><p>登录后在个人中心提交新站点，或在站点详情页分享文字/视频教程、补充 APP 下载链接、撰写实战经验；管理员审核通过后即对所有人可见，并可获得积分奖励。</p></div>
+      <div class="faq-item"><h3>站点信息和 APP 安装包多久更新一次？</h3><p>站点入口与下载链接由管理员维护；本站缓存的安卓安装包会定期与官方原始链接比对 SHA-256 校验值，校验失败时自动暂停本站下载并提示改用官方原始链接。</p></div>
+    </section>
+  </main>
+{% endblock %}

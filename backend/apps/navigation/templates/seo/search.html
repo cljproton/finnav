@@ -1,0 +1,40 @@
+{% extends "seo/base.html" %}
+{% block title %}{{ seo_title }}{% endblock %}
+{% block head_extra %}
+<meta name="description" content="{{ seo_description }}" />
+<link rel="canonical" href="{{ base_url }}/search" />
+{% endblock %}
+{% block content %}
+  <main>
+    <div class="hero">
+      <h1>搜索</h1>
+      <p class="lead">按名称、描述或标签查找金融与 Web3 站点，快速进入官网、APP 下载页与用户评价。</p>
+      <p class="site-count">在 {{ site_count }} 个收录站点中搜索。</p>
+    </div>
+
+    <section class="block">
+      <h2>热门站点</h2>
+      <ul class="site-list">
+        {% for site in top_sites %}
+          <li>
+            <div class="site-name"><a href="{{ base_url }}/site/{{ site.id }}">{{ site.name }}</a></div>
+            <div class="site-desc">{{ site.description }}</div>
+          </li>
+        {% empty %}
+          <li>还没有收录任何站点</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="block">
+      <h2>按分类浏览</h2>
+      <p>
+        {% for cat in categories %}
+          <a href="{{ base_url }}/?category={{ cat.slug }}">{{ cat.name }}</a>{% if not forloop.last %} · {% endif %}
+        {% empty %}
+          暂无分类
+        {% endfor %}
+      </p>
+    </section>
+  </main>
+{% endblock %}
