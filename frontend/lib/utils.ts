@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import * as Linking from "expo-linking";
 
 /** 复制文本到剪贴板（Web 优先 Clipboard API，失败回退 execCommand）。 */
@@ -91,4 +91,65 @@ export function inviteUrl(shareUrl: string, code: string): string {
   } catch {
     return `finnav:///?ref=${code}`;
   }
+}
+
+/**
+ * 压平传给渲染为真实 DOM（<a> 等）的 RN 样式，并把 RN 简写属性
+ * （paddingHorizontal/paddingVertical、marginHorizontal/marginVertical）
+ * 展开为浏览器可识别的长手 CSS 属性。
+ *
+ * react-native-web 的 StyleSheet.flatten 不会做这套展开，而原生 DOM 元素
+ * 又只认 padding-left 之类属性，导致传 paddingHorizontal 到 <a> 上被静默丢弃。
+ */
+export function flattenLinkStyle<T>(style: T): Record<string, unknown> {
+  const flat = StyleSheet.flatten(style) ?? {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(flat)) {
+    if (key === "paddingHorizontal" && value != null) {
+      out.paddingLeft = value;
+      out.paddingRight = value;
+    } else if (key === "paddingVertical" && value != null) {
+      out.paddingTop = value;
+      out.paddingBottom = value;
+    } else if (key === "marginHorizontal" && value != null) {
+      out.marginLeft = value;
+      out.marginRight = value;
+    } else if (key === "marginVertical" && value != null) {
+      out.marginTop = value;
+      out.marginBottom = value;
+    } else {
+      out[key] = value;
+    }
+  }
+  // CSS 规范：border-style 缺省为 none 时，border-width 的计算值恒为 0。
+  // 原生 <a> 没有 RNW 组件的代理规范化，必须显式补 solid 边框才会渲染。
+  // 注意：若只设了某一边的宽度（如 borderTopWidth），border-style 会作用到四边，
+  // 其余三边宽度回落到 CSS 默认 medium(3px)、颜色黑色——需显式把它们归零。
+  if (
+    (!("borderStyle" in out)) &&
+    (("borderWidth" in out) || ("borderColor" in out) ||
+      ("borderTopWidth" in out) || ("borderBottomWidth" in out) ||
+      ("borderLeftWidth" in out) || ("borderRightWidth" in out))
+  ) {
+    out.borderStyle = "solid";
+    if (!("borderWidth" in out)) {
+      const sides: [string, string][] = [
+        ["borderLeftWidth", "left"],
+        ["borderRightWidth", "right"],
+        ["borderTopWidth", "top"],
+        ["borderBottomWidth", "bottom"],
+      ];
+      const bySide: Record<string, string> = Object.fromEntries(
+        Object.keys(out)
+          .filter((k) => k.startsWith("border") && k.endsWith("Width"))
+          .map((k) => [k.replace("border", "").replace("Width", "").toLowerCase(), k]),
+      );
+      for (const [key, side] of sides) {
+        if (!bySide[side] && out[key] == null) {
+          out[key] = 0;
+        }
+      }
+    }
+  }
+  return out;
 }
