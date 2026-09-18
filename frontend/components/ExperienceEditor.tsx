@@ -1,27 +1,20 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+"use client";
+
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
-  TextInput,
   Pressable,
-  Platform,
-  AppState,
+  ActivityIndicator,
   useWindowDimensions,
-  Modal as RNModal,
-  ActivityIndicator as RNActivityIndicator,
-} from "react-native";
-import { Image as ExpoImage } from "expo-image";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useQueryClient } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
-import Toast from "@ant-design/react-native/es/toast";
-import Modal from "@ant-design/react-native/es/modal";
-import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
-import * as ImagePicker from "expo-image-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+} from "./ui/primitives";
+import { Ionicons } from "./ui/icons";
+import { Toast, Modal } from "./ui/antd";
+import { storage } from "../lib/storage";
 import {
   createExperience,
   deleteExperienceImage,
@@ -31,9 +24,11 @@ import {
 import { useAuth } from "../lib/auth";
 import { useThemeColors } from "../constants/colors";
 import { centeredContent } from "../constants/layout";
-import { formatDateTime } from "../lib/utils";
+import { formatDateTime, errorMessage } from "../lib/utils";
 import type { Experience } from "../lib/types";
 import AuthModal from "./AuthModal";
+import { ConfirmModal } from "./ConfirmModal";
+import { StyleSheet, rn } from "../lib/rnStyle";
 
 const MAX_IMAGES = 5;
 const PRICE_MIN = 5;
@@ -57,6 +52,10 @@ interface PendingImage {
   localUri?: string;
   uploading: boolean;
   error?: boolean;
+}
+
+interface DraftPrompt {
+  data: DraftData;
 }
 
 export default function ExperienceEditor({
@@ -92,7 +91,9 @@ export default function ExperienceEditor({
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [authVisible, setAuthVisible] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState<DraftPrompt | null>(null);
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dirtyRef = useRef(false);
   const userEditedRef = useRef(false);
   const saveDraftRef = useRef<() => Promise<void>>(async () => {});
@@ -118,7 +119,7 @@ export default function ExperienceEditor({
     };
     setDraftStatus("saving");
     try {
-      await AsyncStorage.setItem(draftKey(siteId), JSON.stringify(data));
+      await storage.setItem(draftKey(siteId), data);
       dirtyRef.current = false;
       setDraftStatus("saved");
       setLastSavedAt(Date.now());
@@ -127,7 +128,9 @@ export default function ExperienceEditor({
     }
   }, [mode, siteId, title, content, price, images]);
 
-  saveDraftRef.current = saveDraft;
+  useEffect(() => {
+    saveDraftRef.current = saveDraft;
+  });
 
   useEffect(() => {
     if (mode !== "create") return;
@@ -146,18 +149,24 @@ export default function ExperienceEditor({
 
   useEffect(() => {
     if (mode !== "create") return;
-    const sub = AppState.addEventListener("change", (s) => {
-      if (s !== "active" && dirtyRef.current && userEditedRef.current) {
+    const handler = () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible" &&
+        dirtyRef.current &&
+        userEditedRef.current
+      ) {
         saveDraftRef.current();
       }
-    });
-    return () => sub.remove();
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
   }, [mode]);
 
   /* ---------- 草稿恢复提示 ---------- */
 
   const discardDraft = useCallback(() => {
-    AsyncStorage.removeItem(draftKey(siteId)).catch(() => {});
+    storage.removeItem(draftKey(siteId)).catch(() => {});
     draftImagesRef.current.forEach((id) => {
       deleteExperienceImage(id).catch(() => {});
     });
@@ -169,35 +178,12 @@ export default function ExperienceEditor({
     let mounted = true;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(draftKey(siteId));
-        if (!raw) return;
-        const data = JSON.parse(raw) as DraftData;
+        const data = await storage.getItem<DraftData>(draftKey(siteId));
+        if (!data) return;
         if (!data.title && !data.content && !(data.image_ids?.length)) return;
         if (!mounted) return;
         draftImagesRef.current = data.image_ids ?? [];
-        Modal.alert(
-          t("检测到未发布的草稿，是否继续？"),
-          t("上次编辑于 {{time}}", { time: formatDateTime(data.updated_at) }),
-          [
-            { text: t("放弃"), style: "destructive" as const, onPress: discardDraft },
-            {
-              text: t("继续"),
-              onPress: () => {
-                userEditedRef.current = true;
-                setTitle(data.title ?? "");
-                setContent(data.content ?? "");
-                setPrice(data.price ?? "10");
-                setImages(
-                  (data.image_ids ?? []).map((id, idx) => ({
-                    id,
-                    url: data.image_urls?.[idx] ?? undefined,
-                    uploading: false,
-                  })),
-                );
-              },
-            },
-          ],
-        );
+        setDraftPrompt({ data });
       } catch {
         /* 草稿损坏则忽略 */
       }
@@ -205,75 +191,79 @@ export default function ExperienceEditor({
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, siteId]);
+
+  const handleContinueDraft = useCallback(() => {
+    const data = draftPrompt?.data;
+    if (!data) return;
+    userEditedRef.current = true;
+    setTitle(data.title ?? "");
+    setContent(data.content ?? "");
+    setPrice(data.price ?? "10");
+    setImages(
+      (data.image_ids ?? []).map((id, idx) => ({
+        id,
+        url: data.image_urls?.[idx] ?? undefined,
+        uploading: false,
+      })),
+    );
+    setDraftPrompt(null);
+  }, [draftPrompt]);
+
+  const handleDiscardDraft = useCallback(() => {
+    discardDraft();
+    setDraftPrompt(null);
+  }, [discardDraft]);
 
   /* ---------- 批量上传 + 预览 ---------- */
 
-  const pickImages = async () => {
-    try {
-      if (Platform.OS !== "web") {
-        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!perm.granted) {
-          setError(t("需要相册权限才能选择图片"));
-          return;
-        }
-      }
-      const remaining = MAX_IMAGES - images.length;
-      if (remaining <= 0) {
-        Toast.info(t("最多上传 {{max}} 张图片", { max: MAX_IMAGES }), 1.5);
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsMultipleSelection: Platform.OS !== "web",
-        selectionLimit: remaining,
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets?.length) return;
-      userEditedRef.current = true;
-      setError("");
-
-      const assets = result.assets.slice(0, remaining);
-      const pending: PendingImage[] = assets.map((asset) => ({
-        localUri: asset.uri,
-        uploading: true,
-      }));
-      setImages((prev) => [...prev, ...pending].slice(0, MAX_IMAGES));
-
-      await Promise.all(
-        pending.map(async (p, idx) => {
-          try {
-            let file: File | { uri: string; name: string; type: string };
-            const asset = assets[idx];
-            const name = asset.fileName || `upload-${Date.now()}-${idx}.jpg`;
-            const uri = asset.uri;
-            if (Platform.OS === "web" && typeof fetch !== "undefined") {
-              const blob = await (await fetch(uri)).blob();
-              file = new File([blob], name, { type: blob.type || "image/jpeg" });
-            } else {
-              file = { uri, name, type: asset.mimeType || "image/jpeg" };
-            }
-            const uploaded = await uploadExperienceImage(file);
-            setImages((prev) =>
-              prev.map((item) =>
-                item === p
-                  ? { id: uploaded.id, url: uploaded.url, uploading: false }
-                  : item,
-              ),
-            );
-          } catch {
-            setImages((prev) =>
-              prev.map((item) =>
-                item === p ? { ...item, uploading: false, error: true } : item,
-              ),
-            );
-          }
-        }),
-      );
-    } catch {
-      setError(t("上传失败"));
+  const handleFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const remaining = MAX_IMAGES - images.length;
+    if (remaining <= 0) {
+      Toast.info(t("最多上传 {{max}} 张图片", { max: MAX_IMAGES }), 1.5);
+      return;
     }
+    userEditedRef.current = true;
+    setError("");
+
+    const chosen = files.slice(0, remaining);
+    const pending: PendingImage[] = chosen.map((file) => ({
+      localUri: URL.createObjectURL(file),
+      uploading: true,
+    }));
+    setImages((prev) => [...prev, ...pending].slice(0, MAX_IMAGES));
+
+    await Promise.all(
+      pending.map(async (p, idx) => {
+        try {
+          const uploaded = await uploadExperienceImage(chosen[idx]);
+          setImages((prev) =>
+            prev.map((item) =>
+              item === p
+                ? { id: uploaded.id, url: uploaded.url, uploading: false }
+                : item,
+            ),
+          );
+        } catch {
+          setImages((prev) =>
+            prev.map((item) =>
+              item === p ? { ...item, uploading: false, error: true } : item,
+            ),
+          );
+        }
+      }),
+    );
+  };
+
+  const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    void handleFiles(files);
+  };
+
+  const pickImages = () => {
+    fileInputRef.current?.click();
   };
 
   const removeImage = (idx: number) => {
@@ -288,6 +278,14 @@ export default function ExperienceEditor({
   };
 
   /* ---------- 发布 / 保存 ---------- */
+
+  const goBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.replace(`/site/${siteId}/experiences`);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!loggedIn) {
@@ -332,28 +330,20 @@ export default function ExperienceEditor({
         Toast.success(t("保存修改"), 1.5);
       } else {
         await createExperience(siteId, payload);
-        await AsyncStorage.removeItem(draftKey(siteId)).catch(() => {});
+        await storage.removeItem(draftKey(siteId)).catch(() => {});
         Toast.success(t("发布成功"), 1.5);
       }
       queryClient.invalidateQueries({ queryKey: ["site-experiences", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site", siteId] });
       queryClient.invalidateQueries({ queryKey: ["me-points"] });
-      if (router.canGoBack()) {
+      if (typeof window !== "undefined" && window.history.length > 1) {
         router.back();
       } else {
         router.replace(`/site/${siteId}/experiences`);
       }
-    } catch (e: any) {
-      setError(e?.message || t("发布失败"));
+    } catch (e: unknown) {
+      setError(errorMessage(e) || t("发布失败"));
       setSubmitting(false);
-    }
-  };
-
-  const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace(`/site/${siteId}/experiences`);
     }
   };
 
@@ -361,8 +351,17 @@ export default function ExperienceEditor({
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={onFileInputChange}
+      />
+
       <View style={styles.topBar}>
-        <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
+        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.title, { color: colors.text }]}>
@@ -377,7 +376,7 @@ export default function ExperienceEditor({
           ]}
         >
           {submitting ? (
-            <RNActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <Text style={styles.submitTopText}>
               {mode === "edit" ? t("保存") : t("发布")}
@@ -388,7 +387,6 @@ export default function ExperienceEditor({
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.body, centeredContent.container]}
       >
         {/* 封面（第一张图） */}
@@ -404,10 +402,11 @@ export default function ExperienceEditor({
           ]}
         >
           {cover ? (
-            <ExpoImage
-              source={{ uri: cover.url || cover.localUri }}
-              style={styles.cover}
-              contentFit="cover"
+            // eslint-disable-next-line @next/next/no-img-element -- 远程/本地用户图片，无需 next/image 优化
+            <img
+              src={cover.url || cover.localUri}
+              alt=""
+              style={{ ...styles.cover, objectFit: "cover", display: "block" }}
             />
           ) : (
             <View style={styles.coverPlaceholder}>
@@ -424,45 +423,67 @@ export default function ExperienceEditor({
           ) : null}
         </Pressable>
 
-        <TextInput
+        <input
           value={title}
-          onChangeText={(v) => {
+          onChange={(e) => {
             userEditedRef.current = true;
-            setTitle(v);
+            setTitle(e.target.value);
           }}
           placeholder={t("请输入标题")}
-          placeholderTextColor={colors.textTertiary}
           maxLength={80}
-          style={[styles.titleInput, { color: colors.text }]}
+          style={{
+            ...rn(styles.titleInput),
+            color: colors.text,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            width: "100%",
+            fontFamily: "var(--fn-font)",
+            boxSizing: "border-box",
+          }}
         />
 
-        <TextInput
+        <textarea
           value={content}
-          onChangeText={(v) => {
+          onChange={(e) => {
             userEditedRef.current = true;
-            setContent(v);
+            setContent(e.target.value);
           }}
           placeholder={t("请输入经验内容")}
-          placeholderTextColor={colors.textTertiary}
-          multiline
-          textAlignVertical="top"
-          style={[styles.contentInput, { color: colors.text }]}
+          style={{
+            ...rn(styles.contentInput),
+            color: colors.text,
+            background: "transparent",
+            border: "none",
+            outline: "none",
+            width: "100%",
+            resize: "vertical",
+            fontFamily: "var(--fn-font)",
+            boxSizing: "border-box",
+          }}
         />
 
         <View style={[styles.priceRow, { borderColor: colors.border }]}>
           <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>
             {t("价格（积分）")}
           </Text>
-          <TextInput
+          <input
             value={price}
-            onChangeText={(v) => {
+            onChange={(e) => {
               userEditedRef.current = true;
-              setPrice(v);
+              setPrice(e.target.value);
             }}
-            keyboardType="number-pad"
+            inputMode="numeric"
             placeholder={`${PRICE_MIN} ~ ${PRICE_MAX}`}
-            placeholderTextColor={colors.textTertiary}
-            style={[styles.priceInput, { color: colors.text }]}
+            style={{
+              ...rn(styles.priceInput),
+              color: colors.text,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              fontFamily: "var(--fn-font)",
+              boxSizing: "border-box",
+            }}
           />
         </View>
 
@@ -485,14 +506,21 @@ export default function ExperienceEditor({
               <View key={idx} style={styles.galleryItem}>
                 {img.url || img.localUri ? (
                   <Pressable onPress={() => setPreviewIndex(idx)}>
-                    <ExpoImage
-                      source={{ uri: img.url || img.localUri }}
-                      style={styles.galleryThumb}
-                      contentFit="cover"
+                    {/* eslint-disable-next-line @next/next/no-img-element -- 远程/本地用户图片，无需 next/image 优化 */}
+                    <img
+                      src={img.url || img.localUri}
+                      alt=""
+                      style={{ ...styles.galleryThumb, objectFit: "cover", display: "block" }}
                     />
                   </Pressable>
                 ) : (
-                  <View style={[styles.galleryThumb, styles.galleryThumbEmpty, { backgroundColor: colors.chipBg }]} />
+                  <View
+                    style={[
+                      styles.galleryThumb,
+                      styles.galleryThumbEmpty,
+                      { backgroundColor: colors.chipBg },
+                    ]}
+                  />
                 )}
                 {img.uploading ? (
                   <View style={styles.galleryOverlay}>
@@ -508,11 +536,7 @@ export default function ExperienceEditor({
                     <Text style={styles.thumbBadgeText}>{t("封面")}</Text>
                   </View>
                 ) : null}
-                <Pressable
-                  onPress={() => removeImage(idx)}
-                  hitSlop={8}
-                  style={styles.thumbDelete}
-                >
+                <Pressable onPress={() => removeImage(idx)} style={styles.thumbDelete}>
                   <Ionicons name="close" size={14} color="#FFFFFF" />
                 </Pressable>
               </View>
@@ -522,7 +546,11 @@ export default function ExperienceEditor({
                 onPress={pickImages}
                 style={({ pressed }) => [
                   styles.galleryAdd,
-                  { borderColor: colors.border, backgroundColor: colors.chipBg, opacity: pressed ? 0.7 : 1 },
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.chipBg,
+                    opacity: pressed ? 0.7 : 1,
+                  },
                 ]}
               >
                 <Ionicons name="add" size={26} color={colors.primary} />
@@ -539,7 +567,9 @@ export default function ExperienceEditor({
               </Text>
             ) : draftStatus === "saved" && lastSavedAt ? (
               <Text style={[styles.draftText, { color: colors.success }]}>
-                {t("草稿已保存 {{time}}", { time: formatDateTime(new Date(lastSavedAt).toISOString()) })}
+                {t("草稿已保存 {{time}}", {
+                  time: formatDateTime(new Date(lastSavedAt).toISOString()),
+                })}
               </Text>
             ) : draftStatus === "error" ? (
               <Text style={[styles.draftText, { color: colors.error }]}>
@@ -564,7 +594,7 @@ export default function ExperienceEditor({
           ]}
         >
           {submitting ? (
-            <RNActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <Text style={styles.submitBtnText}>
               {mode === "edit" ? t("保存修改") : t("发布")}
@@ -574,30 +604,35 @@ export default function ExperienceEditor({
       </ScrollView>
 
       {/* 大图预览 */}
-      <RNModal
-        visible={previewIndex !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPreviewIndex(null)}
-      >
-        <Pressable
-          style={styles.previewBackdrop}
-          onPress={() => setPreviewIndex(null)}
-        >
+      <Modal visible={previewIndex !== null} transparent animationType="fade" onClose={() => setPreviewIndex(null)}>
+        <Pressable style={styles.previewBackdrop} onPress={() => setPreviewIndex(null)}>
           {previewIndex !== null && images[previewIndex] ? (
-            <ExpoImage
-              source={{
-                uri: images[previewIndex].url || images[previewIndex].localUri,
+            // eslint-disable-next-line @next/next/no-img-element -- 远程/本地用户图片，无需 next/image 优化
+            <img
+              src={images[previewIndex].url || images[previewIndex].localUri}
+              alt=""
+              style={{
+                ...styles.previewImage,
+                width: Math.round(winWidth * 0.92),
+                height: Math.round(winHeight * 0.8),
+                objectFit: "contain",
+                display: "block",
               }}
-              style={[
-                styles.previewImage,
-                { width: Math.round(winWidth * 0.92), height: Math.round(winHeight * 0.8) },
-              ]}
-              contentFit="contain"
             />
           ) : null}
         </Pressable>
-      </RNModal>
+      </Modal>
+
+      <ConfirmModal
+        visible={!!draftPrompt}
+        onClose={handleDiscardDraft}
+        onConfirm={handleContinueDraft}
+        title={t("检测到未发布的草稿，是否继续？")}
+        message={t("上次编辑于 {{time}}", {
+          time: draftPrompt ? formatDateTime(draftPrompt.data.updated_at) : "",
+        })}
+        confirmText={t("继续")}
+      />
 
       <AuthModal
         visible={authVisible}
@@ -614,9 +649,7 @@ export default function ExperienceEditor({
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-  },
+  screen: { flex: 1, minHeight: "100vh" },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -627,6 +660,10 @@ const styles = StyleSheet.create({
   },
   backBtn: {
     width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
   },
   title: {
     flex: 1,
@@ -697,13 +734,14 @@ const styles = StyleSheet.create({
     minHeight: 140,
     marginTop: 12,
     paddingVertical: 4,
+    fontFamily: "inherit",
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     paddingVertical: 12,
     marginTop: 12,
   },
@@ -759,7 +797,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   galleryOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.45)",
@@ -787,6 +829,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center",
     justifyContent: "center",
+    cursor: "pointer",
   },
   galleryAdd: {
     width: 96,
