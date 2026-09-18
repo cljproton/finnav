@@ -7,7 +7,7 @@ PID_DIR="$ROOT/.run"
 LOG_DIR="$ROOT/logs"
 
 BE_PORT="${BACKEND_PORT:-8000}"
-FE_PORT="${FRONTEND_PORT:-8081}"
+FE_PORT="${FRONTEND_PORT:-3000}"
 
 check() {
   local name="$1" pid_file="$2" port="$3" health_url="$4"

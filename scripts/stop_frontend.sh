@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 停止前端 (Expo/Metro) — 报告父进程与可能的绑定端口进程，全部回收。
+# 停止前端 (Next.js) — 报告父进程与可能的绑定端口进程，全部回收。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,8 +23,8 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
-# 2) 兜底：杀掉仍占用前端端口（含 Metro 子进程）的进程
-PORT="${FRONTEND_PORT:-8081}"
+# 2) 兜底：杀掉仍占用前端端口的进程
+PORT="${FRONTEND_PORT:-3000}"
 PIDS="$(ss -ltnp "sport = :$PORT" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)"
 if [ -z "$PIDS" ]; then
   echo "前端已停止"

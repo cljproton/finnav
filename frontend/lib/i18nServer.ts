@@ -9,8 +9,8 @@ const resources = {
 };
 
 function normalizeLanguage(lng: string | null | undefined): "zh" | "en" {
-  if (lng === "zh" || (typeof lng === "string" && lng.startsWith("zh"))) return "zh";
-  return "en";
+  if (typeof lng === "string" && lng.toLowerCase().startsWith("en")) return "en";
+  return "zh";
 }
 
 let serverInstance: typeof i18next | null = null;

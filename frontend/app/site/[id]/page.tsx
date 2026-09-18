@@ -55,7 +55,7 @@ export async function generateMetadata({ params }: DetailsPageProps): Promise<Me
     const title = siteTitle(t, settings, site);
     const description = siteDescription(t, settings, site, counts);
     return {
-      title,
+      title: { absolute: title },
       description,
       robots: "index,follow",
       alternates: { canonical: `/site/${siteId}` },
