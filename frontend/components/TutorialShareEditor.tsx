@@ -1,19 +1,12 @@
+"use client";
+
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  TextInput,
-  ActivityIndicator as RNActivityIndicator,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import Toast from "@ant-design/react-native/es/toast";
-import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from "./ui/primitives";
+import { Ionicons } from "./ui/icons";
+import { Input, Toast } from "./ui/antd";
 import {
   fetchTutorialTitle,
   shareTutorial,
@@ -22,8 +15,17 @@ import {
 import { useAuth } from "../lib/auth";
 import { useThemeColors } from "../constants/colors";
 import { centeredContent } from "../constants/layout";
-import type { SiteTutorial, TutorialType } from "../lib/types";
+import type { TutorialStatus, TutorialType } from "../lib/types";
 import AuthModal from "./AuthModal";
+import { StyleSheet } from "../lib/rnStyle";
+
+export interface TutorialEditorInitial {
+  id: number;
+  type: TutorialType;
+  url: string;
+  title: string;
+  status: TutorialStatus;
+}
 
 const URL_RE = /^https?:\/\/[^\s]+$/i;
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
@@ -31,7 +33,7 @@ const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 const TYPE_OPTIONS: {
   type: TutorialType;
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: string;
   sample: string;
   desc: string;
 }[] = [
@@ -64,8 +66,8 @@ function normalizeUrl(raw: string): string {
   return SCHEME_RE.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-function friendlyError(e: any, t: (key: string) => string): string {
-  const msg = String(e?.message ?? "");
+function friendlyError(e: unknown, t: (key: string) => string): string {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
   const lower = msg.toLowerCase();
   if (/already|重复|已存在|已提交|unique|exist/i.test(lower)) {
     return t("看起来这个链接已经分享过了，试试换个链接");
@@ -146,7 +148,7 @@ export default function TutorialShareEditor({
 }: {
   siteId: number;
   mode: "create" | "edit";
-  initial?: SiteTutorial | null;
+  initial?: TutorialEditorInitial | null;
 }) {
   const { t } = useTranslation();
   const colors = useThemeColors();
@@ -198,13 +200,13 @@ export default function TutorialShareEditor({
     }
     const u = url.trim();
     if (!loggedIn || titleEdited || !URL_RE.test(u)) {
-      setTitleFetching(false);
-      return;
+      previewTimer.current = setTimeout(() => setTitleFetching(false), 0);
+    } else {
+      previewTimer.current = setTimeout(() => {
+        setTitleFetching(true);
+        runFetch();
+      }, 600);
     }
-    setTitleFetching(true);
-    previewTimer.current = setTimeout(() => {
-      runFetch();
-    }, 600);
     return () => {
       if (previewTimer.current) {
         clearTimeout(previewTimer.current);
@@ -224,6 +226,14 @@ export default function TutorialShareEditor({
   const handleUrlBlur = () => {
     const normalized = normalizeUrl(url);
     if (normalized !== url) setUrl(normalized);
+  };
+
+  const goBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.replace(`/site/${siteId}/tutorials`);
+    }
   };
 
   const handleSubmit = async () => {
@@ -251,23 +261,15 @@ export default function TutorialShareEditor({
       queryClient.invalidateQueries({ queryKey: ["site-tutorials", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site-tutorials-top", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site", siteId] });
-      if (router.canGoBack()) {
+      if (typeof window !== "undefined" && window.history.length > 1) {
         router.back();
       } else {
         router.replace(`/site/${siteId}/tutorials`);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setSubmitError(friendlyError(e, t));
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const goBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace(`/site/${siteId}/tutorials`);
     }
   };
 
@@ -278,7 +280,7 @@ export default function TutorialShareEditor({
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={styles.topBar}>
-        <Pressable onPress={goBack} hitSlop={12} style={styles.backBtn}>
+        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.title, { color: colors.text }]}>
@@ -293,7 +295,7 @@ export default function TutorialShareEditor({
           ]}
         >
           {submitting ? (
-            <RNActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <Text style={styles.submitTopText}>
               {mode === "edit" ? t("保存") : t("提交")}
@@ -304,7 +306,6 @@ export default function TutorialShareEditor({
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.body, centeredContent.container]}
       >
         <Text style={[styles.intro, { color: colors.textSecondary }]}>
@@ -333,9 +334,7 @@ export default function TutorialShareEditor({
                 style={({ pressed }) => [
                   styles.typeCard,
                   {
-                    backgroundColor: active
-                      ? colors.primaryLight
-                      : colors.chipBg,
+                    backgroundColor: active ? colors.primaryLight : colors.chipBg,
                     borderColor: active ? colors.primary : colors.border,
                     opacity: pressed ? 0.8 : 1,
                   },
@@ -344,11 +343,7 @@ export default function TutorialShareEditor({
                 <View
                   style={[
                     styles.typeIcon,
-                    {
-                      backgroundColor: active
-                        ? colors.primary
-                        : colors.chipBg,
-                    },
+                    { backgroundColor: active ? colors.primary : colors.chipBg },
                   ]}
                 >
                   <Ionicons
@@ -366,18 +361,12 @@ export default function TutorialShareEditor({
                   >
                     {t(opt.label)}
                   </Text>
-                  <Text
-                    style={[styles.typeDesc, { color: colors.textSecondary }]}
-                  >
+                  <Text style={[styles.typeDesc, { color: colors.textSecondary }]}>
                     {t(opt.desc)}
                   </Text>
                 </View>
                 {active ? (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={18}
-                    color={colors.primary}
-                  />
+                  <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
                 ) : null}
               </Pressable>
             );
@@ -393,7 +382,7 @@ export default function TutorialShareEditor({
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
             {t("教程链接")}
           </Text>
-          <TextInput
+          <Input
             value={url}
             onChangeText={(text) => {
               setUrl(text);
@@ -401,21 +390,17 @@ export default function TutorialShareEditor({
               if (submitError) setSubmitError("");
             }}
             onBlur={handleUrlBlur}
-            onSubmitEditing={handleUrlBlur}
             placeholder={sample}
             placeholderTextColor={colors.textTertiary}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
-            returnKeyType="done"
-            style={[
-              styles.urlInput,
-              {
-                color: colors.text,
-                backgroundColor: colors.chipBg,
-                borderColor: colors.border,
-              },
-            ]}
+            style={{
+              ...styles.urlInput,
+              color: colors.text,
+              backgroundColor: colors.chipBg,
+              borderColor: colors.border,
+            }}
           />
           <Text style={[styles.sampleHint, { color: colors.textTertiary }]}>
             {t("示例：{{sample}}", { sample })}
@@ -424,9 +409,7 @@ export default function TutorialShareEditor({
           {titleFetching ? (
             <View style={styles.fetchingRow}>
               <ActivityIndicator size="small" color={colors.primary} />
-              <Text
-                style={[styles.fetchingText, { color: colors.textSecondary }]}
-              >
+              <Text style={[styles.fetchingText, { color: colors.textSecondary }]}>
                 {t("自动获取标题中…")}
               </Text>
             </View>
@@ -437,12 +420,8 @@ export default function TutorialShareEditor({
               style={[
                 styles.previewCard,
                 {
-                  backgroundColor: preview.fallback
-                    ? colors.chipBg
-                    : colors.primaryLight,
-                  borderColor: preview.fallback
-                    ? colors.border
-                    : colors.borderGlow,
+                  backgroundColor: preview.fallback ? colors.chipBg : colors.primaryLight,
+                  borderColor: preview.fallback ? colors.border : colors.borderGlow,
                 },
               ]}
             >
@@ -459,11 +438,7 @@ export default function TutorialShareEditor({
                 <Text
                   style={[
                     styles.previewLabel,
-                    {
-                      color: preview.fallback
-                        ? colors.warning
-                        : colors.success,
-                    },
+                    { color: preview.fallback ? colors.warning : colors.success },
                   ]}
                 >
                   {preview.fallback
@@ -473,7 +448,6 @@ export default function TutorialShareEditor({
                 <Pressable
                   onPress={handleRefetch}
                   disabled={titleFetching}
-                  hitSlop={8}
                   style={styles.refetchBtn}
                 >
                   <Ionicons name="refresh" size={13} color={colors.primary} />
@@ -484,10 +458,7 @@ export default function TutorialShareEditor({
               </View>
               {preview.fallback ? (
                 <Text
-                  style={[
-                    styles.previewFallbackText,
-                    { color: colors.textSecondary },
-                  ]}
+                  style={[styles.previewFallbackText, { color: colors.textSecondary }]}
                 >
                   {t(
                     "暂时没能自动获取标题，你可以手动填写，或留空由我们提交时再试一次",
@@ -512,7 +483,7 @@ export default function TutorialShareEditor({
               {t("（可选，留空自动获取）")}
             </Text>
           </View>
-          <TextInput
+          <Input
             value={title}
             onChangeText={(text) => {
               setTitle(text);
@@ -521,14 +492,12 @@ export default function TutorialShareEditor({
             placeholder={t("可手动填写标题")}
             placeholderTextColor={colors.textTertiary}
             maxLength={200}
-            style={[
-              styles.urlInput,
-              {
-                color: colors.text,
-                backgroundColor: colors.chipBg,
-                borderColor: colors.border,
-              },
-            ]}
+            style={{
+              ...styles.urlInput,
+              color: colors.text,
+              backgroundColor: colors.chipBg,
+              borderColor: colors.border,
+            }}
           />
         </View>
 
@@ -539,9 +508,7 @@ export default function TutorialShareEditor({
               size={15}
               color={colors.warning}
             />
-            <Text
-              style={[styles.rejectedBannerText, { color: colors.warning }]}
-            >
+            <Text style={[styles.rejectedBannerText, { color: colors.warning }]}>
               {t("这条教程之前没通过审核，修改后会自动重新提交审核。")}
             </Text>
           </View>
@@ -561,9 +528,7 @@ export default function TutorialShareEditor({
         ) : null}
 
         {submitError ? (
-          <Text style={[styles.error, { color: colors.error }]}>
-            {submitError}
-          </Text>
+          <Text style={[styles.error, { color: colors.error }]}>{submitError}</Text>
         ) : null}
 
         <Pressable
@@ -578,7 +543,7 @@ export default function TutorialShareEditor({
           ]}
         >
           {submitting ? (
-            <RNActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <Text style={styles.submitBtnText}>
               {mode === "edit" ? t("保存修改") : t("提交分享")}
@@ -591,12 +556,8 @@ export default function TutorialShareEditor({
         visible={authVisible}
         onClose={() => setAuthVisible(false)}
         onLogin={(email, password, captcha) => auth.login(email, password, captcha)}
-        onLoginTFA={(email, totpToken, code) =>
-          auth.loginTFA(email, totpToken, code)
-        }
-        onRegister={(email, password, captcha) =>
-          auth.register(email, password, captcha)
-        }
+        onLoginTFA={(email, totpToken, code) => auth.loginTFA(email, totpToken, code)}
+        onRegister={(email, password, captcha) => auth.register(email, password, captcha)}
         onVerify={(email, code, password) => auth.verify(email, code, password)}
         onRequestReset={(email) => auth.requestPasswordReset(email)}
         onResetPassword={(email, code, password) =>
@@ -608,14 +569,12 @@ export default function TutorialShareEditor({
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-  },
+  screen: { flex: 1, minHeight: "100vh" },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 52,
+    paddingTop: 12,
     paddingBottom: 8,
     paddingHorizontal: 20,
   },
@@ -625,13 +584,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    cursor: "pointer",
   },
-  title: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+  title: { flex: 1, fontSize: 17, fontWeight: "700", textAlign: "center" },
   submitTopBtn: {
     minWidth: 56,
     alignItems: "center",
@@ -640,29 +595,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 14,
   },
-  submitTopText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  body: {
-    paddingHorizontal: 20,
-    paddingBottom: 48,
-  },
-  intro: {
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  steps: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 18,
-  },
-  stepItem: {
-    alignItems: "center",
-    width: 72,
-  },
+  submitTopText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  body: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 8 },
+  intro: { fontSize: 13, lineHeight: 20, marginBottom: 16 },
+  steps: { flexDirection: "row", alignItems: "flex-start", marginBottom: 18 },
+  stepItem: { alignItems: "center", width: 72 },
   stepCircle: {
     width: 26,
     height: 26,
@@ -671,33 +608,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
   },
-  stepNum: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
+  stepNum: { fontSize: 13, fontWeight: "700" },
   stepLabel: {
     fontSize: 11,
     fontWeight: "600",
     marginTop: 6,
     textAlign: "center",
   },
-  stepLine: {
-    flex: 1,
-    height: 2,
-    marginTop: 12,
-    marginHorizontal: 4,
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 14,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 10,
-  },
+  stepLine: { flex: 1, height: 2, marginTop: 12, marginHorizontal: 4 },
+  card: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 14 },
+  sectionLabel: { fontSize: 13, fontWeight: "600", marginBottom: 10 },
   typeCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -715,17 +635,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  typeTextWrap: {
-    flex: 1,
-  },
-  typeTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  typeDesc: {
-    fontSize: 12,
-    marginTop: 2,
-  },
+  typeTextWrap: { flex: 1 },
+  typeTitle: { fontSize: 14, fontWeight: "700" },
+  typeDesc: { fontSize: 12, marginTop: 2 },
   urlInput: {
     borderRadius: 10,
     borderWidth: 1,
@@ -733,19 +645,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
   },
-  sampleHint: {
-    fontSize: 12,
-    marginTop: 8,
-  },
-  fetchingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 10,
-  },
-  fetchingText: {
-    fontSize: 12,
-  },
+  sampleHint: { fontSize: 12, marginTop: 8 },
+  fetchingRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  fetchingText: { fontSize: 12 },
   previewCard: {
     borderRadius: 12,
     borderWidth: 1,
@@ -753,38 +655,19 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginTop: 10,
   },
-  previewHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  previewLabel: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: "600",
-  },
+  previewHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+  previewLabel: { flex: 1, fontSize: 12, fontWeight: "600" },
   refetchBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
     paddingHorizontal: 4,
     paddingVertical: 2,
+    cursor: "pointer",
   },
-  refetchText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  previewTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginTop: 6,
-    lineHeight: 20,
-  },
-  previewFallbackText: {
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-  },
+  refetchText: { fontSize: 12, fontWeight: "600" },
+  previewTitle: { fontSize: 14, fontWeight: "600", marginTop: 6, lineHeight: 20 },
+  previewFallbackText: { fontSize: 12, lineHeight: 18, marginTop: 6 },
   titleLabelRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -792,9 +675,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 10,
   },
-  titleOptional: {
-    fontSize: 12,
-  },
+  titleOptional: { fontSize: 12 },
   rejectedBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -805,11 +686,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginBottom: 14,
   },
-  rejectedBannerText: {
-    fontSize: 13,
-    fontWeight: "600",
-    flexShrink: 1,
-  },
+  rejectedBannerText: { fontSize: 13, fontWeight: "600", flexShrink: 1 },
   loginNotice: {
     flexDirection: "row",
     alignItems: "center",
@@ -818,23 +695,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
     marginBottom: 12,
   },
-  loginNoticeText: {
-    fontSize: 13,
-  },
-  error: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 12,
-  },
+  loginNoticeText: { fontSize: 13 },
+  error: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
   submitBtn: {
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  submitBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
 });
