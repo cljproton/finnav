@@ -160,29 +160,29 @@ interface ScrollViewProps {
   showsHorizontalScrollIndicator?: boolean;
   showsVerticalScrollIndicator?: boolean;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  scrollEventThrottle?: number;
 }
 
-export function ScrollView({
-  children,
-  style,
-  contentContainerStyle,
-  horizontal,
-  onScroll,
-}: ScrollViewProps) {
-  const resolved = flattenStyles(style);
-  const content = flattenStyles(contentContainerStyle);
-  const outer: CSSProperties = horizontal
-    ? { ...resolved, overflowX: "auto", overflowY: "hidden" }
-    : { ...resolved, overflowX: "hidden", overflowY: "auto" };
-  if (horizontal) {
-    content.display = "inline-flex";
-  }
-  return (
-    <div style={outer} className="fn-scrollview" onScroll={onScroll}>
-      <div style={content}>{children}</div>
-    </div>
-  );
-}
+export const ScrollView = forwardRef<HTMLDivElement, ScrollViewProps>(
+  function ScrollView(
+    { children, style, contentContainerStyle, horizontal, onScroll },
+    ref,
+  ) {
+    const resolved = flattenStyles(style);
+    const content = flattenStyles(contentContainerStyle);
+    const outer: CSSProperties = horizontal
+      ? { ...resolved, overflowX: "auto", overflowY: "hidden" }
+      : { ...resolved, overflowX: "hidden", overflowY: "auto" };
+    if (horizontal) {
+      content.display = "inline-flex";
+    }
+    return (
+      <div ref={ref} style={outer} className="fn-scrollview" onScroll={onScroll}>
+        <div style={content}>{children}</div>
+      </div>
+    );
+  },
+);
 
 export function ActivityIndicator({
   size = "small",
