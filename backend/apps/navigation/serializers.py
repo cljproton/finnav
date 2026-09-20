@@ -3,6 +3,7 @@ from django.core.validators import URLValidator
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from .utils import build_public_media_url_or_none
 from .models import (
     AppDownload,
     AppLinkSubmission,
@@ -69,13 +70,11 @@ class SiteSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_logo(self, obj):
-        """返回 logo 的绝对 URL；未上传时返回 None。"""
-        if not obj.logo:
-            return None
+        """返回 logo 的公开可访问绝对 URL；未上传时返回 None。"""
         request = self.context.get('request')
-        if request is not None:
-            return request.build_absolute_uri(obj.logo.url)
-        return obj.logo.url
+        if request is None:
+            return None
+        return build_public_media_url_or_none(request, obj.logo)
 
     def get_tags(self, obj):
         """返回标签名列表（Tag.Meta 默认按 sort_order, name 排序），保持 string[] 契约。"""
@@ -90,13 +89,14 @@ class SiteSerializer(serializers.ModelSerializer):
         """安卓 APP 本地缓存下载地址；仅已登录用户可见，否则 None。
 
         本站缓存的 APK 是本站带宽资源，匿名用户不得获取真实地址（防刷量/盗链）。
+        返回公开可访问的绝对 URL（基于 share_base_url）。
         """
         if not obj.app_android_file:
             return None
         request = self.context.get('request')
         if request is None or not getattr(request.user, 'is_authenticated', False):
             return None
-        return request.build_absolute_uri(obj.app_android_file.url)
+        return build_public_media_url_or_none(request, obj.app_android_file)
 
     def get_app_android_sha256(self, obj):
         """缓存 APK 的 SHA-256 校验值（公开信息，供真实性核验比对）。"""
@@ -211,12 +211,10 @@ class AppSettingSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_logo(self, obj):
-        if not obj.logo:
-            return None
         request = self.context.get('request')
-        if request is not None:
-            return request.build_absolute_uri(obj.logo.url)
-        return obj.logo.url
+        if request is None:
+            return None
+        return build_public_media_url_or_none(request, obj.logo)
 
 
 class FavoritesSyncSerializer(serializers.Serializer):
@@ -449,9 +447,9 @@ class ExperienceImageSerializer(serializers.ModelSerializer):
 
     def get_url(self, obj):
         request = self.context.get('request')
-        if request is not None:
-            return request.build_absolute_uri(obj.image.url)
-        return obj.image.url
+        if request is None:
+            return None
+        return build_public_media_url_or_none(request, obj.image)
 
 
 class ExperienceSerializer(serializers.ModelSerializer):
@@ -545,12 +543,12 @@ class ExperienceSerializer(serializers.ModelSerializer):
 
     def get_cover(self, obj):
         request = self.context.get('request')
+        if request is None:
+            return None
         first = obj.images.first()
         if first is None:
             return None
-        if request is not None:
-            return request.build_absolute_uri(first.image.url)
-        return first.image.url
+        return build_public_media_url_or_none(request, first.image)
 
 
 class ExperienceCreateSerializer(serializers.ModelSerializer):

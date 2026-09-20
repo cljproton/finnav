@@ -49,6 +49,14 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
 
 # ---------------------------------------------------------------------------
+# Proxy trust headers (for correct build_absolute_uri fallback when share_base_url is empty)
+# ---------------------------------------------------------------------------
+# Trust X-Forwarded-* headers from Nginx/Next.js proxy
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# ---------------------------------------------------------------------------
 # Email（注册/找回密码验证码）
 # - 设置 RESEND_API_KEY 时通过 Resend 发送；
 # - 未设置（本地/测试）时降级为 console backend，验证码明文直接打印到控制台。

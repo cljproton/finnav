@@ -347,6 +347,15 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
 
     # 前端容器 (Docker 网络内服务名: frontend:3000)
+    # 媒体文件直接代理到后端（确保 logo 等媒体可通过公网域名访问）
+    location /media/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location / {
         proxy_pass http://frontend:3000;
         proxy_set_header Host \$host;
