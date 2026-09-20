@@ -1,12 +1,10 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 // 暂存通过邀请链接进入 App 时带来的推广码，注册时随请求提交。
 // 注册成功后清除，避免下次注册仍带上旧码。
 const REFERRAL_STORAGE_KEY = "pending_referral";
 
 export async function getPendingReferral(): Promise<string> {
   try {
-    return (await AsyncStorage.getItem(REFERRAL_STORAGE_KEY)) || "";
+    return localStorage.getItem("pending_referral") || "";
   } catch {
     return "";
   }
@@ -16,7 +14,7 @@ export async function savePendingReferral(code: string): Promise<void> {
   const cleaned = normalizeReferralCode(code);
   if (!cleaned) return;
   try {
-    await AsyncStorage.setItem(REFERRAL_STORAGE_KEY, cleaned);
+    localStorage.setItem("pending_referral", cleaned);
   } catch {
     // ignore
   }
@@ -24,7 +22,7 @@ export async function savePendingReferral(code: string): Promise<void> {
 
 export async function clearPendingReferral(): Promise<void> {
   try {
-    await AsyncStorage.removeItem(REFERRAL_STORAGE_KEY);
+    localStorage.removeItem("pending_referral");
   } catch {
     // ignore
   }

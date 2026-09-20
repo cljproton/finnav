@@ -1,22 +1,12 @@
+"use client";
+
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { Typography } from "@/components/antd-wrapper";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../lib/api";
-import { useThemeColors } from "../constants/colors";
-import { centeredContent } from "../constants/layout";
 import { footerIntro } from "../lib/seoCopy";
 import InternalLink from "./InternalLink";
 
-/**
- * 页脚：站点简介 + 站内导航锚链 + 版权。
- *
- * 导航链接在 Web 端渲染为真正的 <a href>，让 /search、/submit-site、/points、
- * /favorites 等页面拥有全站入口内链（解决 ahrefs「Orphan page」），
- * 同时让每个页面都有出站站内链接（解决「Page has no outgoing links」）。
- *
- * @param showNav 是否渲染站内导航行。部分页面（搜索/个人中心/详情页）的
- *                冗余导航被隐藏以精简布局，首页保留。
- */
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/", label: "首页" },
   { href: "/search", label: "搜索站点" },
@@ -25,8 +15,11 @@ const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/favorites", label: "我的收藏" },
 ];
 
-export default function SiteFooter({ showNav = true }: { showNav?: boolean }) {
-  const colors = useThemeColors();
+export default function SiteFooter({
+  showNav = true,
+  className,
+  style,
+}: { showNav?: boolean; className?: string; style?: React.CSSProperties }) {
   const { t } = useTranslation();
   const { data: settings } = useSettings();
 
@@ -34,65 +27,40 @@ export default function SiteFooter({ showNav = true }: { showNav?: boolean }) {
   const intro = footerIntro(t, settings);
 
   return (
-    <View
-      style={[
-        styles.container,
-        centeredContent.container,
-        { borderTopColor: colors.border },
-      ]}
+    <div
+      className={`fn-px-5 fn-py-3 fn-flex fn-flex-col fn-items-center fn-gap-1.5 fn-border-t ${className ?? ""}`}
+      style={{
+        borderTopColor: "var(--fn-border)",
+        maxWidth: 720,
+        marginInline: "auto",
+        width: "100%",
+        ...style,
+      }}
     >
-      <Text style={[styles.intro, { color: colors.textSecondary }]}>{intro}</Text>
-      {showNav ? (
-        <View style={styles.nav}>
+      <Typography.Text className="fn-text-sm fn-text-center fn-text-secondary" style={{ lineHeight: 1.6, maxWidth: 640 }}>
+        {intro}
+      </Typography.Text>
+      {showNav && (
+        <div className="fn-flex fn-flex-wrap fn-items-center fn-justify-center fn-gap-1">
           {NAV_ITEMS.map((item, idx) => (
             <React.Fragment key={item.href}>
-              {idx > 0 ? (
-                <Text style={[styles.separator, { color: colors.textTertiary }]}>·</Text>
-              ) : null}
-              <InternalLink href={item.href}>
-                <Text style={[styles.navLink, { color: colors.linkItemText }]}>{t(item.label)}</Text>
-              </InternalLink>
+              {idx > 0 && <span className="fn-text-tertiary">·</span>}
+              <a
+                href={item.href}
+                className="fn-text-sm fn-text-link"
+                style={{ color: "var(--fn-link-item-text)", textDecoration: "none" }}
+              >
+                {t(item.label)}
+              </a>
             </React.Fragment>
           ))}
-        </View>
-      ) : null}
+        </div>
+      )}
       {copyright ? (
-        <Text style={[styles.text, { color: colors.textTertiary }]}>{copyright}</Text>
+        <Typography.Text className="fn-text-xs fn-text-center fn-text-tertiary">
+          {copyright}
+        </Typography.Text>
       ) : null}
-    </View>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
-    borderTopWidth: 1,
-    alignItems: "center",
-    gap: 10,
-  },
-  intro: {
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: "center",
-    maxWidth: 640,
-  },
-  nav: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  navLink: {
-    fontSize: 13,
-  },
-  separator: {
-    fontSize: 13,
-  },
-  text: {
-    fontSize: 12,
-    textAlign: "center",
-  },
-});

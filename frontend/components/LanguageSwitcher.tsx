@@ -1,13 +1,10 @@
-import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+"use client";
+
+import { Ionicons } from "./ui/icons";
 import { useTranslation } from "react-i18next";
-import { useThemeColors } from "../constants/colors";
 import { getEffectiveLanguage, setAppLanguage, type AppLanguage } from "../lib/i18n";
 
 export default function LanguageSwitcher() {
-  const colors = useThemeColors();
-  const insets = useSafeAreaInsets();
   const { i18n } = useTranslation();
   const current = getEffectiveLanguage();
 
@@ -17,71 +14,37 @@ export default function LanguageSwitcher() {
   ];
 
   return (
-    <View
-      style={[styles.container, { top: insets.top + 8, right: 8 }]}
-      pointerEvents="box-none"
-    >
-      <View
-        style={[
-          styles.segment,
-          {
-            backgroundColor: colors.chipBg,
-            borderColor: colors.border,
-          },
-        ]}
+    <div className="fn-fixed fn-top-4 fn-right-4 fn-z-50 fn-pointer-events-none">
+      <div
+        className="fn-flex fn-rounded-full fn-border-default fn-overflow-hidden"
+        style={{
+          borderColor: "var(--fn-chip-border)",
+          backgroundColor: "var(--fn-chip-bg)",
+          pointerEvents: "auto",
+        }}
       >
         {languages.map((lang) => {
           const active = lang.code === current;
           return (
-            <Pressable
+            <button
               key={lang.code}
-              onPress={async () => {
+              onClick={async () => {
                 if (lang.code === current) return;
                 await setAppLanguage(lang.code);
               }}
-              style={[
-                styles.seg,
-                {
-                  backgroundColor: active ? colors.primary : "transparent",
-                },
-              ]}
+              className="fn-px-2.5 fn-py-1.25 fn-rounded-full fn-text-sm fn-font-semibold fn-transition-fast fn-cursor-pointer"
+              style={{
+                paddingInline: 10,
+                paddingBlock: 5,
+                backgroundColor: active ? "var(--fn-primary)" : "transparent",
+                color: active ? "var(--fn-surface-solid)" : "var(--fn-text-secondary)",
+              }}
             >
-              <Text
-                style={[
-                  styles.segText,
-                  { color: active ? colors.surfaceSolid : colors.textSecondary },
-                ]}
-              >
-                {lang.label}
-              </Text>
-            </Pressable>
+              {lang.label}
+            </button>
           );
         })}
-      </View>
-    </View>
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    position: "absolute",
-    right: 8,
-    zIndex: 1000,
-    elevation: 10,
-  },
-  segment: {
-    flexDirection: "row",
-    borderRadius: 999,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  seg: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  segText: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-});

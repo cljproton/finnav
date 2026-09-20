@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   robots: NOINDEX_ROBOTS,
 };
 
+export async function generateStaticParams() {
+  return [{ id: "1", expId: "1" }];
+}
+
 interface EditExperiencePageProps {
   params: Promise<{ id: string; expId: string }>;
 }

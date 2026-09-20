@@ -1,62 +1,26 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+"use client";
+
+import { Ionicons } from "../components/ui/icons";
 import { useSettings } from "../lib/api";
-import { useThemeColors } from "../constants/colors";
 
 /**
  * 网站公告横条——放置在页面最上端（吸顶）。
  * 仅当后台「显示公告」开启且已填写公告内容时才渲染。
  */
 export default function AnnouncementBar() {
-  const colors = useThemeColors();
-  const insets = useSafeAreaInsets();
   const { data: settings } = useSettings();
 
   const show = settings?.announcement_enabled && settings?.announcement?.trim();
   if (!show) return null;
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.primary,
-          paddingTop: insets.top + 8,
-        },
-      ]}
-    >
-      <View style={styles.inner}>
-        <Ionicons
-          name="megaphone"
-          size={15}
-          color={colors.surfaceSolid}
-        />
-        <Text style={[styles.text, { color: colors.surfaceSolid }]} numberOfLines={2}>
+    <div className="fn-px-4 fn-py-3" style={{ backgroundColor: "var(--fn-primary)", paddingTop: 12, paddingBottom: 8 }}>
+      <div className="fn-flex fn-items-center fn-justify-center fn-gap-2">
+        <Ionicons name="megaphone" size={15} color="var(--fn-surface-solid)" />
+        <span className="fn-text-sm fn-font-medium fn-text-inverse fn-truncate" style={{ flexShrink: 1, textAlign: "center", lineHeight: 18, color: "var(--fn-surface-solid)" }}>
           {settings.announcement}
-        </Text>
-      </View>
-    </View>
+        </span>
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    paddingBottom: 8,
-    paddingHorizontal: 16,
-  },
-  inner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  text: {
-    fontSize: 13,
-    fontWeight: "500",
-    flexShrink: 1,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-});

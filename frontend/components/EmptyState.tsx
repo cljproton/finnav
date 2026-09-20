@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useThemeColors } from "../constants/colors";
+"use client";
+
+import { Typography } from "@/components/antd-wrapper";
+import { Ionicons } from "./ui/icons";
+import { useTranslation } from "react-i18next";
 
 interface EmptyStateProps {
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: string;
   title: string;
   message?: string;
 }
@@ -14,58 +15,22 @@ export default function EmptyState({
   title,
   message,
 }: EmptyStateProps) {
-  const colors = useThemeColors();
-
   return (
-    <View style={styles.container}>
-      <View
-        style={[
-          styles.iconRing,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.surface,
-          },
-        ]}
+    <div className="fn-flex fn-flex-col fn-items-center fn-justify-center fn-px-10 fn-py-15" style={{ minHeight: "50vh" }}>
+      <div
+        className="fn-flex fn-items-center fn-justify-center fn-rounded-xl fn-border-default"
+        style={{ width: 80, height: 80, borderRadius: 20, backgroundColor: "var(--fn-surface)" }}
       >
-        <Ionicons name={icon} size={40} color={colors.primary} />
-      </View>
-      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        <Ionicons name={icon} size={36} color="var(--fn-primary)" />
+      </div>
+      <Typography.Text className="fn-mt-4.5 fn-text-lg fn-font-semibold fn-text-center fn-text-primary" style={{ letterSpacing: 0.1 }}>
+        {title}
+      </Typography.Text>
       {message && (
-        <Text style={[styles.message, { color: colors.textTertiary }]}>
+        <Typography.Text className="fn-mt-2 fn-text-sm fn-text-center fn-text-tertiary fn-leading-relaxed" style={{ lineHeight: 18 }}>
           {message}
-        </Text>
+        </Typography.Text>
       )}
-    </View>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 40,
-    paddingVertical: 60,
-  },
-  iconRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 18,
-    textAlign: "center",
-    letterSpacing: 0.1,
-  },
-  message: {
-    fontSize: 13,
-    marginTop: 8,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-});

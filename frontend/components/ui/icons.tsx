@@ -58,6 +58,8 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import type { StyleInput } from "./primitives";
+import { flattenStyles } from "./primitives";
 
 const ICONS: Record<string, LucideIcon> = {
   "open-outline": ExternalLink,
@@ -130,12 +132,12 @@ interface IoniconsProps {
   name: string;
   size?: number;
   color?: string;
-  style?: React.CSSProperties;
+  style?: StyleInput;
 }
 
 export function Ionicons({ name, size = 20, color = "currentColor", style }: IoniconsProps) {
   const Icon = ICONS[name] ?? Info;
-  return <Icon size={size} color={color} style={style} aria-hidden="true" />;
+  return <Icon size={size} color={color} style={flattenStyles(style)} aria-hidden="true" />;
 }
 
 export function MapIcon(name: string): LucideIcon {

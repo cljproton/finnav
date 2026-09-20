@@ -1,16 +1,16 @@
 import { forwardRef, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { rn } from "../../lib/rnStyle";
 
-type StyleValue = Record<string, unknown> | CSSProperties;
-type StyleArray = (StyleValue | false | null | undefined)[];
-type StyleInput = StyleValue | StyleArray | undefined;
+export type StyleValue = Record<string, unknown> | CSSProperties;
+export type StyleArray = (StyleValue | false | null | undefined)[];
+export type StyleInput = StyleValue | StyleArray | undefined;
 
 function filterStyles(style: StyleInput): StyleValue[] {
   if (!Array.isArray(style)) return style ? [style] : [];
   return style.filter((s): s is StyleValue => Boolean(s) && typeof s === "object");
 }
 
-function flattenStyles(style: StyleInput): CSSProperties {
+export function flattenStyles(style: StyleInput): CSSProperties {
   if (Array.isArray(style)) {
     const flat: Record<string, unknown> = {};
     for (const s of style) {

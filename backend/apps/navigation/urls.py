@@ -13,13 +13,6 @@ from .auth import (
     verify,
 )
 from .sync import FavoritesSyncView, MeView, SearchHistorySyncView
-from .twofa import (
-    twofa_challenge,
-    twofa_confirm,
-    twofa_disable,
-    twofa_setup,
-    twofa_status,
-)
 
 router = DefaultRouter()
 router.register('categories', views.CategoryViewSet, basename='category')
@@ -51,11 +44,6 @@ urlpatterns = [
         TokenRefreshView.as_view(),
         name='auth-token-refresh',
     ),
-    path('auth/twofa/status/', twofa_status, name='auth-twofa-status'),
-    path('auth/twofa/setup/', twofa_setup, name='auth-twofa-setup'),
-    path('auth/twofa/confirm/', twofa_confirm, name='auth-twofa-confirm'),
-    path('auth/twofa/disable/', twofa_disable, name='auth-twofa-disable'),
-    path('auth/twofa/challenge/', twofa_challenge, name='auth-twofa-challenge'),
     path('me/', MeView.as_view(), name='me'),
     path('me/favorites/', FavoritesSyncView.as_view(), name='me-favorites'),
     path(

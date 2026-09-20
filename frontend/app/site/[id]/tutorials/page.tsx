@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   robots: NOINDEX_ROBOTS,
 };
 
+export async function generateStaticParams() {
+  return [{ id: "1" }];
+}
+
 export default function TutorialsPage() {
   return (
     <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>

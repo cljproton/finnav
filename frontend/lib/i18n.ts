@@ -1,7 +1,5 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getLocales } from "expo-localization";
 import { en } from "./i18n/translations";
 
 export type AppLanguage = "zh" | "en";
@@ -15,16 +13,21 @@ const resources = {
   en: { translation: en },
 };
 
-const deviceLang = (): string => {
-  for (const l of getLocales()) {
-    if (l.languageCode) return l.languageCode.toLowerCase();
-    if (l.languageTag) return l.languageTag.toLowerCase();
+// 从 navigator.languages 或 navigator.language 获取浏览器语言
+const getBrowserLanguage = (): string => {
+  if (typeof navigator !== "undefined") {
+    const langs = navigator.languages || [navigator.language];
+    for (const lang of langs) {
+      const code = lang.toLowerCase();
+      if (code.startsWith("zh")) return "zh";
+      if (code.startsWith("en")) return "en";
+    }
   }
   return "";
 };
 
 export function detectInitialLanguage(): AppLanguage {
-  const device = deviceLang();
+  const device = getBrowserLanguage();
   if (device.startsWith("zh")) return "zh"; // 匹配客户端语言
   // 未匹配 -> 英文
   return "en";
@@ -46,7 +49,7 @@ i18n.use(initReactI18next).init({
 // 从本地缓存恢复用户手动选择的语言（有则覆盖设备语言）
 export async function restoreSavedLanguage(): Promise<AppLanguage> {
   try {
-    const saved = await AsyncStorage.getItem(LANG_STORAGE_KEY);
+    const saved = localStorage.getItem(LANG_STORAGE_KEY);
     if (!saved) return i18n.language as AppLanguage;
     const lang = normalizeLanguage(saved);
     if (lang !== i18n.language) {
@@ -66,9 +69,13 @@ export function getEffectiveLanguage(): AppLanguage {
 export async function setAppLanguage(lang: AppLanguage): Promise<void> {
   await i18n.changeLanguage(lang);
   try {
-    await AsyncStorage.setItem(LANG_STORAGE_KEY, lang);
+    localStorage.setItem(LANG_STORAGE_KEY, lang);
   } catch {
     // ignore
+  }
+  // Set cookie for server-side rendering
+  if (typeof document !== 'undefined') {
+    document.cookie = `lang=${lang}; path=/; maxAge=${60 * 60 * 24 * 365}`; // 1 year
   }
 }
 

@@ -3,30 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
-import { useCategories, useSitesInfinite, useSettings } from "../../lib/api";
-import { useThemeColors } from "../../constants/colors";
-import { View, Text, ScrollView, ActivityIndicator } from "../../components/ui/primitives";
+import { useCategories, useSitesInfinite } from "../../lib/api";
 import CategoryChips from "../CategoryChips";
+import { ClientOnly } from "../ClientOnly";
 import SiteCard from "../SiteCard";
 import SkeletonCard from "../SkeletonCard";
 import ErrorState from "../ErrorState";
 import EmptyState from "../EmptyState";
 import BackToTopButton from "../BackToTopButton";
 import { Logo } from "../Logo";
-import SeoHeading from "../SeoHeading";
-import SiteFooter from "../SiteFooter";
-import { centeredContent } from "../../constants/layout";
+import { Ionicons } from "../../components/ui/icons";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
 
 export default function HomeClient() {
-  const { t } = useTranslation();
-  const colors = useThemeColors();
+  const { t, i18n } = useTranslation();
   const searchParams = useSearchParams();
   const selectedSlug = searchParams.get("category");
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data: categories, isLoading: catLoading, error: catError, refetch: refetchCats } = useCategories();
-  const { data: settings } = useSettings();
 
   const {
     data: sitePages,
@@ -73,99 +68,132 @@ export default function HomeClient() {
 
   const { ref: scrollRef, showButton } = useScrollToTop({ threshold: 200 });
 
-  const header = useMemo(
-    () => (
-      <View style={{ paddingLeft: 20, paddingRight: 20, display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <View style={{ width: 48, height: 48, marginBottom: 12 }}>
-          <Logo uri={settings?.logo ?? null} size={48} />
-        </View>
-        <SeoHeading level={1} style={{ fontSize: 26, fontWeight: 700, letterSpacing: 0.3, textAlign: "center", color: colors.text }}>
-          {settings?.site_title || t("探索好站")}
-        </SeoHeading>
-        <Text style={{ fontSize: 14, marginTop: 8, textAlign: "center", color: colors.textSecondary }}>
-          {settings?.site_subtitle || t("发现优质的金融与 Web3 工具")}
-        </Text>
-        <div style={{ paddingLeft: 20, paddingRight: 20, paddingTop: 18, width: "100%" }}>
-          {categories && <CategoryChips categories={categories} selected={selectedSlug} onSelect={handleSelect} />}
+  // Hero section (only on all-sites view, not filtered)
+  const hero = useMemo(
+    () =>
+      !selectedSlug ? (
+        <div className="fn-hero fn-px-5" style={{ paddingInline: 20, paddingTop: 8, paddingBottom: 8 }}>
+          <div className="fn-flex fn-gap-2" style={{ display: "flex", gap: 8, maxWidth: 560, margin: "0 auto" }}>
+            <button
+              type="button"
+              onClick={() => window.location.href = "/search"}
+              className="fn-search-trigger fn-flex fn-items-center fn-gap-2 fn-rounded-full fn-transition-fast fn-w-full"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "0 16px",
+                height: 46,
+                borderRadius: "var(--fn-radius-full)",
+                transition: "all var(--fn-duration-fast) var(--fn-ease-out)",
+              }}
+            >
+              <Ionicons name="search" size={18} color="var(--fn-text-tertiary)" />
+              <span className="fn-flex-1 fn-text-md fn-text-tertiary" style={{ flex: 1, fontSize: 15, textAlign: "left" }}>
+                {t("搜索站点、教程、经验...")}
+              </span>
+              <Ionicons name="chevron-forward" size={16} color="var(--fn-text-tertiary)" />
+            </button>
+          </div>
         </div>
-      </View>
-    ),
-    [colors, categories, selectedSlug, handleSelect, settings, t],
+      ) : null,
+    [selectedSlug, t, i18n.language],
   );
+
+  // Sticky category chips
+  const categorySection = useMemo(
+    () => (
+      <div className="fn-sticky fn-top-14 fn-z-50 fn-pb-2 fn-border-b" style={{ position: "sticky", top: 56, zIndex: 50, backgroundColor: "var(--fn-bg)", paddingBottom: 8, borderBottom: "1px solid var(--fn-divider)" }}>
+        <div className="fn-px-5 fn-py-3" style={{ paddingInline: 20, paddingTop: 12, width: "100%" }}>
+          <ClientOnly>
+            <CategoryChips categories={categories ?? []} selected={selectedSlug} onSelect={handleSelect} />
+          </ClientOnly>
+        </div>
+      </div>
+    ),
+    [categories, selectedSlug, handleSelect],
+  );
+
+  // Language switcher moved to AppShell header (top-right)
 
   if (loading) {
     return (
-      <div style={{ paddingTop: 16, backgroundColor: colors.background, minHeight: "100vh" }}>
-        <ScrollView
+      <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+        <div
+          className="fn-flex fn-flex-col fn-overflow-y-auto"
           ref={scrollRef}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 80 }}>
-          {header}
-          <div style={{ ...centeredContent.container, display: "flex", flexDirection: "column", gap: 10 }}>
+          style={{ scrollBehavior: "auto" }}
+        >
+          {hero}
+          {categorySection}
+          <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
             {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
           </div>
-        </ScrollView>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ paddingTop: 16, backgroundColor: colors.background, minHeight: "100vh" }}>
-        <ScrollView
+      <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+        <div
+          className="fn-flex fn-flex-col fn-overflow-y-auto"
           ref={scrollRef}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 80 }}>
-          {header}
-          <ErrorState
-            message={error.message || t("加载失败")}
-            onRetry={() => {
-              refetchCats();
-              refetchSites();
-            }}
-          />
-        </ScrollView>
+          style={{ scrollBehavior: "auto" }}
+        >
+          {hero}
+          {categorySection}
+          <div className="fn-p-5" style={{ padding: 20 }}>
+            <ErrorState
+              message={error.message || t("加载失败")}
+              onRetry={() => {
+                refetchCats();
+                refetchSites();
+              }}
+            />
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ backgroundColor: colors.background, minHeight: "100vh" }}>
-      <ScrollView
+    <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div
+        className="fn-flex fn-flex-col fn-overflow-y-auto"
         ref={scrollRef}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }}>
-        {header}
-        <div style={{ ...centeredContent.container, paddingLeft: 20, paddingRight: 20, paddingTop: 12 }}>
+        style={{ scrollBehavior: "auto" }}
+      >
+        {hero}
+        {categorySection}
+        <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
           {sites.map((site) => (
             <SiteCard key={String(site.id)} site={site} />
           ))}
           <div ref={sentinelRef} style={{ height: 20 }} />
           {isFetchingNextPage && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 16, paddingBottom: 16, gap: 8 }}>
+            <div className="fn-flex fn-items-center fn-justify-center fn-py-4" style={{ display: "flex", alignItems: "center", justifyContent: "center", paddingTop: 16, paddingBottom: 16, gap: 8, gridColumn: "1 / -1" }}>
               <div
+                className="fn-animate-spin fn-rounded-full fn-border-3 fn-border-brand/27"
                 style={{
                   width: 20,
                   height: 20,
                   borderRadius: "50%",
                   borderWidth: 3,
                   borderStyle: "solid",
-                  borderColor: `${colors.primary}44`,
-                  borderTopColor: colors.primary,
+                  borderColor: "rgba(79, 70, 229, 0.27)",
+                  borderTopColor: "var(--fn-primary)",
                   animation: "fn-spin 0.8s linear infinite",
                 }}
               />
-              <Text style={{ fontSize: 12, color: colors.textTertiary }}>{t("加载中…")}</Text>
+              <span className="fn-text-sm fn-text-tertiary" style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>加载中…</span>
               <style>{`@keyframes fn-spin { to { transform: rotate(360deg); } }`}</style>
             </div>
           )}
-          {!isFetchingNextPage && <SiteFooter showNav={true} />}
-        </div>
+          </div>
         {showButton && <BackToTopButton scrollRef={scrollRef} threshold={200} />}
-      </ScrollView>
+      </div>
     </div>
   );
 }

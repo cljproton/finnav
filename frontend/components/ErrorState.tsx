@@ -1,8 +1,7 @@
-import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import Button from "@ant-design/react-native/es/button";
-import { useThemeColors } from "../constants/colors";
+"use client";
+
+import { Button, Typography } from "@/components/antd-wrapper";
+import { Ionicons } from "./ui/icons";
 import { useTranslation } from "react-i18next";
 
 interface ErrorStateProps {
@@ -15,77 +14,38 @@ export default function ErrorState({
   onRetry,
 }: ErrorStateProps) {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const msg = message ?? t("加载失败，请稍后重试");
 
   return (
-    <View style={styles.container}>
-      <View
-        style={[
-          styles.iconRing,
-          {
-            borderColor: colors.border,
-            backgroundColor: colors.surface,
-          },
-        ]}
+    <div className="fn-card fn-max-w-md fn-w-full fn-p-8 fn-text-center">
+      <div
+        className="fn-flex fn-items-center fn-justify-center fn-mx-auto fn-rounded-xl fn-border-default"
+        style={{ width: 80, height: 80, borderRadius: 20, backgroundColor: "var(--fn-surface)" }}
       >
-        <Ionicons name="cloud-offline-outline" size={40} color={colors.error} />
-      </View>
-      <Text style={[styles.title, { color: colors.text }]}>{msg}</Text>
+        <Ionicons name="cloud-offline-outline" size={40} color="var(--fn-error)" />
+      </div>
+      <Typography.Text className="fn-mt-4.5 fn-text-md fn-font-medium fn-text-primary">
+        {msg}
+      </Typography.Text>
       {onRetry && (
-        <Pressable onPress={onRetry}>
-          <View
-            style={[
-              styles.btn,
-              {
-                backgroundColor: colors.primaryLight,
-                borderColor: colors.borderGlow,
-              },
-            ]}
-          >
-            <Ionicons name="refresh" size={16} color={colors.primary} />
-            <Text style={[styles.btnText, { color: colors.primary }]}>{t("重试")}</Text>
-          </View>
-        </Pressable>
+        <Button
+          onClick={onRetry}
+          type="dashed"
+          className="fn-mt-5"
+          style={{
+            gap: 6,
+            paddingInline: 22,
+            paddingBlock: 10,
+            borderRadius: "var(--fn-radius-full)",
+            backgroundColor: "var(--fn-primary-light)",
+            borderColor: "var(--fn-border-glow)",
+            color: "var(--fn-primary)",
+          }}
+        >
+          <Ionicons name="refresh" size={16} color="var(--fn-primary)" />
+          <span>{t("重试")}</span>
+        </Button>
       )}
-    </View>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 40,
-    paddingVertical: 60,
-  },
-  iconRing: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: "500",
-    marginTop: 18,
-    textAlign: "center",
-  },
-  btn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: 20,
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  btnText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-});

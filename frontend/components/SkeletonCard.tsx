@@ -1,89 +1,20 @@
-import React from "react";
-import { View, StyleSheet } from "react-native";
-import ActivityIndicator from "@ant-design/react-native/es/activity-indicator";
-import { useThemeColors } from "../constants/colors";
+"use client";
 
 export default function SkeletonCard() {
-  const colors = useThemeColors();
-
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View
-        style={[
-          styles.logo,
-          { backgroundColor: colors.skeleton },
-        ]}
+    <div className="fn-skeleton-card fn-flex fn-items-center fn-gap-3 fn-p-4">
+      <div
+        className="fn-skeleton fn-shrink-0"
+        style={{ width: 48, height: 48, borderRadius: 11 }}
       />
-      <View style={styles.lines}>
-        <View
-          style={[styles.line, styles.lineWide, { backgroundColor: colors.skeleton }]}
-        />
-        <View
-          style={[styles.line, styles.lineMedium, { backgroundColor: colors.skeleton }]}
-        />
-        <View style={styles.tagRow}>
-          <View style={[styles.tag, { backgroundColor: colors.skeleton }]} />
-          <View style={[styles.tag, { backgroundColor: colors.skeleton }]} />
-        </View>
-      </View>
-      <View style={styles.spinnerWrap}>
-        <ActivityIndicator
-          size="small"
-          color={colors.primary}
-        />
-      </View>
-    </View>
+      <div className="fn-flex fn-flex-col fn-flex-1 fn-gap-2">
+        <div className="fn-skeleton-text" style={{ width: "60%" }} />
+        <div className="fn-skeleton-text" style={{ width: "40%" }} />
+        <div className="fn-flex fn-gap-1.5 fn-mt-1">
+          <div className="fn-skeleton" style={{ width: 48, height: 18, borderRadius: 5 }} />
+          <div className="fn-skeleton" style={{ width: 48, height: 18, borderRadius: 5 }} />
+        </div>
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  logo: {
-    width: 48,
-    height: 48,
-    borderRadius: 11,
-    marginRight: 12,
-  },
-  lines: {
-    flex: 1,
-  },
-  line: {
-    height: 13,
-    borderRadius: 6,
-    marginBottom: 8,
-  },
-  lineWide: {
-    width: "70%",
-  },
-  lineMedium: {
-    width: "50%",
-  },
-  tagRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 4,
-  },
-  tag: {
-    width: 48,
-    height: 18,
-    borderRadius: 5,
-  },
-  spinnerWrap: {
-    marginLeft: 8,
-  },
-});

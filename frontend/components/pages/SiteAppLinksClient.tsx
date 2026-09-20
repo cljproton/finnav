@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { View, Text, Pressable, ScrollView } from "../ui/primitives";
 import { Ionicons } from "../ui/icons";
-import { Input, ActivityIndicator, Toast } from "../ui/antd";
+import { Input, Button, Spin } from "@/components/antd-wrapper";
+import { message } from "@/components/antd-wrapper";
 import {
   submitAppLink,
   useMyAppLinks,
@@ -15,13 +15,11 @@ import {
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { CaptchaPayload } from "../../lib/auth";
-import { useThemeColors } from "../../constants/colors";
 import type { AppLinkPlatform, AppLinkSubmission } from "../../lib/types";
 import AuthModal from "../AuthModal";
 import { DeleteConfirmModal } from "../DeleteConfirmModal";
-import { centeredContent } from "../../constants/layout";
 import { formatDateTime, openExternal } from "../../lib/utils";
-import { StyleSheet } from "../../lib/rnStyle";
+import SeoHeading from "../SeoHeading";
 
 const PLATFORM_OPTIONS: {
   key: AppLinkPlatform;
@@ -65,7 +63,6 @@ function appStatusLabel(
 
 export default function SiteAppLinksClient() {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const router = useRouter();
   const auth = useAuth();
   const loggedIn = !!auth.token;
@@ -97,35 +94,24 @@ export default function SiteAppLinksClient() {
     },
     [auth],
   );
-
-  const handleLoginTFA = useCallback(
-    async (email: string, totpToken: string, code: string) => {
-      await auth.loginTFA(email, totpToken, code);
-    },
-    [auth],
-  );
-
   const handleRegister = useCallback(
     async (email: string, password: string, captcha: CaptchaPayload) => {
       return auth.register(email, password, captcha);
     },
     [auth],
   );
-
   const handleVerify = useCallback(
     async (email: string, code: string, password: string) => {
       await auth.verify(email, code, password);
     },
     [auth],
   );
-
   const handleRequestReset = useCallback(
     async (email: string) => {
       await auth.requestPasswordReset(email);
     },
     [auth],
   );
-
   const handleResetPassword = useCallback(
     async (email: string, code: string, password: string) => {
       await auth.resetPassword(email, code, password);
@@ -151,11 +137,11 @@ export default function SiteAppLinksClient() {
         setEditingId(null);
         setUrl("");
         setPlatform("android");
-        Toast.success(t("已更新，等待管理员审核"), 1.5);
+        message.success(t("已更新，等待管理员审核"), 1.5);
       } else {
         await submitAppLink(siteId, { platform, url: trimmed });
         setUrl("");
-        Toast.success(t("提交成功，等待管理员审核"), 1.5);
+        message.success(t("提交成功，等待管理员审核"), 1.5);
       }
       queryClient.invalidateQueries({ queryKey: ["my-app-links", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site", siteId] });
@@ -170,11 +156,11 @@ export default function SiteAppLinksClient() {
     if (!pendingDelete) return;
     try {
       await deleteAppLink(siteId, pendingDelete.id);
-      Toast.success(t("已删除"), 1.5);
+      message.success(t("已删除"), 1.5);
       queryClient.invalidateQueries({ queryKey: ["my-app-links", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site", siteId] });
     } catch (e: unknown) {
-      Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+      message.error(e instanceof Error ? e.message : t("操作失败"), 1.5);
     } finally {
       setPendingDelete(null);
     }
@@ -190,400 +176,288 @@ export default function SiteAppLinksClient() {
     }
   };
 
+  const cancelEdit = () => {
+    setEditingId(null);
+    setUrl("");
+    setPlatform("android");
+    setSubmitError("");
+  };
+
   const selected = PLATFORM_OPTIONS.find((o) => o.key === platform)!;
   const sample = selected.sample;
+  const myItems = (myLinksQ.data?.pages ?? []).flatMap((p) => p.results);
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={[styles.topBar, { paddingTop: 12 }]}>
-        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>
-          {t("提交下载链接")}
-        </Text>
-        <View style={styles.topBarRight} />
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.list, centeredContent.container]}
-      >
-        <Text style={[styles.hint, { color: colors.textTertiary }]}>
-          {t("提交后需管理员审核，审核通过后自动更新到本站。")}
-        </Text>
-
-        {/* Submit form */}
-        <View
-          style={[
-            styles.formCard,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            },
-          ]}
+    <div style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px 48px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}
         >
-          <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
-            {t("选择平台")}
-          </Text>
-          <View style={styles.platformRow}>
-            {PLATFORM_OPTIONS.map((opt) => {
-              const active = opt.key === platform;
-              return (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => setPlatform(opt.key)}
-                  style={[
-                    styles.platformChip,
-                    {
-                      backgroundColor: active ? colors.primaryLight : colors.chipBg,
-                      borderColor: active ? colors.primary : colors.border,
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={opt.icon}
-                    size={15}
-                    color={active ? colors.primary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.platformChipText,
-                      {
-                        color: active ? colors.primary : colors.textSecondary,
-                      },
-                    ]}
-                  >
-                    {t(opt.label)}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.formLabel, { color: colors.textSecondary }]}>
-            {t("下载链接")}
-          </Text>
-          <Input
-            value={url}
-            onChangeText={(text) => {
-              setUrl(text);
-              if (submitError) setSubmitError("");
-            }}
-            placeholder={sample}
-            placeholderTextColor={colors.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={t("返回")}
             style={{
-              ...styles.urlInput,
-              color: colors.text,
-              backgroundColor: colors.chipBg,
-              borderColor: colors.border,
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              backgroundColor: "var(--fn-surface)",
+              border: "1px solid var(--fn-border)",
+              boxShadow: "var(--fn-shadow-xs)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
             }}
-          />
-          <Text style={[styles.sampleHint, { color: colors.textTertiary }]}>
-            {t("示例：{{sample}}", { sample })}
-          </Text>
-
-          {submitError ? (
-            <Text style={[styles.error, { color: colors.error }]}>{submitError}</Text>
-          ) : null}
-
-          {!loggedIn ? (
-            <Text style={[styles.loginHint, { color: colors.textTertiary }]}>
-              {t("登录后可提交下载链接")}
-            </Text>
-          ) : null}
-
-          <Pressable
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={({ pressed }) => [
-              styles.submitBtn,
-              {
-                backgroundColor: colors.primary,
-                opacity: pressed || submitting ? 0.8 : 1,
-              },
-            ]}
           >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.submitBtnText}>
-                {editingId !== null ? t("保存修改") : t("提交")}
-              </Text>
-            )}
-          </Pressable>
-          {editingId !== null ? (
-            <Pressable
-              onPress={() => {
-                setEditingId(null);
-                setUrl("");
-                setPlatform("android");
-                setSubmitError("");
+            <Ionicons name="chevron-back" size={22} color="var(--fn-text)" />
+          </button>
+          <SeoHeading level={1} style={{ fontSize: 17, fontWeight: 700, color: "var(--fn-text)" }}>
+            {t("提交下载链接")}
+          </SeoHeading>
+          <div style={{ width: 42 }} />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>
+            {t("提交后需管理员审核，审核通过后自动更新到本站。")}
+          </div>
+
+          <div className="fn-card" style={{ padding: 16, boxShadow: "var(--fn-shadow-sm)" }}>
+            <div style={{ fontSize: 13, color: "var(--fn-text-secondary)", marginBottom: 8 }}>
+              {t("选择平台")}
+            </div>
+            <div style={{ display: "flex", flexDirection: "row", gap: 8, marginBottom: 12 }}>
+              {PLATFORM_OPTIONS.map((opt) => {
+                const active = opt.key === platform;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setPlatform(opt.key)}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 5,
+                      paddingTop: 10,
+                      paddingBottom: 10,
+                      borderRadius: 10,
+                      border: `1px solid ${active ? "var(--fn-primary)" : "var(--fn-border)"}`,
+                      backgroundColor: active ? "var(--fn-primary-light)" : "var(--fn-chip-bg)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={15}
+                      color={active ? "var(--fn-primary)" : "var(--fn-text-secondary)"}
+                    />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: active ? "var(--fn-primary)" : "var(--fn-text-secondary)" }}>
+                      {t(opt.label)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 13, color: "var(--fn-text-secondary)", marginBottom: 8 }}>
+              {t("下载链接")}
+            </div>
+            <Input
+              value={url}
+              onChange={(e) => {
+                const text = e.target.value;
+                setUrl(text);
+                if (submitError) setSubmitError("");
               }}
-              style={styles.cancelEditBtn}
+              placeholder={sample}
+              style={{
+                borderRadius: 10,
+                paddingLeft: 12,
+                paddingRight: 12,
+                paddingTop: 10,
+                paddingBottom: 10,
+                fontSize: 14,
+                color: "var(--fn-text)",
+                backgroundColor: "var(--fn-chip-bg)",
+                borderColor: "var(--fn-border)",
+                boxShadow: "none",
+              }}
+            />
+            <div style={{ fontSize: 12, marginTop: 8, color: "var(--fn-text-tertiary)" }}>
+              {t("示例：{{sample}}", { sample })}
+            </div>
+
+            {submitError ? (
+              <div style={{ fontSize: 13, marginTop: 10, color: "var(--fn-error)" }}>{submitError}</div>
+            ) : null}
+
+            {!loggedIn ? (
+              <div style={{ fontSize: 12, marginTop: 10, color: "var(--fn-text-tertiary)" }}>
+                {t("登录后可提交下载链接")}
+              </div>
+            ) : null}
+
+            <Button
+              type="primary"
+              block
+              loading={submitting}
+              onClick={handleSubmit}
+              style={{ marginTop: 18, height: 46, borderRadius: 10, fontSize: 15, fontWeight: 700 }}
             >
-              <Text style={[styles.cancelEditText, { color: colors.textTertiary }]}>
-                {t("取消编辑")}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
+              {editingId !== null ? t("保存修改") : t("提交")}
+            </Button>
+            {editingId !== null ? (
+              <div style={{ textAlign: "center", marginTop: 4 }}>
+                <Button type="link" onClick={cancelEdit} style={{ color: "var(--fn-text-tertiary)" }}>
+                  {t("取消编辑")}
+                </Button>
+              </div>
+            ) : null}
+          </div>
 
-        {/* My submissions */}
-        {loggedIn ? (
-          <View
-            style={[
-              styles.section,
-              {
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <View style={styles.sectionHeader}>
-              <Ionicons name="list-outline" size={18} color={colors.primary} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                {t("我的提交")}
-              </Text>
-              {myLinksQ.data?.pages[0]?.count ? (
-                <Text style={[styles.sectionCount, { color: colors.textTertiary }]}>
-                  {myLinksQ.data.pages[0].count}
-                </Text>
-              ) : null}
-            </View>
+          {loggedIn ? (
+            <div className="fn-card" style={{ padding: 16, boxShadow: "var(--fn-shadow-sm)" }}>
+              <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 9,
+                    backgroundColor: "var(--fn-primary-light)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="list-outline" size={17} color="var(--fn-primary)" />
+                </div>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fn-text)", flex: 1 }}>
+                  {t("我的提交")}
+                </span>
+                {myLinksQ.data?.pages[0]?.count ? (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-text-tertiary)" }}>
+                    {myLinksQ.data.pages[0].count}
+                  </span>
+                ) : null}
+              </div>
 
-            {myLinksQ.isLoading ? (
-              <View style={styles.sectionLoading}>
-                <ActivityIndicator size="small" color={colors.primary} />
-              </View>
-            ) : (myLinksQ.data?.pages ?? []).flatMap((p) => p.results).length === 0 ? (
-              <Text style={[styles.sectionEmpty, { color: colors.textTertiary }]}>
-                {t("暂无提交")}
-              </Text>
-            ) : (
-              <>
-                {(myLinksQ.data?.pages ?? [])
-                  .flatMap((p) => p.results)
-                  .map((sub) => {
+              {myLinksQ.isLoading ? (
+                <div style={{ padding: 20, display: "flex", justifyContent: "center" }}>
+                  <Spin size="small" />
+                </div>
+              ) : myItems.length === 0 ? (
+                <div style={{ textAlign: "center", paddingTop: 16, paddingBottom: 16, fontSize: 13, color: "var(--fn-text-tertiary)" }}>
+                  {t("暂无提交")}
+                </div>
+              ) : (
+                <>
+                  {myItems.map((sub) => {
                     const opt = PLATFORM_OPTIONS.find((o) => o.key === sub.platform);
+                    const statusColor =
+                      sub.status === "approved"
+                        ? "var(--fn-success)"
+                        : sub.status === "rejected"
+                          ? "var(--fn-error)"
+                          : "var(--fn-warning)";
                     return (
-                      <View
+                      <div
                         key={sub.id}
-                        style={[
-                          styles.item,
-                          {
-                            backgroundColor: colors.chipBg,
-                            borderColor: colors.border,
-                          },
-                        ]}
+                        style={{
+                          paddingLeft: 14,
+                          paddingRight: 14,
+                          paddingTop: 12,
+                          paddingBottom: 12,
+                          borderRadius: 10,
+                          border: "1px solid var(--fn-border)",
+                          backgroundColor: "var(--fn-chip-bg)",
+                          marginBottom: 8,
+                        }}
                       >
-                        <View style={styles.itemHeader}>
-                          <Ionicons
-                            name={opt?.icon ?? "link-outline"}
-                            size={16}
-                            color={colors.primary}
-                          />
-                          <Text style={[styles.itemPlatform, { color: colors.text }]}>
+                        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <Ionicons name={opt?.icon ?? "link-outline"} size={16} color="var(--fn-primary)" />
+                          <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "var(--fn-text)", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                             {opt ? t(opt.label) : sub.platform}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.itemStatus,
-                              {
-                                color:
-                                  sub.status === "approved"
-                                    ? colors.success
-                                    : sub.status === "rejected"
-                                      ? colors.error
-                                      : colors.warning,
-                              },
-                            ]}
-                          >
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: statusColor }}>
                             {appStatusLabel(sub.status, t)}
-                          </Text>
-                        </View>
-                        <Text
-                          style={[styles.itemUrl, { color: colors.primary }]}
-                          numberOfLines={1}
+                          </span>
+                        </div>
+                        <div
+                          style={{ fontSize: 13, fontWeight: 500, marginTop: 6, color: "var(--fn-primary)", cursor: "pointer", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}
                           onClick={() => openExternal(sub.url)}
                         >
                           {sub.url}
-                        </Text>
-                        <Text style={[styles.itemTime, { color: colors.textTertiary }]}>
-                          {t("提交于 {{time}}", {
-                            time: formatDateTime(sub.created_at),
-                          })}
-                        </Text>
+                        </div>
+                        <div style={{ fontSize: 12, marginTop: 4, color: "var(--fn-text-tertiary)" }}>
+                          {t("提交于 {{time}}", { time: formatDateTime(sub.created_at) })}
+                        </div>
                         {sub.status === "rejected" ? (
-                          <View style={styles.itemActions}>
-                            <Pressable
-                              onPress={() => handleEdit(sub)}
-                              style={[styles.itemActionBtn, { borderColor: colors.primary }]}
-                            >
-                              <Text style={[styles.itemActionText, { color: colors.primary }]}>
-                                {t("编辑")}
-                              </Text>
-                            </Pressable>
-                            <Pressable
-                              onPress={() => setPendingDelete(sub)}
-                              style={[styles.itemActionBtn, { borderColor: colors.error }]}
-                            >
-                              <Text style={[styles.itemActionText, { color: colors.error }]}>
-                                {t("删除")}
-                              </Text>
-                            </Pressable>
-                          </View>
+                          <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-start" }}>
+                            <Button size="small" onClick={() => handleEdit(sub)}>
+                              {t("编辑")}
+                            </Button>
+                            <Button size="small" danger onClick={() => setPendingDelete(sub)}>
+                              {t("删除")}
+                            </Button>
+                          </div>
                         ) : null}
-                      </View>
+                      </div>
                     );
                   })}
-                {myLinksQ.hasNextPage ? (
-                  <Pressable
-                    onPress={() => myLinksQ.fetchNextPage()}
-                    style={({ pressed }) => [styles.loadMore, { opacity: pressed ? 0.7 : 1 }]}
-                  >
-                    {myLinksQ.isFetchingNextPage ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Text style={[styles.loadMoreText, { color: colors.primary }]}>
-                        {t("加载更多")}
-                      </Text>
-                    )}
-                  </Pressable>
-                ) : null}
-              </>
-            )}
-          </View>
-        ) : null}
-      </ScrollView>
+                  {myLinksQ.hasNextPage ? (
+                    <button
+                      type="button"
+                      onClick={() => myLinksQ.fetchNextPage()}
+                      style={{ paddingTop: 12, paddingBottom: 12, width: "100%", textAlign: "center", border: "none", background: "none", cursor: "pointer" }}
+                    >
+                      {myLinksQ.isFetchingNextPage ? (
+                        <Spin size="small" />
+                      ) : (
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fn-primary)" }}>{t("加载更多")}</span>
+                      )}
+                    </button>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
 
-      <DeleteConfirmModal
-        visible={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        onConfirm={confirmDelete}
-        name={
-          pendingDelete
-            ? (() => {
-                const opt = PLATFORM_OPTIONS.find((o) => o.key === pendingDelete.platform);
-                return opt ? t(opt.label) : pendingDelete.platform;
-              })()
-            : ""
-        }
-      />
+        <DeleteConfirmModal
+          visible={!!pendingDelete}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+          name={
+            pendingDelete
+              ? (() => {
+                  const opt = PLATFORM_OPTIONS.find((o) => o.key === pendingDelete.platform);
+                  return opt ? t(opt.label) : pendingDelete.platform;
+                })()
+              : ""
+          }
+        />
 
-      <AuthModal
-        visible={authVisible}
-        onClose={() => setAuthVisible(false)}
-        onLogin={handleLogin}
-        onLoginTFA={handleLoginTFA}
-        onRegister={handleRegister}
-        onVerify={handleVerify}
-        onRequestReset={handleRequestReset}
-        onResetPassword={handleResetPassword}
-      />
-    </View>
+        <AuthModal
+          visible={authVisible}
+          onClose={() => setAuthVisible(false)}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onVerify={handleVerify}
+          onRequestReset={handleRequestReset}
+          onResetPassword={handleResetPassword}
+        />
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: "100vh" },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 4,
-    paddingBottom: 8,
-    paddingHorizontal: 20,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  topBarRight: { width: 40 },
-  title: { fontSize: 17, fontWeight: "700" },
-  list: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 48,
-  },
-  hint: { fontSize: 12, marginBottom: 14 },
-  formCard: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 14,
-  },
-  formLabel: { fontSize: 13, marginBottom: 8, marginTop: 4 },
-  platformRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  platformChip: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  platformChipText: { fontSize: 12, fontWeight: "600" },
-  urlInput: {
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  sampleHint: { fontSize: 12, marginTop: 8 },
-  error: { fontSize: 13, marginTop: 10 },
-  loginHint: { fontSize: 12, marginTop: 10 },
-  submitBtn: {
-    marginTop: 18,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
-  section: { borderRadius: 14, borderWidth: 1, padding: 16 },
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  sectionTitle: { fontSize: 15, fontWeight: "600", flex: 1 },
-  sectionLoading: { paddingVertical: 20, alignItems: "center" },
-  sectionEmpty: { textAlign: "center", paddingVertical: 16, fontSize: 13 },
-  sectionCount: { fontSize: 12, fontWeight: "600", marginLeft: "auto" },
-  item: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  itemHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  itemPlatform: { flex: 1, fontSize: 14, fontWeight: "600" },
-  itemStatus: { fontSize: 12, fontWeight: "600" },
-  itemUrl: { fontSize: 13, fontWeight: "500", marginTop: 6, cursor: "pointer" },
-  itemTime: { fontSize: 12, marginTop: 4 },
-  itemActions: { flexDirection: "row", gap: 8, alignSelf: "flex-start", marginTop: 8 },
-  itemActionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  itemActionText: { fontSize: 12, fontWeight: "600" },
-  loadMore: { paddingVertical: 12, alignItems: "center" },
-  loadMoreText: { fontSize: 14, fontWeight: "600" },
-  cancelEditBtn: {
-    alignSelf: "center",
-    marginTop: 10,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  cancelEditText: { fontSize: 13, fontWeight: "500" },
-});

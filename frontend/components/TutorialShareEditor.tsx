@@ -1,23 +1,21 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "./ui/primitives";
+import { Spin, Button } from "antd";
 import { Ionicons } from "./ui/icons";
-import { Input, Toast } from "./ui/antd";
+import { Input, message } from "@/components/antd-wrapper";
 import {
   fetchTutorialTitle,
   shareTutorial,
   updateTutorial,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useThemeColors } from "../constants/colors";
-import { centeredContent } from "../constants/layout";
 import type { TutorialStatus, TutorialType } from "../lib/types";
 import AuthModal from "./AuthModal";
-import { StyleSheet } from "../lib/rnStyle";
+import SeoHeading from "./SeoHeading";
 
 export interface TutorialEditorInitial {
   id: number;
@@ -83,10 +81,9 @@ function friendlyError(e: unknown, t: (key: string) => string): string {
 
 function StepIndicator({ current }: { current: number }) {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const steps = [t("选择类型"), t("粘贴链接"), t("确认标题")];
   return (
-    <View style={styles.steps}>
+    <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", marginBottom: 18 }}>
       {steps.map((label, idx) => {
         const n = idx + 1;
         const done = n < current;
@@ -95,49 +92,46 @@ function StepIndicator({ current }: { current: number }) {
         return (
           <React.Fragment key={label}>
             {idx > 0 ? (
-              <View
-                style={[
-                  styles.stepLine,
-                  { backgroundColor: done ? colors.primary : colors.border },
-                ]}
+              <div
+                style={{
+                  flex: 1,
+                  height: 2,
+                  marginTop: 12,
+                  marginLeft: 4,
+                  marginRight: 4,
+                  backgroundColor: done ? "var(--fn-primary)" : "var(--fn-border)",
+                }}
               />
             ) : null}
-            <View style={styles.stepItem}>
-              <View
-                style={[
-                  styles.stepCircle,
-                  {
-                    backgroundColor: filled ? colors.primary : colors.chipBg,
-                    borderColor: active ? colors.borderGlow : "transparent",
-                  },
-                ]}
+            <div style={{ alignItems: "center", width: 72, display: "flex", flexDirection: "column" }}>
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 13,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: `2px solid ${active ? "var(--fn-primary)" : "transparent"}`,
+                  backgroundColor: filled ? "var(--fn-primary)" : "var(--fn-chip-bg)",
+                }}
               >
                 {done ? (
                   <Ionicons name="checkmark" size={13} color="#FFFFFF" />
                 ) : (
-                  <Text
-                    style={[
-                      styles.stepNum,
-                      { color: filled ? "#FFFFFF" : colors.textTertiary },
-                    ]}
-                  >
+                  <span style={{ fontSize: 13, fontWeight: 700, color: filled ? "#FFFFFF" : "var(--fn-text-tertiary)" }}>
                     {n}
-                  </Text>
+                  </span>
                 )}
-              </View>
-              <Text
-                style={[
-                  styles.stepLabel,
-                  { color: filled ? colors.primary : colors.textTertiary },
-                ]}
-              >
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, marginTop: 6, textAlign: "center", color: filled ? "var(--fn-primary)" : "var(--fn-text-tertiary)" }}>
                 {label}
-              </Text>
-            </View>
+              </span>
+            </div>
           </React.Fragment>
         );
       })}
-    </View>
+    </div>
   );
 }
 
@@ -151,15 +145,38 @@ export default function TutorialShareEditor({
   initial?: TutorialEditorInitial | null;
 }) {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const queryClient = useQueryClient();
 
-  const [type, setType] = useState<TutorialType>(initial?.type ?? "text");
-  const [url, setUrl] = useState(initial?.url ?? "");
-  const [title, setTitle] = useState(initial?.title ?? "");
+  // 处理 edit 模式：从 URL searchParams 读取参数
+  const [editId, setEditId] = useState<number | null>(initial?.id ?? null);
+  const [editType, setEditType] = useState<TutorialType | null>(initial?.type ?? null);
+  const [editUrl, setEditUrl] = useState<string>(initial?.url ?? "");
+  const [editTitle, setEditTitle] = useState<string>(initial?.title ?? "");
+  const [editStatus, setEditStatus] = useState<TutorialStatus | null>(initial?.status ?? null);
+
+  useEffect(() => {
+    if (mode === "edit" && !initial) {
+      const sp = searchParams;
+      const edit = sp.get("edit");
+      const type = sp.get("type");
+      const url = sp.get("url");
+      const title = sp.get("title");
+      const status = sp.get("status");
+      if (edit) setEditId(Number(edit));
+      if (type) setEditType(type as TutorialType);
+      if (url) setEditUrl(url);
+      if (title) setEditTitle(title);
+      if (status) setEditStatus(status as TutorialStatus);
+    }
+  }, [mode, initial, searchParams]);
+
+  const [type, setType] = useState<TutorialType>(editType ?? initial?.type ?? "text");
+  const [url, setUrl] = useState(editUrl ?? initial?.url ?? "");
+  const [title, setTitle] = useState(editTitle ?? initial?.title ?? "");
   const [titleEdited, setTitleEdited] = useState(
     mode === "edit" && !!initial?.title,
   );
@@ -175,6 +192,12 @@ export default function TutorialShareEditor({
 
   const selected = TYPE_OPTIONS.find((o) => o.type === type)!;
   const sample = selected.sample;
+
+  const currentEditId = initial?.id ?? editId;
+  const currentEditType = initial?.type ?? editType;
+  const currentEditUrl = initial?.url ?? editUrl;
+  const currentEditTitle = initial?.title ?? editTitle;
+  const currentEditStatus = initial?.status ?? editStatus;
 
   const runFetch = useCallback(async () => {
     const u = url.trim();
@@ -251,12 +274,12 @@ export default function TutorialShareEditor({
     setSubmitError("");
     try {
       const payload = { type, url: normalized, title };
-      if (mode === "edit" && initial) {
-        await updateTutorial(siteId, initial.id, payload);
-        Toast.success(t("已更新，等待重新审核"), 1.5);
+      if (mode === "edit" && currentEditId) {
+        await updateTutorial(siteId, currentEditId, payload);
+        message.success(t("已更新，等待重新审核"), 1.5);
       } else {
         await shareTutorial(siteId, payload);
-        Toast.success(t("提交成功！审核通过后就会公开啦"), 1.5);
+        message.success(t("提交成功！审核通过后就会公开啦"), 1.5);
       }
       queryClient.invalidateQueries({ queryKey: ["site-tutorials", siteId] });
       queryClient.invalidateQueries({ queryKey: ["site-tutorials-top", siteId] });
@@ -277,431 +300,294 @@ export default function TutorialShareEditor({
   const titleFilled = title.trim().length > 0;
   const currentStep = urlFilled ? (titleFilled ? 4 : 3) : 2;
 
+  const inputStyle: React.CSSProperties = {
+    borderRadius: 10,
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
+    fontSize: 14,
+    color: "var(--fn-text)",
+    backgroundColor: "var(--fn-chip-bg)",
+    borderColor: "var(--fn-border)",
+    boxShadow: "none",
+  };
+
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={styles.topBar}>
-        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <Text style={[styles.title, { color: colors.text }]}>
-          {mode === "edit" ? t("编辑教程") : t("分享教程")}
-        </Text>
-        <Pressable
-          onPress={handleSubmit}
-          disabled={submitting}
-          style={({ pressed }) => [
-            styles.submitTopBtn,
-            { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
-          ]}
+    <div style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px 48px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}
         >
-          {submitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitTopText}>
-              {mode === "edit" ? t("保存") : t("提交")}
-            </Text>
-          )}
-        </Pressable>
-      </View>
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={t("返回")}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              backgroundColor: "var(--fn-surface)",
+              border: "1px solid var(--fn-border)",
+              boxShadow: "var(--fn-shadow-xs)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <Ionicons name="chevron-back" size={22} color="var(--fn-text)" />
+          </button>
+          <SeoHeading
+            level={1}
+            style={{ fontSize: 17, fontWeight: 700, color: "var(--fn-text)", flex: 1, textAlign: "center" }}
+          >
+            {mode === "edit" ? t("编辑教程") : t("分享教程")}
+          </SeoHeading>
+          <Button
+            type="primary"
+            loading={submitting}
+            onClick={handleSubmit}
+            style={{ borderRadius: 18, minWidth: 56 }}
+          >
+            {mode === "edit" ? t("保存") : t("提交")}
+          </Button>
+        </div>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.body, centeredContent.container]}
-      >
-        <Text style={[styles.intro, { color: colors.textSecondary }]}>
-          {t(
-            "分享你的教程链接，标题会自动获取，你只需要确认一下就好啦。审核通过后就会公开展示给其他用户。",
-          )}
-        </Text>
+        <div style={{ paddingTop: 8 }}>
+          <div style={{ fontSize: 13, lineHeight: 20, marginBottom: 16, color: "var(--fn-text-secondary)" }}>
+            {t("分享你的教程链接，标题会自动获取，你只需要确认一下就好啦。审核通过后就会公开展示给其他用户。")}
+          </div>
 
-        <StepIndicator current={currentStep} />
+          <StepIndicator current={currentStep} />
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            {t("选择类型")}
-          </Text>
-          {TYPE_OPTIONS.map((opt) => {
-            const active = opt.type === type;
-            return (
-              <Pressable
-                key={opt.type}
-                onPress={() => setType(opt.type)}
-                style={({ pressed }) => [
-                  styles.typeCard,
-                  {
-                    backgroundColor: active ? colors.primaryLight : colors.chipBg,
-                    borderColor: active ? colors.primary : colors.border,
-                    opacity: pressed ? 0.8 : 1,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.typeIcon,
-                    { backgroundColor: active ? colors.primary : colors.chipBg },
-                  ]}
+          <div className="fn-card" style={{ padding: 16, marginBottom: 14, boxShadow: "var(--fn-shadow-sm)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--fn-text-secondary)" }}>
+              {t("选择类型")}
+            </div>
+            {TYPE_OPTIONS.map((opt) => {
+              const active = opt.type === type;
+              return (
+                <button
+                  key={opt.type}
+                  type="button"
+                  onClick={() => setType(opt.type)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 12,
+                    width: "100%",
+                    borderRadius: 12,
+                    border: `1px solid ${active ? "var(--fn-primary)" : "var(--fn-border)"}`,
+                    backgroundColor: active ? "var(--fn-primary-light)" : "var(--fn-chip-bg)",
+                    paddingLeft: 12,
+                    paddingRight: 12,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                    marginBottom: 10,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
                 >
-                  <Ionicons
-                    name={opt.icon}
-                    size={18}
-                    color={active ? "#FFFFFF" : colors.textSecondary}
-                  />
-                </View>
-                <View style={styles.typeTextWrap}>
-                  <Text
-                    style={[
-                      styles.typeTitle,
-                      { color: active ? colors.primary : colors.text },
-                    ]}
+                  <div
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: active ? "var(--fn-primary)" : "var(--fn-chip-bg)",
+                    }}
                   >
-                    {t(opt.label)}
-                  </Text>
-                  <Text style={[styles.typeDesc, { color: colors.textSecondary }]}>
-                    {t(opt.desc)}
-                  </Text>
-                </View>
-                {active ? (
-                  <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
+                    <Ionicons name={opt.icon} size={18} color={active ? "#FFFFFF" : "var(--fn-text-secondary)"} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: active ? "var(--fn-primary)" : "var(--fn-text)" }}>
+                      {t(opt.label)}
+                    </div>
+                    <div style={{ fontSize: 12, marginTop: 2, color: "var(--fn-text-secondary)" }}>
+                      {t(opt.desc)}
+                    </div>
+                  </div>
+                  {active ? <Ionicons name="checkmark-circle" size={18} color="var(--fn-primary)" /> : null}
+                </button>
+              );
+            })}
+          </div>
 
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            {t("教程链接")}
-          </Text>
-          <Input
-            value={url}
-            onChangeText={(text) => {
-              setUrl(text);
-              setPreview(null);
-              if (submitError) setSubmitError("");
-            }}
-            onBlur={handleUrlBlur}
-            placeholder={sample}
-            placeholderTextColor={colors.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            style={{
-              ...styles.urlInput,
-              color: colors.text,
-              backgroundColor: colors.chipBg,
-              borderColor: colors.border,
-            }}
-          />
-          <Text style={[styles.sampleHint, { color: colors.textTertiary }]}>
-            {t("示例：{{sample}}", { sample })}
-          </Text>
+          <div className="fn-card" style={{ padding: 16, boxShadow: "var(--fn-shadow-sm)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "var(--fn-text-secondary)" }}>
+              {t("教程链接")}
+            </div>
+            <Input
+              value={url}
+              onChange={(e) => {
+                const text = e.target.value;
+                setUrl(text);
+                setPreview(null);
+                if (submitError) setSubmitError("");
+              }}
+              onBlur={handleUrlBlur}
+              placeholder={sample}
+              style={inputStyle}
+            />
+            <div style={{ fontSize: 12, marginTop: 8, color: "var(--fn-text-tertiary)" }}>
+              {t("示例：{{sample}}", { sample })}
+            </div>
 
-          {titleFetching ? (
-            <View style={styles.fetchingRow}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={[styles.fetchingText, { color: colors.textSecondary }]}>
-                {t("自动获取标题中…")}
-              </Text>
-            </View>
-          ) : null}
+            {titleFetching ? (
+              <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+                <Spin size="small" />
+                <span style={{ fontSize: 12, color: "var(--fn-text-secondary)" }}>{t("自动获取标题中…")}</span>
+              </div>
+            ) : null}
 
-          {preview ? (
-            <View
-              style={[
-                styles.previewCard,
-                {
-                  backgroundColor: preview.fallback ? colors.chipBg : colors.primaryLight,
-                  borderColor: preview.fallback ? colors.border : colors.borderGlow,
-                },
-              ]}
+            {preview ? (
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: `1px solid ${preview.fallback ? "var(--fn-border)" : "var(--fn-primary)"}`,
+                  backgroundColor: preview.fallback ? "var(--fn-chip-bg)" : "var(--fn-primary-light)",
+                  paddingLeft: 12,
+                  paddingRight: 12,
+                  paddingTop: 10,
+                  paddingBottom: 10,
+                  marginTop: 10,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons
+                    name={preview.fallback ? "information-circle-outline" : "checkmark-circle"}
+                    size={16}
+                    color={preview.fallback ? "var(--fn-warning)" : "var(--fn-success)"}
+                  />
+                  <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: preview.fallback ? "var(--fn-warning)" : "var(--fn-success)" }}>
+                    {preview.fallback ? t("暂时没能自动获取标题") : t("已自动获取标题")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRefetch}
+                    disabled={titleFetching}
+                    style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 3, paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2, border: "none", background: "none", cursor: "pointer", opacity: titleFetching ? 0.6 : 1 }}
+                  >
+                    <Ionicons name="refresh" size={13} color="var(--fn-primary)" />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-primary)" }}>{t("重新获取")}</span>
+                  </button>
+                </div>
+                {preview.fallback ? (
+                  <div style={{ fontSize: 12, lineHeight: 18, marginTop: 6, color: "var(--fn-text-secondary)" }}>
+                    {t("暂时没能自动获取标题，你可以手动填写，或留空由我们提交时再试一次")}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      marginTop: 6,
+                      lineHeight: 20,
+                      color: "var(--fn-text)",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {preview.title}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginTop: 14,
+                marginBottom: 10,
+              }}
             >
-              <View style={styles.previewHeader}>
-                <Ionicons
-                  name={
-                    preview.fallback
-                      ? "information-circle-outline"
-                      : "checkmark-circle"
-                  }
-                  size={16}
-                  color={preview.fallback ? colors.warning : colors.success}
-                />
-                <Text
-                  style={[
-                    styles.previewLabel,
-                    { color: preview.fallback ? colors.warning : colors.success },
-                  ]}
-                >
-                  {preview.fallback
-                    ? t("暂时没能自动获取标题")
-                    : t("已自动获取标题")}
-                </Text>
-                <Pressable
-                  onPress={handleRefetch}
-                  disabled={titleFetching}
-                  style={styles.refetchBtn}
-                >
-                  <Ionicons name="refresh" size={13} color={colors.primary} />
-                  <Text style={[styles.refetchText, { color: colors.primary }]}>
-                    {t("重新获取")}
-                  </Text>
-                </Pressable>
-              </View>
-              {preview.fallback ? (
-                <Text
-                  style={[styles.previewFallbackText, { color: colors.textSecondary }]}
-                >
-                  {t(
-                    "暂时没能自动获取标题，你可以手动填写，或留空由我们提交时再试一次",
-                  )}
-                </Text>
-              ) : (
-                <Text
-                  style={[styles.previewTitle, { color: colors.text }]}
-                  numberOfLines={2}
-                >
-                  {preview.title}
-                </Text>
-              )}
-            </View>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fn-text-secondary)" }}>{t("标题")}</span>
+              <span style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>{t("（可选，留空自动获取）")}</span>
+            </div>
+            <Input
+              value={title}
+              onChange={(e) => {
+                const text = e.target.value;
+                setTitle(text);
+                setTitleEdited(true);
+              }}
+              placeholder={t("可手动填写标题")}
+              maxLength={200}
+              style={inputStyle}
+            />
+          </div>
+
+          {mode === "edit" && currentEditStatus === "rejected" ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: "rgba(217,119,6,0.10)",
+                borderRadius: 8,
+                paddingLeft: 10,
+                paddingRight: 10,
+                paddingTop: 8,
+                paddingBottom: 8,
+                marginBottom: 14,
+              }}
+            >
+              <Ionicons name="information-circle-outline" size={15} color="var(--fn-warning)" />
+              <span style={{ fontSize: 13, fontWeight: 600, flexShrink: 1, color: "var(--fn-warning)" }}>
+                {t("这条教程之前没通过审核，修改后会自动重新提交审核。")}
+              </span>
+            </div>
           ) : null}
 
-          <View style={styles.titleLabelRow}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-              {t("标题")}
-            </Text>
-            <Text style={[styles.titleOptional, { color: colors.textTertiary }]}>
-              {t("（可选，留空自动获取）")}
-            </Text>
-          </View>
-          <Input
-            value={title}
-            onChangeText={(text) => {
-              setTitle(text);
-              setTitleEdited(true);
-            }}
-            placeholder={t("可手动填写标题")}
-            placeholderTextColor={colors.textTertiary}
-            maxLength={200}
-            style={{
-              ...styles.urlInput,
-              color: colors.text,
-              backgroundColor: colors.chipBg,
-              borderColor: colors.border,
-            }}
-          />
-        </View>
+          {!loggedIn ? (
+            <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 2, marginBottom: 12 }}>
+              <Ionicons name="person-circle-outline" size={16} color="var(--fn-text-tertiary)" />
+              <span style={{ fontSize: 13, color: "var(--fn-text-tertiary)" }}>{t("登录后就可以分享教程啦")}</span>
+            </div>
+          ) : null}
 
-        {mode === "edit" && initial?.status === "rejected" ? (
-          <View style={styles.rejectedBanner}>
-            <Ionicons
-              name="information-circle-outline"
-              size={15}
-              color={colors.warning}
-            />
-            <Text style={[styles.rejectedBannerText, { color: colors.warning }]}>
-              {t("这条教程之前没通过审核，修改后会自动重新提交审核。")}
-            </Text>
-          </View>
-        ) : null}
+          {submitError ? (
+            <div style={{ fontSize: 13, lineHeight: 18, marginBottom: 12, color: "var(--fn-error)" }}>{submitError}</div>
+          ) : null}
 
-        {!loggedIn ? (
-          <View style={styles.loginNotice}>
-            <Ionicons
-              name="person-circle-outline"
-              size={16}
-              color={colors.textTertiary}
-            />
-            <Text style={[styles.loginNoticeText, { color: colors.textTertiary }]}>
-              {t("登录后就可以分享教程啦")}
-            </Text>
-          </View>
-        ) : null}
+          <Button
+            type="primary"
+            block
+            loading={submitting}
+            onClick={handleSubmit}
+            style={{ height: 50, borderRadius: 12, fontSize: 16, fontWeight: 700 }}
+          >
+            {mode === "edit" ? t("保存修改") : t("提交分享")}
+          </Button>
+        </div>
 
-        {submitError ? (
-          <Text style={[styles.error, { color: colors.error }]}>{submitError}</Text>
-        ) : null}
-
-        <Pressable
-          onPress={handleSubmit}
-          disabled={submitting}
-          style={({ pressed }) => [
-            styles.submitBtn,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed || submitting ? 0.8 : 1,
-            },
-          ]}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.submitBtnText}>
-              {mode === "edit" ? t("保存修改") : t("提交分享")}
-            </Text>
-          )}
-        </Pressable>
-      </ScrollView>
-
-      <AuthModal
-        visible={authVisible}
-        onClose={() => setAuthVisible(false)}
-        onLogin={(email, password, captcha) => auth.login(email, password, captcha)}
-        onLoginTFA={(email, totpToken, code) => auth.loginTFA(email, totpToken, code)}
-        onRegister={(email, password, captcha) => auth.register(email, password, captcha)}
-        onVerify={(email, code, password) => auth.verify(email, code, password)}
-        onRequestReset={(email) => auth.requestPasswordReset(email)}
-        onResetPassword={(email, code, password) =>
-          auth.resetPassword(email, code, password)
-        }
-      />
-    </View>
+        <AuthModal
+          visible={authVisible}
+          onClose={() => setAuthVisible(false)}
+          onLogin={(email, password, captcha) => auth.login(email, password, captcha)}
+          onRegister={(email, password, captcha) => auth.register(email, password, captcha)}
+          onVerify={(email, code, password) => auth.verify(email, code, password)}
+          onRequestReset={(email) => auth.requestPasswordReset(email)}
+          onResetPassword={(email, code, password) => auth.resetPassword(email, code, password)}
+        />
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: "100vh" },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 12,
-    paddingBottom: 8,
-    paddingHorizontal: 20,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  title: { flex: 1, fontSize: 17, fontWeight: "700", textAlign: "center" },
-  submitTopBtn: {
-    minWidth: 56,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-  },
-  submitTopText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
-  body: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 8 },
-  intro: { fontSize: 13, lineHeight: 20, marginBottom: 16 },
-  steps: { flexDirection: "row", alignItems: "flex-start", marginBottom: 18 },
-  stepItem: { alignItems: "center", width: 72 },
-  stepCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-  },
-  stepNum: { fontSize: 13, fontWeight: "700" },
-  stepLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 6,
-    textAlign: "center",
-  },
-  stepLine: { flex: 1, height: 2, marginTop: 12, marginHorizontal: 4 },
-  card: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 14 },
-  sectionLabel: { fontSize: 13, fontWeight: "600", marginBottom: 10 },
-  typeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
-  },
-  typeIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  typeTextWrap: { flex: 1 },
-  typeTitle: { fontSize: 14, fontWeight: "700" },
-  typeDesc: { fontSize: 12, marginTop: 2 },
-  urlInput: {
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-  },
-  sampleHint: { fontSize: 12, marginTop: 8 },
-  fetchingRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
-  fetchingText: { fontSize: 12 },
-  previewCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 10,
-  },
-  previewHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-  previewLabel: { flex: 1, fontSize: 12, fontWeight: "600" },
-  refetchBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    cursor: "pointer",
-  },
-  refetchText: { fontSize: 12, fontWeight: "600" },
-  previewTitle: { fontSize: 14, fontWeight: "600", marginTop: 6, lineHeight: 20 },
-  previewFallbackText: { fontSize: 12, lineHeight: 18, marginTop: 6 },
-  titleLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 14,
-    marginBottom: 10,
-  },
-  titleOptional: { fontSize: 12 },
-  rejectedBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(217,119,6,0.10)",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 14,
-  },
-  rejectedBannerText: { fontSize: 13, fontWeight: "600", flexShrink: 1 },
-  loginNotice: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 2,
-    marginBottom: 12,
-  },
-  loginNoticeText: { fontSize: 13 },
-  error: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
-  submitBtn: {
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
-});

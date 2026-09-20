@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authedFetch, useAuth } from "./auth";
 import { API_URL } from "./config";
 
@@ -32,20 +31,26 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
   const [terms, setTerms] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const termsRef = useRef<string[]>([]);
-  const scopeRef = useRef<string>(ANON_SCOPE);
+  const scopeRef = useRef<string>("anon");
   const epochRef = useRef(0);
   const syncChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  const historyKeyFor = (scope: string) => `search_history:${scope}`;
 
   const persist = useCallback(async (next: string[]) => {
     termsRef.current = next;
     setTerms(next);
-    await AsyncStorage.setItem(historyKeyFor(scopeRef.current), JSON.stringify(next));
+    try {
+      localStorage.setItem(`search_history:${scopeRef.current}`, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
   }, []);
 
   const loadScope = useCallback(async (scope: string) => {
     const epoch = ++epochRef.current;
     try {
-      const raw = await AsyncStorage.getItem(historyKeyFor(scope));
+      const raw = localStorage.getItem(`search_history:${scope}`);
       const p = raw ? JSON.parse(raw) : [];
       if (epochRef.current !== epoch) return epoch;
       termsRef.current = p;
@@ -58,7 +63,7 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
 
   // 首次加载：本地作用域的缓存（登录状态可能未就绪，由身份切换登录接手）
   useEffect(() => {
-    loadScope(ANON_SCOPE);
+    loadScope("anon");
   }, [loadScope]);
 
   // 登录后拉取服务器搜索历史并合并（本地优先，服务器补充），再推回合并结果。
@@ -91,27 +96,27 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
   // 身份切换：匿名<->用户、用户间登录，隔离各自本地缓存
   useEffect(() => {
     if (!auth.loaded) return;
-    const scope = auth.user?.email ?? ANON_SCOPE;
+    const scope = auth.user?.email ?? "anon";
     const prev = scopeRef.current;
     if (scope === prev) return;
 
     scopeRef.current = scope;
 
     (async () => {
-      if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
+      if (scope !== "anon" && prev === "anon") {
         // 匿名 -> 登录：把匿名本地历史合并进该账号（保留当前功能），再清理匿名缓存
         const anonTerms = termsRef.current;
         const epoch = await loadScope(scope);
         if (epochRef.current !== epoch) return;
         await syncFromServer(anonTerms);
-        AsyncStorage.removeItem(historyKeyFor(ANON_SCOPE)).catch(() => {});
+        localStorage.removeItem("search_history:anon");
         return;
       }
 
       // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，丢弃上一用户本地数据
       const epoch = await loadScope(scope);
       if (epochRef.current !== epoch) return;
-      if (scope !== ANON_SCOPE) {
+      if (scope !== "anon") {
         await syncFromServer();
       }
     })();
@@ -135,7 +140,7 @@ export function SearchHistoryProvider({ children }: { children: ReactNode }) {
     (term: string) => {
       const t = String(term ?? "").trim();
       if (!t) return;
-      const next = [t, ...termsRef.current.filter((x) => x !== t)].slice(0, MAX_ITEMS);
+      const next = [t, ...termsRef.current.filter((x) => x !== t)].slice(0, 20);
       persist(next);
       pushToServer(next);
     },

@@ -1,29 +1,19 @@
 "use client";
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
-} from "../ui/primitives";
+import { Spin } from "antd";
 import { Ionicons } from "../ui/icons";
-import { Toast } from "../ui/antd";
+import { message } from "@/components/antd-wrapper";
 import { deleteExperience, useSiteExperiences } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
-import { useThemeColors, type Colors } from "../../constants/colors";
 import type { Experience } from "../../lib/types";
 import AuthModal from "../AuthModal";
 import { ConfirmModal } from "../ConfirmModal";
-import { centeredContent } from "../../constants/layout";
 import { formatDate } from "../../lib/utils";
 import SeoHeading from "../SeoHeading";
-import { StyleSheet } from "../../lib/rnStyle";
 
 const DEFAULT_ASPECT = 3 / 4;
 const MIN_ASPECT = 0.6;
@@ -58,7 +48,6 @@ function buildColumns(
 
 function WaterfallCard({
   item,
-  colors,
   width,
   ratio,
   onRatio,
@@ -67,7 +56,6 @@ function WaterfallCard({
   onEdit,
 }: {
   item: Experience;
-  colors: Colors;
   width: number;
   ratio: number;
   onRatio: (id: number, value: number) => void;
@@ -77,28 +65,33 @@ function WaterfallCard({
 }) {
   const { t } = useTranslation();
   return (
-    <Pressable
-      onPress={() => onPress(item)}
-      style={({ pressed }) => [
-        styles.card,
-        {
-          width,
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
+    <button
+      type="button"
+      onClick={() => onPress(item)}
+      style={{
+        width,
+        borderRadius: 12,
+        border: "1px solid var(--fn-border)",
+        backgroundColor: "var(--fn-surface)",
+        overflow: "hidden",
+        padding: 0,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
     >
-      <View style={styles.imageWrap}>
+      <div style={{ width: "100%", position: "relative" }}>
         {item.cover ? (
           // eslint-disable-next-line @next/next/no-img-element -- 远程用户上传图片，无需 next/image 优化
           <img
             src={item.cover}
             alt={item.title}
             style={{
-              ...styles.image,
+              width: "100%",
+              display: "block",
               aspectRatio: `${ratio}`,
               objectFit: "cover",
+              borderTopLeftRadius: 12,
+              borderTopRightRadius: 12,
             }}
             onLoad={(e) => {
               const img = e.currentTarget;
@@ -108,64 +101,149 @@ function WaterfallCard({
             }}
           />
         ) : (
-          <View
-            style={[
-              styles.image,
-              styles.imagePlaceholder,
-              { backgroundColor: colors.chipBg, aspectRatio: ratio },
-            ]}
+          <div
+            style={{
+              width: "100%",
+              aspectRatio: ratio,
+              backgroundColor: "var(--fn-chip-bg)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderTopLeftRadius: 12,
+              borderTopRightRadius: 12,
+            }}
           >
-            <Ionicons name="flask-outline" size={28} color={colors.textTertiary} />
-          </View>
+            <Ionicons name="flask-outline" size={28} color="var(--fn-text-tertiary)" />
+          </div>
         )}
 
-        <View style={styles.priceBadge}>
-          <Text style={styles.priceText}>
+        <div
+          style={{
+            position: "absolute",
+            left: 8,
+            bottom: 8,
+            backgroundColor: "#FF2442",
+            paddingLeft: 8,
+            paddingRight: 8,
+            paddingTop: 3,
+            paddingBottom: 3,
+            borderRadius: 8,
+          }}
+        >
+          <span style={{ color: "#FFFFFF", fontSize: 12, fontWeight: 700 }}>
             {item.price} {t("积分")}
-          </Text>
-        </View>
-        <View style={styles.likeBadge}>
+          </span>
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            right: 8,
+            bottom: 8,
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 3,
+            backgroundColor: "rgba(0,0,0,0.35)",
+            paddingLeft: 7,
+            paddingRight: 7,
+            paddingTop: 3,
+            paddingBottom: 3,
+            borderRadius: 10,
+          }}
+        >
           <Ionicons name="heart" size={12} color="#FFFFFF" />
-          <Text style={styles.likeText}>{item.like_count}</Text>
-        </View>
-      </View>
+          <span style={{ color: "#FFFFFF", fontSize: 12, fontWeight: 600 }}>{item.like_count}</span>
+        </div>
+      </div>
 
-      <Text numberOfLines={2} style={[styles.cardTitle, { color: colors.text }]}>
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          lineHeight: 19,
+          color: "var(--fn-text)",
+          paddingLeft: 10,
+          paddingRight: 10,
+          paddingTop: 8,
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          textAlign: "left",
+        }}
+      >
         {item.title}
-      </Text>
-      <Text numberOfLines={1} style={[styles.cardAuthor, { color: colors.textTertiary }]}>
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--fn-text-tertiary)",
+          paddingLeft: 10,
+          paddingRight: 10,
+          paddingTop: 4,
+          paddingBottom: 8,
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+          textOverflow: "ellipsis",
+          textAlign: "left",
+        }}
+      >
         {item.author_name} · {formatDate(item.created_at)}
-      </Text>
+      </div>
 
       {item.is_mine ? (
-        <View style={styles.ownActions}>
-          <Pressable
-            onPress={() => onEdit(item)}
-            style={({ pressed }) => [
-              styles.ownBtn,
-              { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-            ]}
+        <div style={{ display: "flex", flexDirection: "row", gap: 8, paddingLeft: 10, paddingRight: 10, paddingBottom: 10 }}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(item);
+            }}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              border: "1px solid var(--fn-border)",
+              borderRadius: 8,
+              paddingTop: 5,
+              paddingBottom: 5,
+              paddingLeft: 10,
+              paddingRight: 10,
+              background: "none",
+              cursor: "pointer",
+            }}
           >
-            <Ionicons name="pencil-outline" size={13} color={colors.primary} />
-            <Text style={[styles.ownBtnText, { color: colors.primary }]}>
-              {t("编辑")}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => onDelete(item)}
-            style={({ pressed }) => [
-              styles.ownBtn,
-              { borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-            ]}
+            <Ionicons name="pencil-outline" size={13} color="var(--fn-primary)" />
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-primary)" }}>{t("编辑")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item);
+            }}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              border: "1px solid var(--fn-border)",
+              borderRadius: 8,
+              paddingTop: 5,
+              paddingBottom: 5,
+              paddingLeft: 10,
+              paddingRight: 10,
+              background: "none",
+              cursor: "pointer",
+            }}
           >
-            <Ionicons name="trash-outline" size={13} color={colors.error} />
-            <Text style={[styles.ownBtnText, { color: colors.error }]}>
-              {t("删除")}
-            </Text>
-          </Pressable>
-        </View>
+            <Ionicons name="trash-outline" size={13} color="var(--fn-error)" />
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-error)" }}>{t("删除")}</span>
+          </button>
+        </div>
       ) : null}
-    </Pressable>
+    </button>
   );
 }
 
@@ -173,21 +251,27 @@ function WaterfallCard({
 
 export default function SiteExperiencesClient() {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const router = useRouter();
   const auth = useAuth();
   const loggedIn = !!auth.token;
   const params = useParams<{ id: string }>();
   const siteId = Number(params?.id);
   const queryClient = useQueryClient();
-  const { width: windowWidth } = useWindowDimensions();
 
   const [authVisible, setAuthVisible] = useState(false);
   const [ratios, setRatios] = useState<Record<number, number>>({});
   const [pendingDelete, setPendingDelete] = useState<Experience | null>(null);
+  const [windowWidth, setWindowWidth] = useState(375);
 
   const { data: pages, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useSiteExperiences(siteId);
+
+  useEffect(() => {
+    const calc = () => setWindowWidth(window.innerWidth);
+    calc();
+    window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
+  }, []);
 
   const experiences = useMemo(
     () => pages?.pages.flatMap((p) => p.results) ?? [],
@@ -247,10 +331,10 @@ export default function SiteExperiencesClient() {
     setPendingDelete(null);
     try {
       await deleteExperience(siteId, item.id);
-      Toast.success(t("已删除"), 1.5);
+      message.success(t("已删除"), 1.5);
       refresh();
     } catch (e: unknown) {
-      Toast.fail(e instanceof Error ? e.message : t("删除失败"), 1.5);
+      message.error(e instanceof Error ? e.message : t("删除失败"), 1.5);
     }
   }, [pendingDelete, siteId, refresh, t]);
 
@@ -258,11 +342,7 @@ export default function SiteExperiencesClient() {
     (e: React.UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget;
       if (!el) return;
-      if (
-        hasNextPage &&
-        !isFetchingNextPage &&
-        el.scrollHeight - el.scrollTop - el.clientHeight < 120
-      ) {
+      if (hasNextPage && !isFetchingNextPage && el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
         fetchNextPage();
       }
     },
@@ -273,7 +353,6 @@ export default function SiteExperiencesClient() {
     <WaterfallCard
       key={item.id}
       item={item}
-      colors={colors}
       width={colWidth}
       ratio={clampAspect(ratios[item.id] || DEFAULT_ASPECT)}
       onRatio={handleRatio}
@@ -284,246 +363,181 @@ export default function SiteExperiencesClient() {
   );
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={[styles.topBar, { paddingTop: 12 }]}>
-        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <SeoHeading level={1} style={[styles.title, { color: colors.text }]}>
-          {t("个人经验")}
-        </SeoHeading>
-        <View style={styles.topBarRight}>
-          <Pressable
-            onPress={openPublish}
-            style={({ pressed }) => [
-              styles.publishBtn,
-              {
-                backgroundColor: colors.primaryLight,
-                borderColor: colors.primary,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Ionicons name="add" size={16} color={colors.primary} />
-            <Text style={[styles.publishBtnText, { color: colors.primary }]}>
-              {t("发布经验")}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : experiences.length === 0 ? (
-        <View style={styles.center}>
-          <View style={[styles.emptyIconWrap, { backgroundColor: colors.chipBg }]}>
-            <Ionicons name="flask-outline" size={36} color={colors.textTertiary} />
-          </View>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>
-            {t("暂无经验")}
-          </Text>
-          <Text style={[styles.emptyDesc, { color: colors.textTertiary }]}>
-            {t("发布第一份经验，赚取积分")}
-          </Text>
-          <Pressable
-            onPress={openPublish}
-            style={({ pressed }) => [
-              styles.emptyBtn,
-              { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
-            ]}
-          >
-            <Text style={[styles.emptyBtnText, { color: colors.surfaceSolid }]}>
-              {t("发布经验")}
-            </Text>
-          </Pressable>
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.list, centeredContent.container]}
-          onScroll={handleScroll}
+    <div style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px 48px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}
         >
-          <View style={styles.feed}>
-            <Text style={[styles.hint, { color: colors.textTertiary }]}>
-              {t("发布你的实战经验，其他人需积分购买解锁")}
-            </Text>
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={t("返回")}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              backgroundColor: "var(--fn-surface)",
+              border: "1px solid var(--fn-border)",
+              boxShadow: "var(--fn-shadow-xs)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <Ionicons name="chevron-back" size={22} color="var(--fn-text)" />
+          </button>
+          <SeoHeading level={1} style={{ fontSize: 17, fontWeight: 700, color: "var(--fn-text)" }}>
+            {t("个人经验")}
+          </SeoHeading>
+          <button
+            type="button"
+            onClick={openPublish}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              paddingTop: 6,
+              paddingBottom: 6,
+              paddingLeft: 10,
+              paddingRight: 10,
+              borderRadius: 16,
+              border: "1px solid var(--fn-primary)",
+              backgroundColor: "var(--fn-primary-light)",
+              cursor: "pointer",
+            }}
+          >
+            <Ionicons name="add" size={16} color="var(--fn-primary)" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fn-primary)" }}>{t("发布经验")}</span>
+          </button>
+        </div>
 
-            <View style={styles.columns}>
-              <View style={[styles.column, { gap: COLUMN_GAP }]}>
+        {isLoading ? (
+          <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Spin size="large" />
+          </div>
+        ) : experiences.length === 0 ? (
+          <div
+            style={{
+              minHeight: "50vh",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              paddingLeft: 32,
+              paddingRight: 32,
+              paddingBottom: 60,
+            }}
+          >
+            <div
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 36,
+                backgroundColor: "var(--fn-chip-bg)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 16,
+              }}
+            >
+              <Ionicons name="flask-outline" size={36} color="var(--fn-text-tertiary)" />
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: "var(--fn-text)" }}>{t("暂无经验")}</div>
+            <div style={{ fontSize: 13, marginTop: 6, color: "var(--fn-text-tertiary)", textAlign: "center" }}>
+              {t("发布第一份经验，赚取积分")}
+            </div>
+            <button
+              type="button"
+              onClick={openPublish}
+              style={{
+                marginTop: 18,
+                borderRadius: 22,
+                paddingTop: 10,
+                paddingBottom: 10,
+                paddingLeft: 30,
+                paddingRight: 30,
+                backgroundColor: "var(--fn-primary)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fn-surface-solid)" }}>{t("发布经验")}</span>
+            </button>
+          </div>
+        ) : (
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            onScroll={handleScroll}
+          >
+            <div style={{ fontSize: 13, lineHeight: 19, marginTop: 4, color: "var(--fn-text-tertiary)" }}>
+              {t("发布你的实战经验，其他人需积分购买解锁")}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "row", gap: COLUMN_GAP }}>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: COLUMN_GAP, minWidth: 0 }}>
                 {colLeft.map(renderCard)}
-              </View>
-              <View style={[styles.column, { gap: COLUMN_GAP }]}>
+              </div>
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: COLUMN_GAP, minWidth: 0 }}>
                 {colRight.map(renderCard)}
-              </View>
-            </View>
+              </div>
+            </div>
 
             {hasNextPage ? (
-              <Pressable
-                onPress={() => fetchNextPage()}
-                style={[styles.loadMore, { borderColor: colors.border }]}
+              <button
+                type="button"
+                onClick={() => fetchNextPage()}
+                style={{
+                  border: "1px solid var(--fn-border)",
+                  borderRadius: 10,
+                  paddingTop: 12,
+                  paddingBottom: 12,
+                  height: 44,
+                  textAlign: "center",
+                  background: "none",
+                  cursor: "pointer",
+                  marginTop: 14,
+                }}
               >
-                <Text style={[styles.loadMoreText, { color: colors.primary }]}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fn-primary)" }}>
                   {isFetchingNextPage ? t("加载中…") : t("加载更多")}
-                </Text>
-              </Pressable>
+                </span>
+              </button>
             ) : null}
-          </View>
-        </ScrollView>
-      )}
-
-      <ConfirmModal
-        visible={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        onConfirm={confirmDelete}
-        title={t("删除经验")}
-        message={t(
-          "确认删除「{{title}}」？将扣除 {{cost}} 积分（3 倍购买定价），购买与点赞记录将保留。",
-          {
-            title: pendingDelete?.title ?? "",
-            cost: (pendingDelete?.price ?? 0) * 3,
-          },
+          </div>
         )}
-        confirmText={t("确认删除")}
-        destructive
-      />
 
-      <AuthModal
-        visible={authVisible}
-        onClose={() => setAuthVisible(false)}
-        onLogin={(email, password, captcha) => auth.login(email, password, captcha)}
-        onLoginTFA={(email, totpToken, code) => auth.loginTFA(email, totpToken, code)}
-        onRegister={(email, password, captcha) => auth.register(email, password, captcha)}
-        onVerify={(email, code, password) => auth.verify(email, code, password)}
-        onRequestReset={(email) => auth.requestPasswordReset(email)}
-        onResetPassword={(email, code, password) => auth.resetPassword(email, code, password)}
-      />
-    </View>
+        <ConfirmModal
+          visible={!!pendingDelete}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={confirmDelete}
+          title={t("删除经验")}
+          message={t(
+            "确认删除「{{title}}」？将扣除 {{cost}} 积分（3 倍购买定价），购买与点赞记录将保留。",
+            { title: pendingDelete?.title ?? "", cost: (pendingDelete?.price ?? 0) * 3 },
+          )}
+          confirmText={t("确认删除")}
+          destructive
+        />
+
+        <AuthModal
+          visible={authVisible}
+          onClose={() => setAuthVisible(false)}
+          onLogin={(email, password, captcha) => auth.login(email, password, captcha)}
+          onRegister={(email, password, captcha) => auth.register(email, password, captcha)}
+          onVerify={(email, code, password) => auth.verify(email, code, password)}
+          onRequestReset={(email) => auth.requestPasswordReset(email)}
+          onResetPassword={(email, code, password) => auth.resetPassword(email, code, password)}
+        />
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: "100vh" },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 8,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  title: { fontSize: 17, fontWeight: "700" },
-  topBarRight: { width: 84, alignItems: "flex-end" },
-  publishBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  publishBtnText: { fontSize: 13, fontWeight: "600" },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingBottom: 60,
-  },
-  list: { alignItems: "stretch", paddingBottom: 40 },
-  feed: {
-    width: "100%",
-    maxWidth: 720,
-    alignSelf: "center",
-    paddingHorizontal: 20,
-  },
-  hint: { fontSize: 13, lineHeight: 19, marginTop: 4, marginBottom: 14 },
-  columns: { flexDirection: "row", gap: COLUMN_GAP },
-  column: { flex: 1 },
-  card: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
-  imageWrap: { width: "100%" },
-  image: {
-    width: "100%",
-    display: "block",
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  imagePlaceholder: { alignItems: "center", justifyContent: "center" },
-  priceBadge: {
-    position: "absolute",
-    left: 8,
-    bottom: 8,
-    backgroundColor: "#FF2442",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  priceText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
-  likeBadge: {
-    position: "absolute",
-    right: 8,
-    bottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  likeText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 19,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-  },
-  cardAuthor: {
-    fontSize: 12,
-    paddingHorizontal: 10,
-    paddingTop: 4,
-    paddingBottom: 8,
-  },
-  ownActions: { flexDirection: "row", gap: 8, paddingHorizontal: 10, paddingBottom: 10 },
-  ownBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  ownBtnText: { fontSize: 12, fontWeight: "600" },
-  emptyIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  emptyTitle: { fontSize: 17, fontWeight: "700" },
-  emptyDesc: { fontSize: 13, marginTop: 6, textAlign: "center" },
-  emptyBtn: { marginTop: 18, borderRadius: 22, paddingVertical: 10, paddingHorizontal: 30 },
-  emptyBtnText: { fontSize: 14, fontWeight: "600" },
-  loadMore: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 14,
-  },
-  loadMoreText: { fontSize: 14, fontWeight: "600" },
-});

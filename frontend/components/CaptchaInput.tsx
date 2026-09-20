@@ -1,15 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Image,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import Input from "@ant-design/react-native/es/input";
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Ionicons } from "../components/ui/icons";
+import { Input } from "@/components/antd-wrapper";
 import { fetchCaptcha } from "../lib/captcha";
-import { useThemeColors } from "../constants/colors";
+import type { useThemeColors } from "../constants/colors";
 import { useTranslation } from "react-i18next";
 
 interface Props {
@@ -24,7 +19,7 @@ interface Props {
  * 拿到 token 后通过 onResolved 交给父组件在提交时附带。
  */
 export default function CaptchaInput({
-  colors,
+  colors: _colors,
   value,
   onChangeText,
   onResolved,
@@ -49,7 +44,7 @@ export default function CaptchaInput({
       setToken(data.token);
       onChangeTextRef.current("");
       onResolvedRef.current(data.token, "");
-    } catch (e: any) {
+    } catch {
       setImage(null);
       setToken(null);
       onChangeTextRef.current("");
@@ -69,85 +64,65 @@ export default function CaptchaInput({
   };
 
   return (
-    <View style={styles.row}>
-      <View
-        style={[
-          styles.inputWrap,
-          {
-            backgroundColor: colors.chipBg,
-            borderColor: colors.border,
-          },
-        ]}
+    <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          paddingLeft: 12,
+          paddingRight: 12,
+          paddingTop: 10,
+          paddingBottom: 10,
+          borderRadius: "var(--fn-radius-md)",
+          border: "1px solid var(--fn-border)",
+          backgroundColor: "var(--fn-chip-bg)",
+          flex: 1,
+          minWidth: 0,
+        }}
       >
-        <Ionicons name="shield-checkmark-outline" size={18} color={colors.textTertiary} />
+        <Ionicons name="shield-checkmark-outline" size={18} color="var(--fn-text-tertiary)" />
         <Input
           value={value}
-          onChangeText={handleText}
+          onChange={(e) => handleText(e.target.value)}
           placeholder={t("图形验证码")}
-          placeholderTextColor={colors.textTertiary}
-          autoCapitalize="none"
-          autoCorrect={false}
           maxLength={6}
-          style={styles.inputContainer}
-          inputStyle={[styles.inputText, { color: colors.text }]}
+          variant="borderless"
+          style={{ flex: 1, backgroundColor: "transparent" }}
         />
-      </View>
-      <Pressable
-        onPress={load}
+      </div>
+      <button
+        type="button"
+        onClick={load}
         disabled={loading}
-        style={[
-          styles.imageWrap,
-          { borderColor: colors.border, opacity: loading ? 0.6 : 1 },
-        ]}
+        aria-label={t("刷新验证码")}
+        style={{
+          width: 96,
+          height: 46,
+          flexShrink: 0,
+          borderRadius: "var(--fn-radius-md)",
+          border: "1px solid var(--fn-border)",
+          backgroundColor: "var(--fn-surface)",
+          opacity: loading ? 0.6 : 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          cursor: loading ? "not-allowed" : "pointer",
+          padding: 0,
+        }}
       >
         {image ? (
-          <Image source={{ uri: image }} style={styles.image} resizeMode="contain" />
+          <img
+            src={image}
+            alt="Captcha"
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
         ) : (
-          <Text style={[styles.fallback, { color: colors.textTertiary }]}>
-            {t("加载中…")}
-          </Text>
+          <span style={{ fontSize: 11, color: "var(--fn-text-tertiary)" }}>{t("加载中…")}</span>
         )}
-      </Pressable>
-    </View>
+      </button>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    gap: 10,
-    alignItems: "stretch",
-  },
-  inputWrap: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  inputContainer: {
-    flex: 1,
-  },
-  inputText: {
-    fontSize: 15,
-    borderWidth: 0,
-  },
-  imageWrap: {
-    width: 96,
-    height: 46,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
-  fallback: {
-    fontSize: 11,
-  },
-});

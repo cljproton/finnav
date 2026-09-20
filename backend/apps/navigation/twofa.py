@@ -1,11 +1,11 @@
-"""TOTP 双因素认证（2FA）实现。
+"""TOTP 双因素认证（2FA）核心工具函数。
 
-流程：
-- GET  /api/auth/twofa/status/    当前用户是否已启用（供前端展示开关状态）
-- GET  /api/auth/twofa/setup/     生成密钥 + otpauth URL + 二维码(base64 PNG)（未启用前可多次调用）
-- POST /api/auth/twofa/confirm/   body{code} 校验动态码后启用
-- POST /api/auth/twofa/disable/   body{code} 校验动态码后停用
-- POST /api/auth/twofa/challenge/ body{totp_token, code} 登录二次验证，校验后签发 JWT
+后台管理员登录与自助配置页面依赖以下函数：
+- user_has_2fa(user)          判断用户是否启用了 2FA
+- verify_user_code(user, code)  校验用户动态码（用于 admin 登录）
+- twofa_secret(user)           获取/创建用户 TwoFactor 记录（admin 页面展示二维码用）
+- _otpauth_url, _qr_datauri    生成 otpauth URL 与二维码（admin 页面用）
+- _verify_secret               底层 TOTP 校验
 """
 import base64
 import io
@@ -14,27 +14,8 @@ import pyotp
 import qrcode
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.throttling import SimpleRateThrottle
 
 from .models import TOTPChallenge, TwoFactor
-
-
-class TwoFAChallengeThrottle(SimpleRateThrottle):
-    """2FA 挑战接口按 IP 限流，缓解暴力枚举。"""
-
-    scope = 'twofa_challenge'
-    rate = '10/min'
-
-    def get_cache_key(self, request, view):
-        if request.user and request.user.is_authenticated:
-            ident = f'user:{request.user.pk}'
-        else:
-            ident = self.get_ident(request)
-        return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
 def twofa_secret(user):
@@ -86,108 +67,3 @@ def _verify_code(row, code):
 
 def _verify_secret(secret, code):
     return pyotp.TOTP(secret).verify(code)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def twofa_status(request):
-    """GET /api/auth/twofa/status/ -> {enabled}"""
-    row = TwoFactor.objects.filter(user=request.user).first()
-    return Response({'enabled': bool(row and row.enabled)})
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def twofa_setup(request):
-    """GET /api/auth/twofa/setup/ -> {secret, otpauth_url, qr}"""
-    row = twofa_secret(request.user)
-    if row.enabled:
-        return Response({'enabled': True}, status=status.HTTP_200_OK)
-    url = _otpauth_url(request.user, row)
-    return Response(
-        {
-            'enabled': False,
-            'secret': row.secret,
-            'otpauth_url': url,
-            'qr': _qr_datauri(url),
-        }
-    )
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def twofa_confirm(request):
-    """POST /api/auth/twofa/confirm/ {code} 启用 2FA（校验动态码后落库）。"""
-    session_row = twofa_secret(request.user)
-    code = (request.data.get('code') or '').strip()
-    if not code:
-        return Response({'code': _('请输入 6 位动态码。')}, status=status.HTTP_400_BAD_REQUEST)
-    totp = _verify_secret(session_row.secret, code)
-    if not totp:
-        return Response({'code': _('动态码错误，请重试。')}, status=status.HTTP_400_BAD_REQUEST)
-    session_row.enabled = True
-    if not session_row.confirmed_at:
-        session_row.confirmed_at = timezone.now()
-    session_row.save(update_fields=['enabled', 'confirmed_at'])
-    return Response({'enabled': True})
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def twofa_disable(request):
-    """POST /api/auth/twofa/disable/ {code} 校验当前动态码后停用 2FA。"""
-    row = TwoFactor.objects.filter(user=request.user).first()
-    if row is None:
-        return Response({'enabled': False}, status=status.HTTP_200_OK)
-    code = (request.data.get('code') or '').strip()
-    if not code or not _verify_secret(row.secret, code):
-        return Response({'code': _('动态码错误，请重试。')}, status=status.HTTP_400_BAD_REQUEST)
-    row.enabled = False
-    row.confirmed_at = None
-    row.save(update_fields=['enabled', 'confirmed_at'])
-    return Response({'enabled': False})
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@throttle_classes([TwoFAChallengeThrottle])
-def twofa_challenge(request):
-    """POST /api/auth/twofa/challenge/ {totp_token, code} 登录二次校验。
-
-    密码第一步已签发 totp_token；这里校验 2FA 动态码后返回正式 JWT。
-    每个挑战最多尝试 MAX_ATTEMPTS 次，超限即作废，防止动态码暴力枚举。
-    """
-    from .auth import EmailTokenObtainPairSerializer
-
-    token = (request.data.get('totp_token') or '').strip()
-    code = (request.data.get('code') or '').strip()
-    if not token or not code:
-        return Response(
-            {'detail': _('缺少挑战令牌或验证码。')}, status=status.HTTP_400_BAD_REQUEST
-        )
-    challenge = TOTPChallenge.objects.filter(token=token, used=False).first()
-    if challenge is None or timezone.now() >= challenge.expires_at:
-        return Response(
-            {'detail': _('登录凭据已过期，请重新登录。')}, status=status.HTTP_401_UNAUTHORIZED
-        )
-    if challenge.attempts >= TOTPChallenge.MAX_ATTEMPTS:
-        challenge.used = True
-        challenge.save(update_fields=['used'])
-        return Response(
-            {'detail': _('登录凭据已失效，请重新登录。')}, status=status.HTTP_401_UNAUTHORIZED
-        )
-    row = TwoFactor.objects.filter(user=challenge.user, enabled=True).first()
-    if row is None or not _verify_code(row, code):
-        challenge.attempts = challenge.attempts + 1
-        challenge.save(update_fields=['attempts'])
-        return Response(
-            {'code': _('动态码错误，请重试。')}, status=status.HTTP_400_BAD_REQUEST
-        )
-    challenge.used = True
-    challenge.save(update_fields=['used'])
-    from rest_framework_simplejwt.tokens import RefreshToken
-
-    refresh = RefreshToken.for_user(challenge.user)
-    return Response(
-        {'access': str(refresh.access_token), 'refresh': str(refresh)}
-    )

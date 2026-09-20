@@ -26,9 +26,6 @@ services:
       DB_CHARSET: "${DB_CHARSET:-utf8mb4}"
       DB_CONN_MAX_AGE: "${DB_CONN_MAX_AGE:-60}"
       MEDIA_ROOT: "/srv/data/media"
-      # 静态 SEO 页面输出目录：写入共享数据卷 docker/data/web-seo，
-      # 前端 nginx 只读挂载到 /seo-generated 供爬虫抓取。
-      WEB_SEO_OUTPUT_DIR: "/srv/data/web-seo"
     volumes:
       - ./data:/srv/data
     healthcheck:
@@ -42,21 +39,15 @@ services:
     build:
       context: ..
       dockerfile: docker/frontend/Dockerfile
-      # SPA 壳兜底 SEO；服务器零构建部署不受影响，仅本地 --build 时生效
-      args:
-        SEO_ORIGIN: "${SEO_ORIGIN:-https://fn.9418666.xyz}"
-        SEO_TITLE: "${SEO_TITLE:-金融与 Web3 站点导航 | FinNav}"
-        SEO_DESCRIPTION: "${SEO_DESCRIPTION:-FinNav：一个金融与 Web3 站点导航，收录官网入口、APP 下载、新手教程与用户评价。}"
     image: "${FRONTEND_IMAGE:-finnav-frontend}"
     pull_policy: missing
     restart: unless-stopped
     depends_on:
       - backend
-    # 一体化部署：前端 nginx 反代到内网 backend（${BACKEND_URL} 经 envsubst 注入）
+    # Next.js 服务器模式：内部端口 3000，通过 rewrites 代理 /api 和 /media 到后端
     environment:
-      BACKEND_URL: "http://backend:8000"
-    volumes:
-      # 后端 render_seo_pages 生成的静态 SEO 页面，只读挂载给 nginx 兜底抓取
-      - ./data/web-seo:/usr/share/nginx/html/seo-generated:ro
+      BACKEND_ORIGIN: "http://backend:8000"
+      BACKEND_API_URL: "http://backend:8000/api"
+      NEXT_PUBLIC_DEFAULT_DOMAIN: "${SEO_ORIGIN:-https://fn.9418666.xyz}"
     ports:
-      - "127.0.0.1:${PORT:-80}:80"
+      - "127.0.0.1:${PORT:-3000}:3000"

@@ -3,34 +3,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
-import { useSitesInfinite, useCategories, useSettings } from "../../lib/api";
-import { useThemeColors } from "../../constants/colors";
+import { useSitesInfinite } from "../../lib/api";
 import { useSearchHistory } from "../../lib/searchHistory";
-import { View, Text, Pressable, ScrollView } from "../../components/ui/primitives";
 import { Ionicons } from "../../components/ui/icons";
-import CategoryChips from "../CategoryChips";
 import SiteCard from "../SiteCard";
 import SkeletonCard from "../SkeletonCard";
 import ErrorState from "../ErrorState";
 import EmptyState from "../EmptyState";
 import InternalLink from "../InternalLink";
-import PageHero from "../PageHero";
 import BackToTopButton from "../BackToTopButton";
-import { centeredContent } from "../../constants/layout";
-import SiteFooter from "../SiteFooter";
-import { SearchBar } from "../../components/ui/antd";
+import { InputSearch } from "@/components/antd-wrapper";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
 
 export default function SearchClient() {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { loaded: historyLoaded, terms: historyTerms, addTerm, removeTerm, clearAll } = useSearchHistory();
-  const { data: settings } = useSettings();
 
   useEffect(() => {
     const q = searchParams.get("q")?.trim();
@@ -52,6 +44,10 @@ export default function SearchClient() {
     }, 400);
   }, []);
 
+  const handleSearchChange = useCallback((text: string) => {
+    handleChange(text);
+  }, [handleChange]);
+
   const {
     data: sitePages,
     isLoading,
@@ -66,14 +62,6 @@ export default function SearchClient() {
 
   const sites = useMemo(() => (sitePages?.pages ?? []).flatMap((p) => p.results), [sitePages]);
   const totalCount = sitePages?.pages[0]?.count ?? 0;
-
-  const { data: categories } = useCategories();
-
-  const hotTerms = useMemo(() => {
-    const fromCats = (categories ?? []).filter((c) => c.name).map((c) => c.name);
-    const common = [t("钱包"), t("交易所"), t("教程"), t("下载")];
-    return Array.from(new Set([...common, ...fromCats]));
-  }, [categories, t]);
 
   const handleSelectTerm = useCallback(
     (term: string) => {
@@ -91,122 +79,155 @@ export default function SearchClient() {
 
   const { ref: scrollRef, showButton } = useScrollToTop({ threshold: 200 });
 
+  const handleSubmit = useCallback(() => {
+    const t = query.trim();
+    if (t) {
+      addTerm(t);
+      if (debouncedQuery !== t) {
+        setDebouncedQuery(t);
+      }
+    }
+  }, [query, debouncedQuery, addTerm]);
+
   return (
-    <div style={{ backgroundColor: colors.background, minHeight: "100vh" }}>
-      <ScrollView
+    <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div
+        className="fn-flex fn-flex-col fn-overflow-y-auto"
         ref={scrollRef}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }}>
-        <div style={{ paddingTop: 16 }}>
-          <PageHero title={t("搜索站点")} />
-          <div style={{ paddingLeft: 16, paddingRight: 16, paddingTop: 14 }}>
-            <SearchBar
-              value={query}
-              onChange={handleChange}
-              onSubmit={() => {
-                const t = query.trim();
-                if (t) {
-                  addTerm(t);
-                  if (debouncedQuery !== t) {
-                    setDebouncedQuery(t);
-                  }
-                }
-              }}
-              placeholder={t("输入名称、描述或标签...")}
-              showCancelButton={false}
-              style={{ borderRadius: 10 }}
-            />
-          </div>
+        style={{ scrollBehavior: "auto" }}
+      >
+        {/* Search header */}
+        <div className="fn-px-5 fn-py-3 fn-flex fn-items-center fn-justify-between" style={{ paddingInline: 20, paddingTop: 12, paddingBottom: 8, display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <button
+            type="button"
+            onClick={() => window.history.back()}
+            className="fn-p-1 fn-cursor-pointer"
+            style={{ padding: 8, cursor: "pointer", border: "none", background: "transparent" }}
+            aria-label="返回"
+          >
+            <Ionicons name="chevron-back" size={24} color="var(--fn-text)" />
+          </button>
+          <span className="fn-text-xl fn-font-bold fn-text-primary fn-flex-1 fn-text-center" style={{ fontSize: 20, fontWeight: 700, flex: 1, textAlign: "center" }}>搜索</span>
+          <div className="fn-w-10" style={{ width: 40 }} />
         </div>
 
+        {/* Search input */}
+        <div className="fn-px-5 fn-pt-3.5" style={{ paddingInline: 20, paddingTop: 14 }}>
+          <InputSearch
+            value={query}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSearchChange(e.target.value)}
+            onSearch={handleSubmit}
+            placeholder={t("搜索名称、描述或标签...")}
+            style={{
+              borderRadius: "var(--fn-radius-md)",
+              borderWidth: 1,
+              borderColor: "var(--fn-border)",
+              backgroundColor: "var(--fn-surface)",
+              padding: "12px 16px",
+              boxShadow: "var(--fn-shadow-xs)",
+            }}
+            enterButton
+          />
+        </div>
+
+        {/* Results / Empty / Loading / Error */}
         {isLoading && showResults ? (
-          <div style={{ ...centeredContent.container, display: "flex", flexDirection: "column", gap: 10, paddingTop: 16 }}>
+          <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
             {[1, 2, 3].map((i) => <SkeletonCard key={i} />)}
           </div>
         ) : error ? (
-          <ErrorState message={error.message || t("搜索失败")} onRetry={() => refetch()} />
+          <div className="fn-p-5" style={{ padding: 20 }}>
+            <ErrorState message={error.message || t("搜索失败")} onRetry={() => refetch()} />
+          </div>
         ) : !showResults ? (
-          <div style={{ ...centeredContent.container, paddingBottom: 80 }}>
+          <div className="fn-pb-20" style={{ paddingBottom: 80 }}>
+            <div className="fn-px-5 fn-pt-6" style={{ paddingInline: 20, paddingTop: 24 }}>
+              <span className="fn-text-sm fn-text-tertiary fn-mb-3" style={{ fontSize: 13, color: "var(--fn-text-tertiary)", marginBottom: 12 }}>热门搜索</span>
+              <div className="fn-pb-1" style={{ display: "flex", flexWrap: "wrap", overflowX: "visible", gap: 8, paddingBottom: 4 }}>
+                {["钱包", "交易所", "DeFi", "下载", "教程", "行情", "银行", "券商"].map((term) => (
+                  <button
+                    key={term}
+                    type="button"
+                    onClick={() => handleSelectTerm(term)}
+                    className="fn-px-3.5 fn-py-2 fn-rounded-full fn-border-default fn-bg-surface fn-transition-fast fn-cursor-pointer"
+                    style={{
+                      paddingInline: 14,
+                      paddingRight: 14,
+                      paddingTop: 8,
+                      paddingBottom: 8,
+                      borderWidth: 1,
+                      borderRadius: "var(--fn-radius-full)",
+                      backgroundColor: "var(--fn-surface)",
+                      borderColor: "var(--fn-border)",
+                      transition: "all 150ms cubic-bezier(0.16, 1, 0.3, 1)",
+                    }}
+                  >
+                    <span className="fn-text-sm fn-text-brand" style={{ fontSize: 13, color: "var(--fn-primary)" }}>{term}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
             {historyLoaded && historyTerms.length > 0 ? (
-              <div style={{ paddingLeft: 20, paddingRight: 20, paddingTop: 24 }}>
-                <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <Text style={{ fontSize: 13, color: colors.textTertiary }}>{t("搜索历史")}</Text>
-                  <Pressable onPress={clearAll} style={{ padding: 8 }}>
-                    <Text style={{ fontSize: 12, color: colors.textTertiary }}>{t("清空")}</Text>
-                  </Pressable>
+<div className="fn-px-5 fn-pt-6" style={{ paddingInline: 20, paddingTop: 24 }}>
+                <div className="fn-flex fn-items-center fn-justify-between fn-mb-3" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <span className="fn-text-sm fn-text-tertiary" style={{ fontSize: 13, color: "var(--fn-text-tertiary)" }}>搜索历史</span>
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    className="fn-p-1 fn-cursor-pointer"
+                    style={{ padding: 8 }}
+                  >
+                    <span className="fn-text-xs fn-text-tertiary" style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>清空</span>
+                  </button>
                 </div>
-                <div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                <div className="fn-pb-1" style={{ display: "flex", flexWrap: "wrap", overflowX: "visible", gap: 8, paddingBottom: 4 }}>
                   {historyTerms.map((term) => (
-                    <Pressable
+                    <button
                       key={term}
-                      onPress={() => handleSelectTerm(term)}
+                      type="button"
+                      onClick={() => handleSelectTerm(term)}
+                      className="fn-px-3.5 fn-py-2 fn-rounded-full fn-border-default fn-bg-surface fn-transition-fast fn-cursor-pointer"
                       style={{
-                        paddingLeft: 14, paddingRight: 14,
-                        paddingTop: 8, paddingBottom: 8,
+                        paddingInline: 14,
+                        paddingRight: 14,
+                        paddingTop: 8,
+                        paddingBottom: 8,
                         borderWidth: 1,
-                        borderRadius: 999,
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
+                        borderRadius: "var(--fn-radius-full)",
+                        backgroundColor: "var(--fn-surface)",
+                        borderColor: "var(--fn-border)",
+                        transition: "all 150ms cubic-bezier(0.16, 1, 0.3, 1)",
                       }}
                     >
-                      <Text style={{ fontSize: 13, color: colors.text }}>{term}</Text>
-                    </Pressable>
+                      <span className="fn-text-sm fn-text-primary" style={{ fontSize: 13, color: "var(--fn-text)" }}>{term}</span>
+                    </button>
                   ))}
                 </div>
               </div>
             ) : null}
-
-            {hotTerms.length > 0 ? (
-              <div style={{ paddingLeft: 20, paddingRight: 20, paddingTop: 24 }}>
-                <Text style={{ fontSize: 13, color: colors.textTertiary }}>{t("热门搜索")}</Text>
-                <div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
-                  {hotTerms.map((term) => (
-                    <Pressable
-                      key={term}
-                      onPress={() => handleSelectTerm(term)}
-                      style={{
-                        paddingLeft: 14, paddingRight: 14,
-                        paddingTop: 8, paddingBottom: 8,
-                        borderWidth: 1,
-                        borderRadius: 999,
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, color: colors.primary }}>{term}</Text>
-                    </Pressable>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <EmptyState icon="search-outline" title={t("搜索你需要的站点")} message={t("输入关键词查找金融和 Web3 工具")} />
-            )}
-
-            <InternalLink href="/" style={{ display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 6, paddingLeft: 20, paddingRight: 20 }}>
-              <Text style={{ color: colors.primary, fontSize: 15 }}>← {t("返回首页")}</Text>
+            <InternalLink href="/" className="fn-flex fn-flex-row fn-items-center fn-justify-center fn-mt-1.5 fn-px-5 fn-pt-4" style={{ display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 6, paddingLeft: 20, paddingRight: 20, paddingTop: 16 }}>
+              <Ionicons name="chevron-back" size={16} color="var(--fn-primary)" />
+              <span className="fn-text-md fn-text-brand fn-ml-1" style={{ color: "var(--fn-primary)", fontSize: 15, marginLeft: 4 }}>返回首页</span>
             </InternalLink>
-
-            <SiteFooter showNav={false} />
           </div>
         ) : sites && sites.length > 0 ? (
-          <div style={{ ...centeredContent.container, paddingLeft: 20, paddingRight: 20, paddingTop: 16 }}>
-            <Text style={{ fontSize: 12, marginBottom: 8, color: colors.textTertiary }}>{t("找到 {{count}} 个结果", { count: totalCount })}</Text>
+          <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
+            <div className="fn-col-span-full fn-mb-2" style={{ gridColumn: "1 / -1", marginBottom: 8 }}>
+              <span className="fn-text-sm fn-text-tertiary" style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>{t("找到 {{count}} 个结果", { count: totalCount })}</span>
+            </div>
             {sites.map((site) => (
               <SiteCard key={String(site.id)} site={site} />
             ))}
-            <div ref={(el) => { if (el) el.id = "sentinel"; }} style={{ height: 20 }} />
+            <div className="fn-h-5 fn-col-span-full" style={{ height: 20, gridColumn: "1 / -1" }} />
             {isFetchingNextPage ? (
-              <Text style={{ textAlign: "center", paddingTop: 16, paddingBottom: 16, color: colors.textTertiary }}>{t("加载中…")}</Text>
-            ) : (
-              <SiteFooter showNav={false} />
-            )}
+              <span className="fn-text-center fn-py-4 fn-col-span-full fn-text-tertiary" style={{ textAlign: "center", paddingTop: 16, paddingBottom: 16, color: "var(--fn-text-tertiary)", gridColumn: "1 / -1" }}>加载中…</span>
+            ) : null}
           </div>
         ) : (
           <EmptyState icon="search-outline" title={t("没有找到相关站点")} message={t("换个关键词试试？")} />
         )}
         {showButton && <BackToTopButton scrollRef={scrollRef} threshold={200} />}
-      </ScrollView>
+      </div>
     </div>
   );
 }

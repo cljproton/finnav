@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
-import { usePathname } from "expo-router";
+import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../lib/api";
 import { brandOf, composeTitle, NOINDEX_ROBOTS } from "../lib/seoCopy";
@@ -52,7 +51,7 @@ export default function SeoUpdater() {
   });
 
   useEffect(() => {
-    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    if (typeof document === "undefined") return;
 
     if (document.title !== title) document.title = title;
     upsertMeta("description", description);

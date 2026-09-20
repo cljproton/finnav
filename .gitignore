@@ -19,6 +19,9 @@ frontend/dist/
 frontend/web-build/
 frontend/.env
 npm-debug.log*
+frontend/.next/
+frontend/out/
+frontend/test-results/
 
 # 移动端打包
 scripts/build.env
@@ -31,3 +34,6 @@ frontend/build/
 docker/.env
 logs/
 .run/
+
+# 杂项
+prod.txt

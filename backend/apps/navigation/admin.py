@@ -644,28 +644,6 @@ class AppSettingAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-    def get_urls(self):
-        urls = super().get_urls()
-        custom = [
-            path(
-                'rebuild-seo/',
-                self.admin_site.admin_view(self.rebuild_seo),
-                name='navigation_appsetting_rebuild_seo',
-            ),
-        ]
-        return custom + urls
-
-    def rebuild_seo(self, request):
-        """手动触发整站静态 SEO 页面重建（首页/搜索/各站点详情页）。"""
-        from django.core import management
-
-        try:
-            management.call_command('render_seo_pages', verbosity=0)
-            self.message_user(request, '静态 SEO 页面已重建完成（首页/搜索/各站点）。')
-        except Exception as exc:  # noqa: BLE001 —— 管理后台操作需容错，避免整站报错
-            messages.error(request, f'重建失败：{exc}')
-        return redirect(request.META.get('HTTP_REFERER') or 'index')
-
 
 @admin.register(Captcha)
 class CaptchaAdmin(admin.ModelAdmin):

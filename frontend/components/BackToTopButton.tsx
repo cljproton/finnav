@@ -1,125 +1,104 @@
-import React, {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  Animated,
-  FlatList,
-  ScrollView,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+// @ts-nocheck
+"use client";
+
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
+import { Ionicons } from "../components/ui/icons";
 import { useTranslation } from "react-i18next";
-import { useThemeColors } from "../constants/colors";
 
 export interface BackToTopHandle {
-  handleScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  handleScroll: (y: number) => void;
 }
 
 interface BackToTopButtonProps {
-  scrollRef: React.RefObject<FlatList | ScrollView | null>;
-  /** 出现/消失的滚动偏移阈值 */
+  scrollRef?: React.RefObject<HTMLDivElement | null>;
   threshold?: number;
 }
 
-const BackToTopButton = forwardRef<BackToTopHandle, BackToTopButtonProps>(
-  function BackToTopButton({ scrollRef, threshold = 400 }, ref) {
-    const colors = useThemeColors();
-    const insets = useSafeAreaInsets();
+export const BackToTopButton = forwardRef<HTMLDivElement, BackToTopButtonProps>(
+  function BackToTopButton({ threshold = 400 }, ref) {
     const { t } = useTranslation();
     const [visible, setVisible] = useState(false);
-    const opacity = useRef(new Animated.Value(0)).current;
+    const [opacity, setOpacity] = useState(0);
 
     useImperativeHandle(
       ref,
       () => ({
-        handleScroll: (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-          const y = e.nativeEvent.contentOffset.y;
+        handleScroll: (y: number) => {
           const show = y > threshold;
-          setVisible((prev) => {
-            if (show !== prev) return show;
-            return prev;
-          });
+          setVisible(show);
         },
       }),
       [threshold],
     );
 
-    const scrollToTop = useCallback(() => {
-      const node = scrollRef.current;
-      if (!node) return;
-      if (typeof (node as ScrollView).scrollTo === "function") {
-        (node as ScrollView).scrollTo({ y: 0, animated: true });
-      } else if (typeof (node as FlatList).scrollToOffset === "function") {
-        (node as FlatList).scrollToOffset({ offset: 0, animated: true });
-      }
-    }, [scrollRef]);
+    useEffect(() => {
+      const handler = () => {
+        const y = window.scrollY;
+        setVisible(y > threshold);
+      };
+      window.addEventListener("scroll", handler, { passive: true });
+      return () => window.removeEventListener("scroll", handler);
+    }, [threshold]);
 
-    const anim = useRef<Animated.CompositeAnimation | null>(null);
-    React.useEffect(() => {
-      anim.current?.stop();
-      anim.current = Animated.timing(opacity, {
-        toValue: visible ? 1 : 0,
-        duration: 180,
-        useNativeDriver: true,
-      });
-      anim.current.start();
+    useEffect(() => {
+      const timer = setTimeout(() => setOpacity(visible ? 1 : 0), 0);
+      return () => clearTimeout(timer);
     }, [visible, opacity]);
 
-    return (
-      <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + 72, right: 16 }]}>
-        <Animated.View
-          style={[styles.fade, { opacity }]}
-          pointerEvents={visible ? "auto" : "none"}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("返回顶部")}
-            onPress={scrollToTop}
-            style={({ pressed }) => [
-              styles.button,
-              { backgroundColor: colors.primary, shadowColor: colors.primary },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons name="arrow-up" size={22} color="#FFFFFF" />
-          </Pressable>
-        </Animated.View>
-      </View>
-    );
+    const scrollToTop = useCallback(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }, []);
+
+    if (!visible) return null;
+
+return (
+       <div
+         style={{
+           position: "fixed",
+           bottom: 84,
+           right: 16,
+           zIndex: 40,
+         }}
+       >
+         <div
+           className="fn-transition-base fn-pointer-events-auto"
+           style={{ opacity, transition: "opacity 180ms cubic-bezier(0.16, 1, 0.3, 1)" }}
+         >
+           <button
+             type="button"
+             className="fn-flex fn-items-center fn-justify-center fn-rounded-full fn-shadow-lg fn-transition-fast fn-cursor-pointer"
+             style={{
+               width: 46,
+               height: 46,
+               borderRadius: 23,
+               backgroundColor: "var(--fn-primary)",
+               boxShadow: "0 4px 16px rgba(79,70,229,0.3)",
+             }}
+             onClick={scrollToTop}
+             aria-label="返回顶部"
+             onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.95)")}
+             onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+             onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+           >
+             <svg
+               width="22"
+               height="22"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               strokeWidth="2"
+               strokeLinecap="round"
+               strokeLinejoin="round"
+               aria-hidden="true"
+               style={{ color: "white" }}
+             >
+               <path d="M18 15l-6-6-6 6" />
+             </svg>
+           </button>
+         </div>
+       </div>
+     );
   },
 );
 
 export default BackToTopButton;
-
-const styles = StyleSheet.create({
-  wrap: {
-    position: "absolute",
-    alignItems: "flex-end",
-  },
-  fade: {
-    opacity: 0,
-  },
-  button: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  pressed: {
-    opacity: 0.85,
-  },
-});

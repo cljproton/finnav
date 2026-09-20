@@ -194,57 +194,6 @@ export async function reportAppDownload(
   }
 }
 
-/* ---------- 2FA ---------- */
-
-export interface TwoFAStatus {
-  enabled: boolean;
-}
-
-export interface TwoFASetup {
-  enabled: boolean;
-  secret: string;
-  otpauth_url: string;
-  qr: string;
-}
-
-export async function fetchTFAStatus(): Promise<TwoFAStatus> {
-  const res = await authedFetch(`${API_URL}/auth/twofa/status/`);
-  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
-  return res.json();
-}
-
-export async function fetchTFASetup(): Promise<TwoFASetup> {
-  const res = await authedFetch(`${API_URL}/auth/twofa/setup/`);
-  if (!res.ok) throw new Error(i18n.t("请求失败 ({{status}})", { status: res.status }));
-  return res.json();
-}
-
-export async function confirmTFA(code: string): Promise<TwoFAStatus> {
-  const res = await authedFetch(`${API_URL}/auth/twofa/confirm/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(String(body?.code || i18n.t("启用失败")));
-  }
-  return res.json();
-}
-
-export async function disableTFA(code: string): Promise<TwoFAStatus> {
-  const res = await authedFetch(`${API_URL}/auth/twofa/disable/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(String(body?.code || i18n.t("停用失败")));
-  }
-  return res.json();
-}
-
 export interface InvitePayload {
   invite_code?: string;
   invite_link?: string;

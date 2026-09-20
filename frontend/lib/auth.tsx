@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "./config";
 import i18n, { getAcceptLanguage } from "./i18n";
@@ -36,14 +35,9 @@ export interface AuthContextValue extends AuthState {
     email: string,
     password: string,
     captcha?: CaptchaPayload,
-  ) => Promise<LoginResult>;
-  loginTFA: (email: string, totpToken: string, code: string) => Promise<void>;
+  ) => Promise<{ access: string; refresh: string }>;
   logout: () => Promise<void>;
 }
-
-export type LoginResult =
-  | { needsTfa: false }
-  | { needsTfa: true; totpToken: string };
 
 export interface CaptchaPayload {
   token: string;
@@ -63,8 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const [token, email] = await Promise.all([
-          AsyncStorage.getItem(TOKEN_KEY),
-          AsyncStorage.getItem(EMAIL_KEY),
+          localStorage.getItem(TOKEN_KEY),
+          localStorage.getItem(EMAIL_KEY),
         ]);
         if (token && email) {
           setState({ user: { email }, token, loaded: true });
@@ -131,8 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.access) {
         await clearPendingReferral();
         await Promise.all([
-          AsyncStorage.setItem(TOKEN_KEY, data.access),
-          AsyncStorage.setItem(EMAIL_KEY, email),
+          localStorage.setItem(TOKEN_KEY, data.access),
+          localStorage.setItem(EMAIL_KEY, email),
         ]);
         setState({ user: { email }, token: data.access, loaded: true });
         return true;
@@ -165,8 +159,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data: { access: string; refresh: string } = await res.json();
       await clearPendingReferral();
       await Promise.all([
-        AsyncStorage.setItem(TOKEN_KEY, data.access),
-        AsyncStorage.setItem(EMAIL_KEY, email),
+        localStorage.setItem(TOKEN_KEY, data.access),
+        localStorage.setItem(EMAIL_KEY, email),
       ]);
       setState({ user: { email }, token: data.access, loaded: true });
     },
@@ -222,61 +216,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         throw new Error(await extractError(res));
       }
-      let data: any;
-      try {
-        data = await res.json();
-      } catch {
-        data = {};
-      }
-      // 启用 2FA 的用户登录需二次验证：返回 code=TOTP_REQUIRED + totp_token
-      if (data?.code === "TOTP_REQUIRED" && data?.totp_token) {
-        const res: LoginResult = {
-          needsTfa: true,
-          totpToken: data.totp_token as string,
-        };
-        return res;
-      }
-      await Promise.all([
-        AsyncStorage.setItem(TOKEN_KEY, data.access),
-        AsyncStorage.setItem(EMAIL_KEY, email),
-      ]);
-      setState({ user: { email }, token: data.access, loaded: true });
-      const noTfa: LoginResult = { needsTfa: false };
-      return noTfa;
-    },
-    [],
-  );
-
-  const loginTFA = useCallback(
-    async (email: string, totpToken: string, code: string) => {
-      const res = await fetch(`${API_URL}/auth/twofa/challenge/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept-Language": getAcceptLanguage(),
-        },
-        body: JSON.stringify({ totp_token: totpToken, code }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          String(body?.code || body?.detail || i18n.t("二次验证失败")),
-        );
-      }
       const data: { access: string; refresh: string } = await res.json();
       await Promise.all([
-        AsyncStorage.setItem(TOKEN_KEY, data.access),
-        AsyncStorage.setItem(EMAIL_KEY, email),
+        localStorage.setItem(TOKEN_KEY, data.access),
+        localStorage.setItem(EMAIL_KEY, email),
       ]);
       setState({ user: { email }, token: data.access, loaded: true });
+      return data;
     },
     [],
   );
 
   const logout = useCallback(async () => {
     await Promise.all([
-      AsyncStorage.removeItem(TOKEN_KEY),
-      AsyncStorage.removeItem(EMAIL_KEY),
+      localStorage.removeItem(TOKEN_KEY),
+      localStorage.removeItem(EMAIL_KEY),
     ]);
     setState({ user: null, token: null, loaded: true });
   }, []);
@@ -289,10 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       requestPasswordReset,
       resetPassword,
       login,
-      loginTFA,
       logout,
     }),
-    [state, register, verify, requestPasswordReset, resetPassword, login, loginTFA, logout],
+    [state, register, verify, requestPasswordReset, resetPassword, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -352,7 +305,7 @@ export async function authedFetch(
   let token = currentToken;
   if (!token) {
     try {
-      token = await AsyncStorage.getItem(TOKEN_KEY);
+      token = localStorage.getItem(TOKEN_KEY);
       currentToken = token;
     } catch {
       token = null;
@@ -369,8 +322,8 @@ export async function authedFetch(
     if (token) {
       currentToken = null;
       await Promise.all([
-        AsyncStorage.removeItem(TOKEN_KEY),
-        AsyncStorage.removeItem(EMAIL_KEY),
+        localStorage.removeItem(TOKEN_KEY),
+        localStorage.removeItem(EMAIL_KEY),
       ]);
     }
   }

@@ -4,9 +4,9 @@ import React, { useCallback, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "../ui/primitives";
+import { Spin } from "antd";
 import { Ionicons } from "../ui/icons";
-import { Toast } from "../ui/antd";
+import { message } from "@/components/antd-wrapper";
 import {
   cancelTutorialDelete,
   reportTutorialVisit,
@@ -15,14 +15,11 @@ import {
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { CaptchaPayload } from "../../lib/auth";
-import { useThemeColors, type Colors } from "../../constants/colors";
 import type { SiteTutorial, TutorialType } from "../../lib/types";
 import AuthModal from "../AuthModal";
 import { ConfirmModal } from "../ConfirmModal";
-import { centeredContent } from "../../constants/layout";
 import { openExternal } from "../../lib/utils";
 import SeoHeading from "../SeoHeading";
-import { StyleSheet } from "../../lib/rnStyle";
 
 interface PendingConfirm {
   title: string;
@@ -32,18 +29,14 @@ interface PendingConfirm {
   onConfirm: () => void;
 }
 
-/* ---------- tutorial item ---------- */
-
 function TutorialItem({
   tutorial,
-  colors,
   onOpen,
   onDeleteRequest,
   onDeleteCancel,
   onEdit,
 }: {
   tutorial: SiteTutorial;
-  colors: Colors;
   onOpen: (t: SiteTutorial) => void;
   onDeleteRequest: (t: SiteTutorial) => void;
   onDeleteCancel: (t: SiteTutorial) => void;
@@ -51,90 +44,107 @@ function TutorialItem({
 }) {
   const { t } = useTranslation();
   return (
-    <View
-      style={[
-        styles.item,
-        {
-          backgroundColor: colors.linkSectionBg,
-          borderColor: colors.linkSectionBorder,
-        },
-      ]}
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        paddingLeft: 14,
+        paddingRight: 14,
+        paddingTop: 12,
+        paddingBottom: 12,
+        borderRadius: 10,
+        border: "1px solid var(--fn-border)",
+        backgroundColor: "var(--fn-surface)",
+        marginBottom: 8,
+      }}
     >
-      <Pressable
-        onPress={() => onOpen(tutorial)}
-        style={({ pressed }) => [styles.itemMain, { opacity: pressed ? 0.7 : 1 }]}
+      <button
+        type="button"
+        onClick={() => onOpen(tutorial)}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          textAlign: "left",
+          border: "none",
+          background: "none",
+          padding: 0,
+          cursor: "pointer",
+        }}
       >
-        <Text style={[styles.itemTitle, { color: colors.linkItemText }]} numberOfLines={2}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            lineHeight: 20,
+            color: "var(--fn-text)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
           {tutorial.title}
-        </Text>
-        <View style={styles.itemMeta}>
-          <Text style={[styles.itemMetaText, { color: colors.textTertiary }]}>
+        </div>
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 12, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>
             {tutorial.username_masked}
-          </Text>
-          <View style={styles.itemViews}>
-            <Ionicons name="eye-outline" size={12} color={colors.textTertiary} />
-            <Text style={[styles.itemMetaText, { color: colors.textTertiary }]}>
-              {tutorial.view_count}
-            </Text>
-          </View>
-        </View>
-      </Pressable>
+          </span>
+          <span style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 3 }}>
+            <Ionicons name="eye-outline" size={12} color="var(--fn-text-tertiary)" />
+            <span style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>{tutorial.view_count}</span>
+          </span>
+        </div>
+      </button>
 
-      <View style={styles.itemRight}>
+      <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }}>
         {tutorial.is_mine ? (
           tutorial.delete_pending ? (
-            <View style={styles.ownActions}>
-              <Text style={[styles.pendingBadge, { color: colors.warning }]}>
-                {t("删除审核中")}
-              </Text>
-              <Pressable onPress={() => onDeleteCancel(tutorial)} style={styles.ownActionBtn}>
-                <Text style={[styles.ownActionText, { color: colors.primary }]}>
-                  {t("撤销")}
-                </Text>
-              </Pressable>
-            </View>
+            <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--fn-warning)" }}>{t("删除审核中")}</span>
+              <button type="button" onClick={() => onDeleteCancel(tutorial)} style={actionButton}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-primary)" }}>{t("撤销")}</span>
+              </button>
+            </div>
           ) : tutorial.status === "pending" ? (
-            <Text style={[styles.pendingBadge, { color: colors.warning }]}>
-              {t("待审核")}
-            </Text>
+            <span style={{ fontSize: 11, color: "var(--fn-warning)" }}>{t("待审核")}</span>
           ) : tutorial.status === "rejected" ? (
-            <View style={styles.ownActions}>
-              <Text style={[styles.pendingBadge, { color: colors.error }]}>
-                {t("已驳回")}
-              </Text>
-              <Pressable onPress={() => onEdit(tutorial)} style={styles.ownActionBtn}>
-                <Text style={[styles.ownActionText, { color: colors.primary }]}>
-                  {t("编辑")}
-                </Text>
-              </Pressable>
+            <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--fn-error)" }}>{t("已驳回")}</span>
+              <button type="button" onClick={() => onEdit(tutorial)} style={actionButton}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-primary)" }}>{t("编辑")}</span>
+              </button>
               {tutorial.can_delete ? (
-                <Pressable onPress={() => onDeleteRequest(tutorial)} style={styles.ownActionBtn}>
-                  <Text style={[styles.ownActionText, { color: colors.error }]}>
-                    {t("删除")}
-                  </Text>
-                </Pressable>
+                <button type="button" onClick={() => onDeleteRequest(tutorial)} style={actionButton}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-error)" }}>{t("删除")}</span>
+                </button>
               ) : null}
-            </View>
+            </div>
           ) : tutorial.can_delete ? (
-            <Pressable onPress={() => onDeleteRequest(tutorial)} style={styles.ownActionBtn}>
-              <Text style={[styles.ownActionText, { color: colors.error }]}>
-                {t("删除")}
-              </Text>
-            </Pressable>
+            <button type="button" onClick={() => onDeleteRequest(tutorial)} style={actionButton}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-error)" }}>{t("删除")}</span>
+            </button>
           ) : null
         ) : null}
-        <Ionicons name="open-outline" size={14} color={colors.textTertiary} />
-      </View>
-    </View>
+        <Ionicons name="open-outline" size={14} color="var(--fn-text-tertiary)" />
+      </div>
+    </div>
   );
 }
 
-/* ---------- tutorial section ---------- */
+const actionButton: React.CSSProperties = {
+  border: "none",
+  background: "none",
+  paddingLeft: 4,
+  paddingRight: 4,
+  paddingTop: 2,
+  paddingBottom: 2,
+  cursor: "pointer",
+};
 
 function TutorialSection({
   label,
   icon,
-  colors,
   items,
   count,
   loading,
@@ -146,10 +156,8 @@ function TutorialSection({
   onDeleteCancel,
   onEdit,
 }: {
-  type: TutorialType;
   label: string;
   icon: string;
-  colors: Colors;
   items: SiteTutorial[];
   count: number;
   loading: boolean;
@@ -163,38 +171,41 @@ function TutorialSection({
 }) {
   const { t } = useTranslation();
   return (
-    <View
-      style={[
-        styles.section,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={styles.sectionHeader}>
-        <Ionicons name={icon} size={18} color={colors.primary} />
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>{label}</Text>
+    <div className="fn-card" style={{ padding: 16, boxShadow: "var(--fn-shadow-sm)" }}>
+      <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <div
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 9,
+            backgroundColor: "var(--fn-primary-light)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name={icon} size={17} color="var(--fn-primary)" />
+        </div>
+        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fn-text)", flex: 1 }}>{label}</span>
         {count > 0 ? (
-          <Text style={[styles.sectionCount, { color: colors.textTertiary }]}>{count}</Text>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fn-text-tertiary)" }}>{count}</span>
         ) : null}
-      </View>
+      </div>
 
       {loading ? (
-        <View style={styles.sectionLoading}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
+        <div style={{ padding: 20, display: "flex", justifyContent: "center" }}>
+          <Spin size="small" />
+        </div>
       ) : items.length === 0 ? (
-        <Text style={[styles.sectionEmpty, { color: colors.textTertiary }]}>
+        <div style={{ textAlign: "center", paddingTop: 16, paddingBottom: 16, fontSize: 13, color: "var(--fn-text-tertiary)" }}>
           {t("暂无教程")}
-        </Text>
+        </div>
       ) : (
         <>
           {items.map((item) => (
             <TutorialItem
               key={item.id}
               tutorial={item}
-              colors={colors}
               onOpen={onOpen}
               onDeleteRequest={onDeleteRequest}
               onDeleteCancel={onDeleteCancel}
@@ -202,30 +213,26 @@ function TutorialSection({
             />
           ))}
           {hasNextPage ? (
-            <Pressable
-              onPress={onLoadMore}
-              style={({ pressed }) => [styles.loadMore, { opacity: pressed ? 0.7 : 1 }]}
+            <button
+              type="button"
+              onClick={onLoadMore}
+              style={{ paddingTop: 12, paddingBottom: 12, width: "100%", textAlign: "center", border: "none", background: "none", cursor: "pointer" }}
             >
               {isLoadingMore ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <Spin size="small" />
               ) : (
-                <Text style={[styles.loadMoreText, { color: colors.primary }]}>
-                  {t("加载更多")}
-                </Text>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "var(--fn-primary)" }}>{t("加载更多")}</span>
               )}
-            </Pressable>
+            </button>
           ) : null}
         </>
       )}
-    </View>
+    </div>
   );
 }
 
-/* ---------- main ---------- */
-
 export default function SiteTutorialsClient() {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const router = useRouter();
   const auth = useAuth();
   const loggedIn = !!auth.token;
@@ -279,19 +286,17 @@ export default function SiteTutorialsClient() {
       if (tutorial.status === "rejected") {
         setConfirm({
           title: t("删除"),
-          message: t("确认删除「{{title}}」？已驳回的教程将直接删除。", {
-            title: tutorial.title,
-          }),
+          message: t("确认删除「{{title}}」？已驳回的教程将直接删除。", { title: tutorial.title }),
           confirmText: t("确认删除"),
           destructive: true,
           onConfirm: async () => {
             setConfirm(null);
             try {
               await requestTutorialDelete(siteId, tutorial.id);
-              Toast.success(t("已删除"), 1.5);
+              message.success(t("已删除"), 1.5);
               refreshTutorials();
             } catch (e: unknown) {
-              Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+              message.error(e instanceof Error ? e.message : t("操作失败"), 1.5);
             }
           },
         });
@@ -299,18 +304,16 @@ export default function SiteTutorialsClient() {
       }
       setConfirm({
         title: t("申请删除教程"),
-        message: t("确认申请删除「{{title}}」？提交后需管理员审核。", {
-          title: tutorial.title,
-        }),
+        message: t("确认申请删除「{{title}}」？提交后需管理员审核。", { title: tutorial.title }),
         confirmText: t("确认申请"),
         onConfirm: async () => {
           setConfirm(null);
           try {
             await requestTutorialDelete(siteId, tutorial.id);
-            Toast.success(t("已提交删除申请，待管理员审核"), 1.5);
+            message.success(t("已提交删除申请，待管理员审核"), 1.5);
             refreshTutorials();
           } catch (e: unknown) {
-            Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+            message.error(e instanceof Error ? e.message : t("操作失败"), 1.5);
           }
         },
       });
@@ -322,10 +325,10 @@ export default function SiteTutorialsClient() {
     async (tutorial: SiteTutorial) => {
       try {
         await cancelTutorialDelete(siteId, tutorial.id);
-        Toast.success(t("已撤销删除申请"), 1.5);
+        message.success(t("已撤销删除申请"), 1.5);
         refreshTutorials();
       } catch (e: unknown) {
-        Toast.fail(e instanceof Error ? e.message : t("操作失败"), 1.5);
+        message.error(e instanceof Error ? e.message : t("操作失败"), 1.5);
       }
     },
     [t, siteId, refreshTutorials],
@@ -363,35 +366,24 @@ export default function SiteTutorialsClient() {
     },
     [auth],
   );
-
-  const handleLoginTFA = useCallback(
-    async (email: string, totpToken: string, code: string) => {
-      await auth.loginTFA(email, totpToken, code);
-    },
-    [auth],
-  );
-
   const handleRegister = useCallback(
     async (email: string, password: string, captcha: CaptchaPayload) => {
       return auth.register(email, password, captcha);
     },
     [auth],
   );
-
   const handleVerify = useCallback(
     async (email: string, code: string, password: string) => {
       await auth.verify(email, code, password);
     },
     [auth],
   );
-
   const handleRequestReset = useCallback(
     async (email: string) => {
       await auth.requestPasswordReset(email);
     },
     [auth],
   );
-
   const handleResetPassword = useCallback(
     async (email: string, code: string, password: string) => {
       await auth.resetPassword(email, code, password);
@@ -402,159 +394,115 @@ export default function SiteTutorialsClient() {
   const initialLoading = textQ.isLoading && videoQ.isLoading && agentQ.isLoading;
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.background }]}>
-      <View style={[styles.topBar, { paddingTop: 12 }]}>
-        <Pressable onPress={goBack} style={styles.backBtn} accessibilityLabel={t("返回")}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
-        <SeoHeading level={1} style={[styles.title, { color: colors.text }]}>
-          {t("教程")}
-        </SeoHeading>
-        <View style={styles.topBarRight}>
-          <Pressable
-            onPress={handleSharePress}
-            style={({ pressed }) => [
-              styles.shareBtn,
-              {
-                backgroundColor: colors.primaryLight,
-                borderColor: colors.primary,
-                opacity: pressed ? 0.7 : 1,
-              },
-            ]}
-          >
-            <Ionicons name="add" size={16} color={colors.primary} />
-            <Text style={[styles.shareBtnText, { color: colors.primary }]}>
-              {t("分享教程")}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {initialLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[styles.list, centeredContent.container]}
+    <div style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px 48px" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}
         >
-          <Text style={[styles.hint, { color: colors.textTertiary }]}>
-            {t("分享你的教程链接，标题将自动获取；如不正确可手动修改。分享后需管理员审核通过才会公开展示。")}
-          </Text>
+          <button
+            type="button"
+            onClick={goBack}
+            aria-label={t("返回")}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 999,
+              backgroundColor: "var(--fn-surface)",
+              border: "1px solid var(--fn-border)",
+              boxShadow: "var(--fn-shadow-xs)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <Ionicons name="chevron-back" size={22} color="var(--fn-text)" />
+          </button>
+          <SeoHeading level={1} style={{ fontSize: 17, fontWeight: 700, color: "var(--fn-text)" }}>
+            {t("教程")}
+          </SeoHeading>
+          <button
+            type="button"
+            onClick={handleSharePress}
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              paddingLeft: 12,
+              paddingRight: 12,
+              paddingTop: 7,
+              paddingBottom: 7,
+              borderRadius: 999,
+              border: "1px solid var(--fn-primary)",
+              backgroundColor: "var(--fn-primary-light)",
+              cursor: "pointer",
+            }}
+          >
+            <Ionicons name="add" size={16} color="var(--fn-primary)" />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fn-primary)" }}>{t("分享教程")}</span>
+          </button>
+        </div>
 
-          {sections.map((section) => {
-            const items = (section.query.data?.pages ?? []).flatMap((p) => p.results);
-            return (
-              <TutorialSection
-                key={section.type}
-                type={section.type}
-                label={section.label}
-                icon={section.icon}
-                colors={colors}
-                items={items}
-                count={section.query.data?.pages[0]?.count ?? 0}
-                loading={section.query.isLoading}
-                hasNextPage={!!section.query.hasNextPage}
-                isLoadingMore={section.query.isFetchingNextPage}
-                onLoadMore={() => section.query.fetchNextPage()}
-                onOpen={handleOpen}
-                onDeleteRequest={handleDeleteRequest}
-                onDeleteCancel={handleDeleteCancel}
-                onEdit={handleEdit}
-              />
-            );
-          })}
-        </ScrollView>
-      )}
+        {initialLoading ? (
+          <div style={{ minHeight: "50vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Spin size="large" />
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>
+              {t("分享你的教程链接，标题将自动获取；如不正确可手动修改。分享后需管理员审核通过才会公开展示。")}
+            </div>
+            {sections.map((section) => {
+              const items = (section.query.data?.pages ?? []).flatMap((p) => p.results);
+              return (
+                <TutorialSection
+                  key={section.type}
+                  label={section.label}
+                  icon={section.icon}
+                  items={items}
+                  count={section.query.data?.pages[0]?.count ?? 0}
+                  loading={section.query.isLoading}
+                  hasNextPage={!!section.query.hasNextPage}
+                  isLoadingMore={section.query.isFetchingNextPage}
+                  onLoadMore={() => section.query.fetchNextPage()}
+                  onOpen={handleOpen}
+                  onDeleteRequest={handleDeleteRequest}
+                  onDeleteCancel={handleDeleteCancel}
+                  onEdit={handleEdit}
+                />
+              );
+            })}
+          </div>
+        )}
 
-      <ConfirmModal
-        visible={!!confirm}
-        onClose={() => setConfirm(null)}
-        onConfirm={() => confirm?.onConfirm()}
-        title={confirm?.title ?? ""}
-        message={confirm?.message ?? ""}
-        confirmText={confirm?.confirmText}
-        destructive={confirm?.destructive}
-      />
+        <ConfirmModal
+          visible={!!confirm}
+          onClose={() => setConfirm(null)}
+          onConfirm={() => confirm?.onConfirm()}
+          title={confirm?.title ?? ""}
+          message={confirm?.message ?? ""}
+          confirmText={confirm?.confirmText}
+          destructive={confirm?.destructive}
+        />
 
-      <AuthModal
-        visible={authVisible}
-        onClose={() => setAuthVisible(false)}
-        onLogin={handleLogin}
-        onLoginTFA={handleLoginTFA}
-        onRegister={handleRegister}
-        onVerify={handleVerify}
-        onRequestReset={handleRequestReset}
-        onResetPassword={handleResetPassword}
-      />
-    </View>
+        <AuthModal
+          visible={authVisible}
+          onClose={() => setAuthVisible(false)}
+          onLogin={handleLogin}
+          onRegister={handleRegister}
+          onVerify={handleVerify}
+          onRequestReset={handleRequestReset}
+          onResetPassword={handleResetPassword}
+        />
+      </div>
+    </div>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: "100vh" },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: 4,
-    paddingBottom: 8,
-    paddingHorizontal: 20,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  topBarRight: { flexDirection: "row", alignItems: "center" },
-  shareBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  shareBtnText: { fontSize: 13, fontWeight: "600" },
-  title: { fontSize: 17, fontWeight: "700" },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 48 },
-  hint: { fontSize: 12, marginBottom: 14 },
-  section: { marginBottom: 14, borderRadius: 14, borderWidth: 1, padding: 16 },
-  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  sectionTitle: { fontSize: 15, fontWeight: "600", flex: 1 },
-  sectionCount: { fontSize: 12, fontWeight: "600" },
-  sectionLoading: { paddingVertical: 20, alignItems: "center" },
-  sectionEmpty: { textAlign: "center", paddingVertical: 16, fontSize: 13 },
-  item: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  itemMain: { flex: 1, marginRight: 8 },
-  itemTitle: { fontSize: 14, fontWeight: "600", lineHeight: 20 },
-  itemMeta: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 6 },
-  itemMetaText: { fontSize: 12 },
-  itemViews: { flexDirection: "row", alignItems: "center", gap: 3 },
-  itemRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  ownActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  pendingBadge: { fontSize: 11 },
-  ownActionBtn: { paddingHorizontal: 4, paddingVertical: 2, cursor: "pointer" },
-  ownActionText: { fontSize: 12, fontWeight: "600" },
-  loadMore: { paddingVertical: 12, alignItems: "center" },
-  loadMoreText: { fontSize: 14, fontWeight: "600" },
-});

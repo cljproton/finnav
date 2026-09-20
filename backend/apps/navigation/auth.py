@@ -132,15 +132,11 @@ class EmailTokenObtainPairView(TokenObtainPairView):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    """POST /api/auth/token/ 登录（含图形验证码；启用 2FA 的用户追加二次验证）。
+    """POST /api/auth/token/ 登录（含图形验证码）。
 
     请求体：{email, password, captcha_token, captcha_answer}
-    若密码正确但用户已开启 2FA：返回 401 {code:'TOTP_REQUIRED', totp_token}，
-    前端用 totp_token + 动态码调 /api/auth/twofa/challenge/ 换取正式 JWT。
+    返回：{access, refresh}
     """
-    from .models import AppSetting
-    from .twofa import user_has_2fa, TOTPChallenge
-
     _validate_captcha(
         request.data.get('captcha_token'), request.data.get('captcha_answer')
     )
@@ -148,13 +144,6 @@ def login(request):
         data=request.data, context={'request': request}
     )
     serializer.is_valid(raise_exception=True)
-    user = serializer.user
-    if AppSetting.get().twofa_enabled and user_has_2fa(user):
-        challenge = TOTPChallenge.create(user)
-        return Response(
-            {'detail': _('需要二次验证。'), 'code': 'TOTP_REQUIRED', 'totp_token': challenge.token},
-            status=status.HTTP_200_OK,
-        )
     return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 

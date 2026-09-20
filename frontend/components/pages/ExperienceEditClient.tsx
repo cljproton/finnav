@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { View, Text, Pressable, ActivityIndicator } from "../ui/primitives";
-import { Toast } from "../ui/antd";
+import { message, Spin, Button } from "@/components/antd-wrapper";
 import ExperienceEditor from "../ExperienceEditor";
 import { fetchExperienceDetail } from "../../lib/api";
-import { useThemeColors } from "../../constants/colors";
 import type { Experience } from "../../lib/types";
-import { StyleSheet } from "../../lib/rnStyle";
 import { useTranslation } from "react-i18next";
 
 export default function ExperienceEditClient({
@@ -18,7 +15,6 @@ export default function ExperienceEditClient({
   experienceId: number;
 }) {
   const { t } = useTranslation();
-  const colors = useThemeColors();
   const [item, setItem] = useState<Experience | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
@@ -30,13 +26,13 @@ export default function ExperienceEditClient({
         const data = await fetchExperienceDetail(siteId, experienceId);
         if (!mounted) return;
         if (!data.is_mine) {
-          Toast.fail(t("只能编辑自己发布的经验"), 1.5);
+          message.error(t("只能编辑自己发布的经验"), 1.5);
           return;
         }
         setItem(data);
       } catch (e: unknown) {
         if (mounted) {
-          Toast.fail(e instanceof Error ? e.message : t("加载失败"), 1.5);
+          message.error(e instanceof Error ? e.message : t("加载失败"), 1.5);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -49,39 +45,35 @@ export default function ExperienceEditClient({
 
   if (loading || !item) {
     return (
-      <View style={[styles.screen, styles.center, { backgroundColor: colors.background }]}>
+      <div
+        style={{
+          minHeight: "60vh",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 12,
+        }}
+      >
         {loading ? (
-          <ActivityIndicator size="large" color={colors.primary} />
+          <Spin size="large" />
         ) : (
           <>
-            <Text style={[styles.message, { color: colors.textSecondary }]}>
-              {t("加载失败")}
-            </Text>
-            <Pressable
-              onPress={() => {
+            <span style={{ fontSize: 14, color: "var(--fn-text-secondary)" }}>{t("加载失败")}</span>
+            <Button
+              type="primary"
+              onClick={() => {
                 setLoading(true);
                 setReloadToken((v) => v + 1);
               }}
-              style={styles.retry}
             >
-              <Text style={[styles.retryText, { color: colors.primary }]}>{t("重试")}</Text>
-            </Pressable>
+              {t("重试")}
+            </Button>
           </>
         )}
-      </View>
+      </div>
     );
   }
 
   return <ExperienceEditor siteId={siteId} mode="edit" initial={item} />;
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: "100vh" },
-  center: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  message: { fontSize: 14 },
-  retry: { marginTop: 12 },
-  retryText: { fontSize: 14, fontWeight: "700" },
-});

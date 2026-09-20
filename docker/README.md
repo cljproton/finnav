@@ -36,7 +36,7 @@ docker compose up -d --build
 > （Web 前端以相对路径 `/api` 请求，自动走同一域名，不会硬拼其他端口）。
 
 > **移动端 App 直连**：Android / iOS App 只需调用后端 API，打包时设
-> `EXPO_PUBLIC_API_BASE_URL=https://<域名>`（内网联调可用 `http://<局域网IP>:<PORT>`）。
+> 前端构建为 Next.js 静态站点，通过 nginx 服务。
 > iOS 直连 HTTP 可用——项目已开 ATS 明文例外；Android release 包需 HTTPS 或
 > `ANDROID_ALLOW_CLEARTEXT=1`，详见根目录 README「移动端 App 直连后端」。
 
@@ -109,7 +109,7 @@ docker compose exec backend python manage.py seed_demo
 ## 八、架构与反向代理
 
 - **frontend**（nginx，对外 :80）：
-  - 托管 Expo Web 静态站（SPA 路由回退到 `index.html`）；
+  - 托管 Next.js Web 静态站（SPA 路由回退到 `index.html`）；
   - `location /api/`、`/admin/`、`/static/`、`/media/` → 反代到 `${BACKEND_URL}`
     （即 `http://backend:8000`，经 envsubst 注入）；
   - nginx 模板经官方镜像 envsubst 渲染，`NGINX_ENVSUBST_FILTER=BACKEND_URL` 只替换该变量，
@@ -117,7 +117,7 @@ docker compose exec backend python manage.py seed_demo
 - **backend**：Python 3.12 + Django + DRF，`gunicorn` 内网监听 8000（不对外发布），
   WhiteNoise 提供静态文件；媒体 `/media/` 在生产环境也由 Django 提供（`urls.py` 挂载 `serve`）；
   健康检查 `GET /api/health/`。
-- **前端调用方式**：构建期置空 `EXPO_PUBLIC_API_BASE_URL`，`config.ts` 在 Web 生产构建下
+- **前端调用方式**：Next.js 静态导出构建，`config.ts` 在生产构建下
   （`NODE_ENV=production`）将 `API_BASE_URL` 保持空串，Web 端以相对路径 `/api` 请求，
   经 nginx 反代后端，实现同源访问（不再硬拼 `:8000` 端口，天然兼容外层域名/HTTPS）。
 - 后端各路径的绝对地址（如 logo/APP 下载链接）由 `request.build_absolute_uri` 借助

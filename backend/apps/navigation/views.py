@@ -148,6 +148,17 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
         )
         return Response({'ids': ids})
 
+    @action(detail=False, methods=['get'], permission_classes=[AllowAny])
+    def sitemap(self, request):
+        """GET /api/sites/sitemap/ 返回全部启用站点的 id 与 updated_at（用于生成 sitemap.xml）。"""
+        sites = list(
+            Site.objects.filter(is_active=True)
+            .annotate(score=F('visit_count') + F('download_count') + F('rating_count'))
+            .order_by('-score', '-updated_at')
+            .values('id', 'updated_at')
+        )
+        return Response({'sites': sites})
+
     def retrieve(self, request, *args, **kwargs):
         from .services import ensure_logo_async
 

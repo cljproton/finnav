@@ -1,61 +1,64 @@
-import { useColorScheme } from "react-native";
+"use client";
+
+import { useSyncExternalStore } from "react";
 
 /**
- * Design tokens — refined finance / Web3 palette
+ * Design tokens — Modern Fintech palette
+ * Aligned with globals.css CSS variables
  *
- * Light mode: clean white surfaces on soft grey, deep indigo accent
- * Dark mode: deep navy surfaces, luminous indigo accent
+ * Light mode: cool slate, indigo primary
+ * Dark mode: deep navy, luminous indigo
  */
 
 const shared = {
-  /** Accent: indigo */
+  /** Primary: indigo */
   cyan: "#4F46E5",
   cyanMuted: "#4F46E5",
-  /** Accent: secondary purple */
+  /** Secondary accent: violet */
   purple: "#7C3AED",
   purpleMuted: "#7C3AED",
-  /** Accent: warm amber for stars / highlights */
+  /** Warm amber for stars / highlights */
   amber: "#F59E0B",
   /** Feedback */
   success: "#059669",
   error: "#DC2626",
-  warning: "#D97706",
+  warning: "#F59E0B",
 } as const;
 
 const light = {
   ...shared,
-  background: "#F8FAFC",
+  background: "#F6F8FB",
   surface: "#FFFFFF",
   surfaceSolid: "#FFFFFF",
   surfaceElevated: "#FFFFFF",
   text: "#0F172A",
   textSecondary: "#475569",
-  textTertiary: "#64748B",
-  primary: shared.cyanMuted,
+  textTertiary: "#94A3B8",
+  primary: "#4F46E5",
   primaryLight: "rgba(79,70,229,0.08)",
-  accent: shared.amber,
+  accent: "#F59E0B",
   border: "#E2E8F0",
-  borderGlow: "rgba(79,70,229,0.15)",
+  borderGlow: "rgba(79,70,229,0.18)",
   divider: "#E2E8F0",
   skeleton: "#E2E8F0",
   skeletonHighlight: "#F1F5F9",
-  starActive: "#F59E0B",
+  starActive: "#FBBF24",
   starInactive: "#CBD5E1",
   tagBg: "rgba(15,23,42,0.04)",
   tagText: "#475569",
   tabBar: "#FFFFFF",
   tabBarBorder: "#E2E8F0",
-  chipActiveBg: shared.cyanMuted,
+  chipActiveBg: "#4F46E5",
   chipActiveText: "#FFFFFF",
-  chipBg: "rgba(255,255,255,0.8)",
+  chipBg: "#FFFFFF",
   chipText: "#334155",
   chipBorder: "#E2E8F0",
-  chipGlow: "rgba(79,70,229,0.10)",
+  chipGlow: "rgba(79,70,229,0.08)",
   emptyIcon: "#CBD5E1",
-  cardGlow: "rgba(79,70,229,0.06)",
+  cardGlow: "rgba(15,23,42,0.03)",
   /** Link sections */
-  linkSectionBg: "rgba(79,70,229,0.04)",
-  linkSectionBorder: "rgba(79,70,229,0.15)",
+  linkSectionBg: "rgba(15,23,42,0.03)",
+  linkSectionBorder: "rgba(15,23,42,0.05)",
   linkItemText: "#4F46E5",
   /** Download button */
   downloadBg: "#4F46E5",
@@ -67,39 +70,39 @@ const light = {
 const dark = {
   ...shared,
   background: "#0B1120",
-  surface: "rgba(30,41,59,0.85)",
-  surfaceSolid: "#1E293B",
-  surfaceElevated: "#1E293B",
+  surface: "#111A2E",
+  surfaceSolid: "#111A2E",
+  surfaceElevated: "#1C2740",
   text: "#F1F5F9",
   textSecondary: "#94A3B8",
-  textTertiary: "#94A3B8",
+  textTertiary: "#64748B",
   primary: "#818CF8",
   primaryLight: "rgba(129,140,248,0.12)",
   accent: "#FBBF24",
-  border: "rgba(148,163,184,0.12)",
-  borderGlow: "rgba(129,140,248,0.20)",
-  divider: "rgba(148,163,184,0.10)",
+  border: "rgba(148,163,184,0.14)",
+  borderGlow: "rgba(129,140,248,0.25)",
+  divider: "rgba(148,163,184,0.12)",
   skeleton: "rgba(148,163,184,0.08)",
   skeletonHighlight: "rgba(148,163,184,0.14)",
   starActive: "#FBBF24",
   starInactive: "#334155",
-  tagBg: "rgba(255,255,255,0.06)",
+  tagBg: "rgba(255,255,255,0.04)",
   tagText: "#94A3B8",
-  tabBar: "#0F172A",
-  tabBarBorder: "rgba(148,163,184,0.10)",
+  tabBar: "#111A2E",
+  tabBarBorder: "rgba(148,163,184,0.12)",
   chipActiveBg: "#818CF8",
-  chipActiveText: "#0F172A",
-  chipBg: "rgba(255,255,255,0.05)",
+  chipActiveText: "#0B1120",
+  chipBg: "#151E31",
   chipText: "#CBD5E1",
-  chipBorder: "rgba(148,163,184,0.12)",
-  chipGlow: "rgba(129,140,248,0.15)",
+  chipBorder: "rgba(148,163,184,0.14)",
+  chipGlow: "rgba(129,140,248,0.12)",
   emptyIcon: "#1E293B",
-  cardGlow: "rgba(129,140,248,0.06)",
-  linkSectionBg: "rgba(129,140,248,0.06)",
-  linkSectionBorder: "rgba(129,140,248,0.15)",
+  cardGlow: "rgba(0,0,0,0.2)",
+  linkSectionBg: "rgba(255,255,255,0.03)",
+  linkSectionBorder: "rgba(255,255,255,0.06)",
   linkItemText: "#818CF8",
   downloadBg: "#818CF8",
-  downloadText: "#0F172A",
+  downloadText: "#0B1120",
   gridLine: "rgba(255,255,255,0.02)",
 } as const;
 
@@ -107,7 +110,19 @@ const dark = {
 type ColorValue = string;
 export type Colors = { [K in keyof typeof light]: ColorValue };
 
-export function useThemeColors(): Colors {
-  const scheme = useColorScheme();
-  return (scheme === "dark" ? dark : light) as Colors;
+function subscribeToPrefersDark(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener("change", callback);
+  return () => mq.removeEventListener("change", callback);
+}
+
+function getPrefersDarkSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+export function useThemeColors() {
+  const dark = useSyncExternalStore(subscribeToPrefersDark, getPrefersDarkSnapshot, () => false);
+  return (dark ? dark : light) as Colors;
 }

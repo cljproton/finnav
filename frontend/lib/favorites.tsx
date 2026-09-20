@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authedFetch, useAuth } from "./auth";
 import { API_URL } from "./config";
 import type { Site } from "./types";
@@ -38,11 +37,14 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const idsRef = useRef<number[]>([]);
   const snapRef = useRef<Record<number, Site>>({});
-  const scopeRef = useRef<string>(ANON_SCOPE);
+  const scopeRef = useRef<string>("anon");
   const epochRef = useRef(0);
   const syncChainRef = useRef<Promise<void>>(Promise.resolve());
 
-  const scopeKey = (scope: string) => keysFor(scope);
+  const scopeKey = (scope: string) => ({
+    ids: `favorites:${scope}`,
+    snap: `favorites_snap:${scope}`,
+  });
 
   const persist = useCallback(async (nextIds: number[], nextSnap: Record<number, Site>) => {
     idsRef.current = nextIds;
@@ -50,20 +52,20 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     setIds(nextIds);
     setSnapshots(nextSnap);
     const { ids: kId, snap: kSnap } = scopeKey(scopeRef.current);
-    await Promise.all([
-      AsyncStorage.setItem(kId, JSON.stringify(nextIds)),
-      AsyncStorage.setItem(kSnap, JSON.stringify(nextSnap)),
-    ]);
+    try {
+      localStorage.setItem(kId, JSON.stringify(nextIds));
+      localStorage.setItem(kSnap, JSON.stringify(nextSnap));
+    } catch {
+      // ignore
+    }
   }, []);
 
   const loadScope = useCallback(async (scope: string) => {
     const epoch = ++epochRef.current;
     const { ids: kId, snap: kSnap } = scopeKey(scope);
     try {
-      const [rawIds, rawSnap] = await Promise.all([
-        AsyncStorage.getItem(kId),
-        AsyncStorage.getItem(kSnap),
-      ]);
+      const rawIds = localStorage.getItem(kId);
+      const rawSnap = localStorage.getItem(kSnap);
       const pIds = rawIds ? JSON.parse(rawIds) : [];
       const pSnap = rawSnap ? JSON.parse(rawSnap) : {};
       if (epochRef.current !== epoch) return epoch;
@@ -79,7 +81,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
 
   // 首次加载匿名作用域的本地缓存（登录状态可能尚未就绪，由身份切换 effect 接手）
   useEffect(() => {
-    loadScope(ANON_SCOPE);
+    loadScope("anon");
   }, [loadScope]);
 
   // 登录后把服务器收藏拉下来合并，再把合并结果推回服务器（双向同步）。
@@ -120,31 +122,29 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   // 身份切换：匿名<->用户、或换用户登录，隔离各自本地缓存
   useEffect(() => {
     if (!auth.loaded) return;
-    const scope = auth.user?.email ?? ANON_SCOPE;
+    const scope = auth.user?.email ?? "anon";
     const prev = scopeRef.current;
     if (scope === prev) return;
 
     scopeRef.current = scope;
 
     (async () => {
-      if (scope !== ANON_SCOPE && prev === ANON_SCOPE) {
+      if (scope !== "anon" && prev === "anon") {
         // 匿名 -> 登录：把匿名本地收藏合并进该账号（保留合并功能），再清理匿名缓存
         const anonIds = idsRef.current;
         const anonSnap = snapRef.current;
         const epoch = await loadScope(scope);
         if (epochRef.current !== epoch) return;
         await syncFromServer(anonIds, anonSnap);
-        const { ids: kId, snap: kSnap } = scopeKey(ANON_SCOPE);
-        Promise.all([AsyncStorage.removeItem(kId), AsyncStorage.removeItem(kSnap)]).catch(
-          () => {},
-        );
+        localStorage.removeItem(`favorites:anon`);
+        localStorage.removeItem(`favorites_snap:anon`);
         return;
       }
 
       // 登出（-> 匿名）或切换账号：加载该作用域自己的缓存，不合并上一用户的本地数据
       const epoch = await loadScope(scope);
       if (epochRef.current !== epoch) return;
-      if (scope !== ANON_SCOPE) {
+      if (scope !== "anon") {
         await syncFromServer();
       }
     })();

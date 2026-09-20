@@ -43,7 +43,7 @@ if [ -n "$BACKEND_ORIGIN" ]; then
 fi
 if [ "$MODE" = "prod" ]; then
   npm run build
-  nohup npx next start -H "$HOST" -p "$PORT" >"$LOG_DIR/frontend.log" 2>&1 &
+  nohup npm run start -- -H "$HOST" -p "$PORT" >"$LOG_DIR/frontend.log" 2>&1 &
 else
   nohup npx next dev -H "$HOST" -p "$PORT" >"$LOG_DIR/frontend.log" 2>&1 &
 fi
