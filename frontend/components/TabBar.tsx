@@ -5,8 +5,10 @@ import { Home, Search, Star, User } from "lucide-react";
 import { useSafeAreaInsets } from "@/lib/hooks/useDevice";
 import { useTranslation } from "react-i18next";
 
+type TabKey = "home" | "search" | "favorites" | "me";
+
 interface TabItem {
-  key: string;
+  key: TabKey;
   href: string;
 }
 
