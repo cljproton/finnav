@@ -128,7 +128,6 @@ async function shareSite(site: Site, invite: UserSiteInvite | null | undefined) 
   if (invite?.invite_code) lines.push(i18n.t("邀请码: {{code}}", { code: invite.invite_code }));
   if (invite?.invite_link) lines.push(i18n.t("邀请链接: {{link}}", { link: invite.invite_link }));
   const detailUrl = siteDetailUrl(site.id);
-  lines.push(i18n.t("来源：{{url}}", { url: detailUrl }));
   const message = lines.join("\n");
 
   try {

@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Ionicons } from "./ui/icons";
 import { Logo } from "./Logo";
 import TabBar from "./TabBar";
+import AnnouncementBar from "./AnnouncementBar";
 import { useSettings } from "../lib/api";
 import { normalizeLanguage, setAppLanguage } from "../lib/i18n";
 
@@ -34,6 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      <AnnouncementBar />
       {/* Sticky glass header (desktop) */}
       <header className="fn-header" role="banner">
         <div className="fn-header-inner">

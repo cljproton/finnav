@@ -14,10 +14,10 @@ export default function AnnouncementBar() {
   if (!show) return null;
 
   return (
-    <div className="fn-px-4 fn-py-3" style={{ backgroundColor: "var(--fn-primary)", paddingTop: 12, paddingBottom: 8 }}>
+    <div className="fn-px-4" style={{ backgroundColor: "var(--fn-primary)", paddingTop: 4, paddingBottom: 4 }}>
       <div className="fn-flex fn-items-center fn-justify-center fn-gap-2">
-        <Ionicons name="megaphone" size={15} color="var(--fn-surface-solid)" />
-        <span className="fn-text-sm fn-font-medium fn-text-inverse fn-truncate" style={{ flexShrink: 1, textAlign: "center", lineHeight: 18, color: "var(--fn-surface-solid)" }}>
+        <Ionicons name="megaphone" size={15} color="#FFFFFF" />
+        <span className="fn-text-sm fn-font-medium fn-text-inverse fn-truncate" style={{ flexShrink: 1, textAlign: "center", lineHeight: 1.5, color: "#FFFFFF" }}>
           {settings.announcement}
         </span>
       </div>
