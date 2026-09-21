@@ -204,7 +204,7 @@ class AppSettingSerializer(serializers.ModelSerializer):
             'announcement_enabled',
             'footer_copyright',
             'require_email_verification',
-            'head_scripts',
+            'adsense_publisher_id',
             'sites_per_page',
             'share_base_url',
         )

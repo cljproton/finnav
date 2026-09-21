@@ -554,9 +554,9 @@ class AppSetting(models.Model):
         default=False, verbose_name='启用双因素认证(2FA)'
     )
 
-    # 自定义头脚本（注入前端 <head>，例如统计脚本 / GA / CNAME 等）
-    head_scripts = models.TextField(
-        blank=True, default='', verbose_name='前端 <head> 自定义脚本'
+    # AdSense 发布商 ID（格式：ca-pub-xxxxxxxxxxxxxxxx），留空则不加载广告脚本
+    adsense_publisher_id = models.CharField(
+        max_length=50, blank=True, default='', verbose_name='AdSense 发布商 ID (ca-pub-xxx)'
     )
 
     # 站点列表分页：前端首页/搜索每次加载的条数（后台可调）

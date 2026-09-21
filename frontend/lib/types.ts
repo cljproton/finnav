@@ -36,7 +36,7 @@ export interface SiteSettings {
   announcement_enabled: boolean;
   footer_copyright: string;
   require_email_verification: boolean;
-  head_scripts: string;
+  adsense_publisher_id: string;
   sites_per_page: number;
   share_base_url: string;
 }

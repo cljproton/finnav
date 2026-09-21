@@ -630,10 +630,10 @@ class AppSettingAdmin(admin.ModelAdmin):
             },
         ),
         (
-            '前端自定义脚本',
+            '广告设置',
             {
-                'fields': ('head_scripts',),
-                'description': '注入到前端页面 <head> 中的自定义 HTML/脚本（例如统计代码）。会原样输出到页面头部。',
+                'fields': ('adsense_publisher_id',),
+                'description': 'Google AdSense 发布商 ID（格式：ca-pub-xxxxxxxxxxxxxxxx）。填写后前端自动加载 adsbygoogle.js。留空则不加载广告脚本。',
             },
         ),
     )

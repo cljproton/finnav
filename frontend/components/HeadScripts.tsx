@@ -1,38 +1,29 @@
+"use client";
+
 import { useEffect } from "react";
 import { useSettings } from "../lib/api";
-import DOMPurify from "dompurify";
 
 /**
- * Web 端注入后台配置的前端 <head> 自定义脚本（head_scripts）。
- * 脚本会原样追加到 <head>。
+ * 根据后台配置的 AdSense 发布商 ID 注入 adsbygoogle.js
  */
 export default function HeadScripts() {
   const { data: settings } = useSettings();
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const raw = settings?.head_scripts;
-    if (!raw) return;
-    const clean = DOMPurify.sanitize(raw);
-    const container = document.createElement("div");
-    container.innerHTML = clean;
-    // 依次把生成的节点插入 <head>（script 用独立节点重新执行，确保起效）
-    Array.from(container.children).forEach((el) => {
-      if (el.tagName === "SCRIPT") {
-        const script = document.createElement("script");
-        Array.from(el.attributes).forEach((attr) => {
-          script.setAttribute(attr.name, attr.value);
-        });
-        if (script.src) {
-          script.async = true;
-        } else {
-          script.text = el.textContent || "";
-        }
-        document.head.appendChild(script);
-      } else {
-        document.head.appendChild(el.cloneNode(true));
-      }
-    });
+    const publisherId = settings?.adsense_publisher_id?.trim();
+    if (!publisherId) return;
+
+    // 避免重复注入
+    if (document.querySelector(`script[src*="googlesyndication.com/pagead/js/adsbygoogle.js?client=${publisherId}"]`)) {
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.async = true;
+    script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${publisherId}`;
+    script.setAttribute("crossorigin", "anonymous");
+    document.head.appendChild(script);
   }, [settings]);
 
   return null;

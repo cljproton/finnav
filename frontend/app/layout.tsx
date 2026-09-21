@@ -6,6 +6,7 @@ import { ConfigProviderWrapper } from "@/components/ConfigProvider";
 import Providers from "./providers";
 import { AppShell } from "../components/AppShell";
 import { FontLoader } from "../components/FontLoader";
+import HeadScripts from "../components/HeadScripts";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://fn.9418666.xyz"),
@@ -84,6 +85,7 @@ export default function RootLayout({
           <ConfigProviderWrapper>
             <Providers>
               <FontLoader />
+              <HeadScripts />
               <AppShell>{children}</AppShell>
             </Providers>
           </ConfigProviderWrapper>
