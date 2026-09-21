@@ -44,10 +44,10 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
-    # Next.js 服务器模式：内部端口 3000，通过 rewrites 代理 /api 和 /media 到后端
+    # Next.js 服务器模式：内部端口 3000，通过 rewrites 代理 /api /media /admin /static 到后端
     environment:
-      BACKEND_ORIGIN: "http://backend:8000"
-      BACKEND_API_URL: "http://backend:8000/api"
-      NEXT_PUBLIC_DEFAULT_DOMAIN: "${SEO_ORIGIN:-https://fn.9418666.xyz}"
+      - BACKEND_ORIGIN=http://backend:8000
+      - BACKEND_API_URL=http://backend:8000/api
+      - NEXT_PUBLIC_DEFAULT_DOMAIN=${SEO_ORIGIN:-https://fn.9418666.xyz}
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
