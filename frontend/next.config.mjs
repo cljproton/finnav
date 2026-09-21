@@ -33,6 +33,15 @@ const nextConfig = {
       source: "/admin/:path*",
       destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/admin/:path*",
     },
+    // Django admin 静态资源代理（登录后 dashboard 需要加载 CSS/JS）
+    {
+      source: "/static/:path*/",
+      destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/static/:path*/",
+    },
+    {
+      source: "/static/:path*",
+      destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/static/:path*",
+    },
   ],
   env: {
     BACKEND_API_URL: process.env.BACKEND_API_URL || "http://127.0.0.1:8000/api",
