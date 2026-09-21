@@ -24,6 +24,15 @@ const nextConfig = {
       source: "/media/:path*",
       destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/media/:path*",
     },
+    // Django admin 后台代理
+    {
+      source: "/admin/:path*/",
+      destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/admin/:path*/",
+    },
+    {
+      source: "/admin/:path*",
+      destination: process.env.BACKEND_ORIGIN || "http://127.0.0.1:8000/admin/:path*",
+    },
   ],
   env: {
     BACKEND_API_URL: process.env.BACKEND_API_URL || "http://127.0.0.1:8000/api",
