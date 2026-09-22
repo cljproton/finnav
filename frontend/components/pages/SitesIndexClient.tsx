@@ -2,9 +2,10 @@
 
 import { useTranslation } from "react-i18next";
 import type { SitePage, SiteSettings } from "../../lib/types";
-import SiteCard from "../SiteCard";
 import EmptyState from "../EmptyState";
 import InternalLink from "../InternalLink";
+import SiteListItem from "../SiteListItem";
+import SiteListItemSkeleton from "../SiteListItemSkeleton";
 
 export default function SitesIndexClient({
   settings,
@@ -28,6 +29,8 @@ export default function SitesIndexClient({
     page + 3,
   );
 
+  const isLoading = !sitePage;
+
   return (
     <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
       <div className="fn-p-5" style={{ padding: 20, maxWidth: 720, margin: "0 auto" }}>
@@ -42,10 +45,16 @@ export default function SitesIndexClient({
           ) : null}
         </div>
 
-        {sites.length > 0 ? (
-          <div className="fn-site-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
-            {sites.map((site) => (
-              <SiteCard key={String(site.id)} site={site} />
+        {isLoading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {Array.from({ length: perPage }).map((_, i) => (
+              <SiteListItemSkeleton key={i} />
+            ))}
+          </div>
+        ) : sites.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {sites.map((site, i) => (
+              <SiteListItem key={String(site.id)} site={site} index={i} isLast={i === sites.length - 1} />
             ))}
           </div>
         ) : (

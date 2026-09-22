@@ -1099,6 +1099,33 @@ img {
 }
 
 /* ============================================================
+   SITE LIST ITEM ANIMATIONS & STYLES
+   ============================================================ */
+@keyframes fn-fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fn-fade-in-up { animation: fn-fade-in-up 300ms ease-out both; }
+
+.fn-outline-primary {
+  outline: 2px solid var(--fn-primary);
+  outline-offset: -2px;
+}
+
+.fn-shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 1px 4px rgba(0,0,0,0.03); }
+
+/* Responsive: mobile hide description, compress tag */
+@media (max-width: 640px) {
+  .site-list-item {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .site-list-item .site-desc { display: none; }
+  .site-list-item .site-tag { font-size: 10px; padding: 1px 6px; }
+}
+
+/* ============================================================
    PRINT STYLES
    ============================================================ */
 @media print {
