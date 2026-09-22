@@ -113,7 +113,7 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
     ).catch(() => null);
     relatedSites = (relatedPage?.results ?? [])
       .filter((s) => s.id !== siteId)
-      .slice(0, 6);
+      .slice(0, 15);
   }
 
   const base = settings?.share_base_url || process.env.NEXT_PUBLIC_DEFAULT_DOMAIN || 'https://fn.9418666.xyz'

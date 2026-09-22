@@ -1549,7 +1549,23 @@ export default function SiteDetailClient({
 
           {/* 同类推荐：同分类站点内链，同时解决「页面没有指向其他页面的链接」 */}
           {relatedSites.length > 0 ? (
-            <SectionCard icon="albums-outline" title={t("同类推荐")}>
+            <SectionCard
+              icon="albums-outline"
+              title={t("同类推荐")}
+              right={
+                <InternalLink
+                  href={`/?category=${encodeURIComponent(site.category_slug || "")}`}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--fn-primary)",
+                    textDecoration: "underline",
+                  }}
+                >
+                  查看所有{t("同分类站点")}
+                </InternalLink>
+              }
+            >
               <div style={{ display: "flex", flexDirection: "column" }}>
                 {relatedSites.map((related) => (
                   <InternalLink

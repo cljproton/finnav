@@ -13,6 +13,7 @@ import EmptyState from "../EmptyState";
 import BackToTopButton from "../BackToTopButton";
 import { Logo } from "../Logo";
 import { Ionicons } from "../../components/ui/icons";
+import InternalLink from "../InternalLink";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
 import type { Category, SitePage } from "../../lib/types";
 
@@ -177,6 +178,29 @@ export default function HomeClient({ initialSitePage, initialCategories }: { ini
       >
         {hero}
         {categorySection}
+        {selectedSlug ? (
+          <div className="fn-px-5 fn-pb-3" style={{ paddingInline: 20, paddingBottom: 12 }}>
+            <InternalLink
+              href={`/?category=${encodeURIComponent(selectedSlug)}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "8px 12px",
+                borderRadius: "var(--fn-radius-full)",
+                fontSize: 13,
+                fontWeight: 500,
+                color: "var(--fn-primary)",
+                backgroundColor: "var(--fn-primary-light)",
+                border: "1px solid var(--fn-border-glow)",
+                textDecoration: "none",
+              }}
+            >
+              查看所有{t("同分类站点")}
+              <Ionicons name="chevron-forward" size={14} color="var(--fn-primary)" />
+            </InternalLink>
+          </div>
+        ) : null}
         <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
           {sites.map((site) => (
             <SiteCard key={String(site.id)} site={site} />
