@@ -697,7 +697,13 @@ function InviteSection({
 
 /* ---------- main ---------- */
 
-export default function SiteDetailClient() {
+export default function SiteDetailClient({
+  initialSite,
+  initialRelatedSites = [],
+}: {
+  initialSite?: Site;
+  initialRelatedSites?: Site[];
+}) {
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -746,7 +752,7 @@ export default function SiteDetailClient() {
     }
   }
 
-  const { data: fetchedSite, isLoading, error, refetch } = useSiteDetail(siteId);
+  const { data: fetchedSite, isLoading, error, refetch } = useSiteDetail(siteId, initialSite);
   const site = fetchedSite ?? cachedSite;
   const fav = site ? isFavorite(site.id) : false;
 
@@ -765,8 +771,10 @@ export default function SiteDetailClient() {
   const experienceCount = experiencesPage?.pages?.[0]?.count;
   const relatedSites = useMemo(() => {
     const list = (relatedPages?.pages ?? []).flatMap((p) => p.results);
-    return list.filter((s) => s.id !== siteId).slice(0, 6);
-  }, [relatedPages, siteId]);
+    const fromQuery = list.filter((s) => s.id !== siteId).slice(0, 6);
+    // 服务端预取的同分类站点（SSR 静态 HTML 内链），query 数据到达前兜底展示。
+    return fromQuery.length > 0 ? fromQuery : initialRelatedSites.filter((s) => s.id !== siteId).slice(0, 6);
+  }, [relatedPages, siteId, initialRelatedSites]);
 
   // 「关于」「常见问题」正文：纯挂载文本，同时提升抓取到的有效信息量。
   const aboutParagraphs = site

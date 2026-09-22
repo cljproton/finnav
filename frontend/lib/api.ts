@@ -45,10 +45,11 @@ async function fetchSiteJSON<T>(url: string): Promise<T> {
   return res.json();
 }
 
-export function useCategories() {
+export function useCategories(initialData?: Category[]) {
   return useQuery<Category[]>({
     queryKey: ["categories"],
     queryFn: () => fetchJSON<Category[]>(`${API_URL}/categories/`),
+    initialData,
   });
 }
 
@@ -69,12 +70,13 @@ function buildSitesUrl(params?: SitesParams, page?: number): string {
   return `${API_URL}/sites/${pageSuffix}`;
 }
 
-export function useSitesInfinite(params?: SitesParams) {
+export function useSitesInfinite(params?: SitesParams, initialData?: SitePage) {
   return useInfiniteQuery<SitePage>({
     queryKey: ["sites", params],
     queryFn: ({ pageParam }) =>
       fetchSiteJSON<SitePage>(buildSitesUrl(params, pageParam as number | undefined)),
     initialPageParam: 1,
+    initialData: initialData ? { pages: [initialData], pageParams: [1] } : undefined,
     getNextPageParam: (lastPage) => {
       if (lastPage.next) {
         const u = new URL(lastPage.next, "http://placeholder");
@@ -98,10 +100,11 @@ export function useSiteIds() {
   });
 }
 
-export function useSiteDetail(id: number) {
+export function useSiteDetail(id: number, initialData?: Site) {
   return useQuery<Site>({
     queryKey: ["site", id],
     queryFn: () => fetchSiteJSON<Site>(`${API_URL}/sites/${id}/`),
+    initialData,
   });
 }
 

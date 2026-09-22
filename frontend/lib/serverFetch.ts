@@ -10,6 +10,7 @@ export async function serverFetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${SERVER_API}${path}`, {
     headers: { accept: "application/json" },
     cache: "no-store",
+    signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) {
     throw new Error(`serverFetch ${path} failed: ${res.status}`);

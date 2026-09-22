@@ -5,6 +5,7 @@ import { fetchSite, fetchSettings, serverFetchJSON } from "../../../lib/serverFe
 import { siteTitle, siteDescription } from "../../../lib/seoCopy";
 import { serverI18n } from "../../../lib/i18nServer";
 import SiteDetailClient from "../../../components/pages/SiteDetailClient";
+import type { Site, SitePage } from "../../../lib/types";
 
 interface DetailsPageProps {
   params: Promise<{ id: string }>;
@@ -72,14 +73,21 @@ export async function generateMetadata({ params }: DetailsPageProps): Promise<Me
       },
     };
   } catch {
-    return { robots: "noindex,follow" };
+    // 后端瞬时异常：宁可短暂保持 index，也不让 sitemap 内 URL 被判定为 noindex。
+    return { robots: "index,follow" };
   }
 }
 
-function SiteDetailClientWrapper() {
+function SiteDetailClientWrapper({
+  initialSite,
+  relatedSites,
+}: {
+  initialSite?: Site;
+  relatedSites: Site[];
+}) {
   return (
     <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
-      <SiteDetailClient />
+      <SiteDetailClient initialSite={initialSite} initialRelatedSites={relatedSites} />
     </Suspense>
   );
 }
@@ -96,6 +104,17 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
     fetchSite(siteId),
     fetchCounts(siteId),
   ]);
+
+  // 服务端预取同分类站点，写入静态 HTML 作为交叉内链（爬虫可见）。
+  let relatedSites: Site[] = [];
+  if (site?.category_slug) {
+    const relatedPage = await serverFetchJSON<SitePage>(
+      `/sites/?category=${encodeURIComponent(site.category_slug)}`,
+    ).catch(() => null);
+    relatedSites = (relatedPage?.results ?? [])
+      .filter((s) => s.id !== siteId)
+      .slice(0, 6);
+  }
 
   const base = settings?.share_base_url || process.env.NEXT_PUBLIC_DEFAULT_DOMAIN || 'https://fn.9418666.xyz'
   const platforms: string[] = []
@@ -128,7 +147,7 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
           __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c'),
         }}
       />
-      <SiteDetailClientWrapper />
+      <SiteDetailClientWrapper initialSite={site ?? undefined} relatedSites={relatedSites} />
     </>
   )
 }

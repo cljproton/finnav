@@ -14,8 +14,9 @@ import InternalLink from "../InternalLink";
 import BackToTopButton from "../BackToTopButton";
 import { InputSearch } from "@/components/antd-wrapper";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
+import type { SitePage } from "../../lib/types";
 
-export default function SearchClient() {
+export default function SearchClient({ initialSitePage }: { initialSitePage?: SitePage }) {
   const { t } = useTranslation();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
@@ -58,6 +59,7 @@ export default function SearchClient() {
     isFetchingNextPage,
   } = useSitesInfinite(
     debouncedQuery.trim() ? { q: debouncedQuery.trim() } : undefined,
+    debouncedQuery.trim() ? undefined : initialSitePage,
   );
 
   const sites = useMemo(() => (sitePages?.pages ?? []).flatMap((p) => p.results), [sitePages]);
@@ -201,6 +203,21 @@ export default function SearchClient() {
                     >
                       <span className="fn-text-sm fn-text-primary" style={{ fontSize: 13, color: "var(--fn-text)" }}>{term}</span>
                     </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {initialSitePage && initialSitePage.results.length > 0 ? (
+              <div className="fn-px-5 fn-pt-6" style={{ paddingInline: 20, paddingTop: 24 }}>
+                <div className="fn-flex fn-items-center fn-justify-between fn-mb-3" style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <span className="fn-text-sm fn-text-tertiary" style={{ fontSize: 13, color: "var(--fn-text-tertiary)" }}>{t("全部站点")}</span>
+                  <InternalLink href="/sites">
+                    <span className="fn-text-xs fn-text-brand" style={{ fontSize: 12, color: "var(--fn-primary)" }}>{t("查看全部")} ›</span>
+                  </InternalLink>
+                </div>
+                <div className="fn-site-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12 }}>
+                  {initialSitePage.results.map((site) => (
+                    <SiteCard key={String(site.id)} site={site} />
                   ))}
                 </div>
               </div>

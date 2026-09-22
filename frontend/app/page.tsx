@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { fetchSettings } from "../lib/serverFetch";
+import { fetchSettings, serverFetchJSON } from "../lib/serverFetch";
 import { homeTitle, homeDescription } from "../lib/seoCopy";
 import { serverI18n } from "../lib/i18nServer";
 import HomeClient from "../components/pages/HomeClient";
+import type { Category, SitePage } from "../lib/types";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
@@ -29,16 +30,12 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-function HomeClientWrapper() {
-  return (
-    <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
-      <HomeClient />
-    </Suspense>
-  );
-}
-
 export default async function HomePage() {
-  const settings = await fetchSettings()
+  const [settings, sitePage, categories] = await Promise.all([
+    fetchSettings(),
+    serverFetchJSON<SitePage>("/sites/").catch(() => null),
+    serverFetchJSON<Category[]>("/categories/").catch(() => null),
+  ]);
   const base = settings?.share_base_url || process.env.NEXT_PUBLIC_DEFAULT_DOMAIN || 'https://fn.9418666.xyz'
 
   const jsonLd = {
@@ -62,7 +59,9 @@ export default async function HomePage() {
           __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c'),
         }}
       />
-      <HomeClientWrapper />
+      <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
+        <HomeClient initialSitePage={sitePage ?? undefined} initialCategories={categories ?? undefined} />
+      </Suspense>
     </>
   )
 }

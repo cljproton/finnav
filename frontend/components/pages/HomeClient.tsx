@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useCategories, useSitesInfinite } from "../../lib/api";
 import CategoryChips from "../CategoryChips";
@@ -14,14 +14,17 @@ import BackToTopButton from "../BackToTopButton";
 import { Logo } from "../Logo";
 import { Ionicons } from "../../components/ui/icons";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
+import type { Category, SitePage } from "../../lib/types";
 
-export default function HomeClient() {
+export default function HomeClient({ initialSitePage, initialCategories }: { initialSitePage?: SitePage; initialCategories?: Category[] }) {
   const { t, i18n } = useTranslation();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const selectedSlug = searchParams.get("category");
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data: categories, isLoading: catLoading, error: catError, refetch: refetchCats } = useCategories();
+  const { data: categories, isLoading: catLoading, error: catError, refetch: refetchCats } = useCategories(initialCategories);
 
   const {
     data: sitePages,
@@ -31,7 +34,10 @@ export default function HomeClient() {
     isFetchingNextPage,
     fetchNextPage,
     hasNextPage,
-  } = useSitesInfinite(selectedSlug ? { category: selectedSlug } : undefined);
+  } = useSitesInfinite(
+    selectedSlug ? { category: selectedSlug } : undefined,
+    selectedSlug ? undefined : initialSitePage,
+  );
 
   const sites = useMemo(
     () => (sitePages?.pages ?? []).flatMap((p) => p.results),
@@ -43,9 +49,13 @@ export default function HomeClient() {
       const params = new URLSearchParams(searchParams);
       if (slug) params.set("category", slug);
       else params.delete("category");
-      window.location.search = params.toString();
+      const qs = params.toString();
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      if (target === `${pathname}?${searchParams.toString()}`) return;
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      router.replace(target, { scroll: false });
     },
-    [searchParams],
+    [searchParams, pathname, router],
   );
 
   const loading = catLoading || sitesLoading;
@@ -120,7 +130,7 @@ export default function HomeClient() {
     return (
       <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
         <div
-          className="fn-flex fn-flex-col fn-overflow-y-auto"
+          className="fn-flex fn-flex-col"
           ref={scrollRef}
           style={{ scrollBehavior: "auto" }}
         >
@@ -138,7 +148,7 @@ export default function HomeClient() {
     return (
       <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
         <div
-          className="fn-flex fn-flex-col fn-overflow-y-auto"
+          className="fn-flex fn-flex-col"
           ref={scrollRef}
           style={{ scrollBehavior: "auto" }}
         >
@@ -161,7 +171,7 @@ export default function HomeClient() {
   return (
     <div className="fn-min-h-screen" style={{ backgroundColor: "var(--fn-bg)", minHeight: "100vh" }}>
       <div
-        className="fn-flex fn-flex-col fn-overflow-y-auto"
+        className="fn-flex fn-flex-col"
         ref={scrollRef}
         style={{ scrollBehavior: "auto" }}
       >

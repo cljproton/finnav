@@ -18,6 +18,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const navLinks = [
     { href: "/", label: t("首页"), icon: "home", exact: true },
+    { href: "/sites", label: t("全部站点"), icon: "list-outline", exact: false },
     { href: "/search", label: t("搜索"), icon: "search", exact: false },
     { href: "/favorites", label: t("收藏"), icon: "star", exact: false },
     { href: "/profile", label: t("我的"), icon: "person", exact: false },

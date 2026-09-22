@@ -9,6 +9,7 @@ import InternalLink from "./InternalLink";
 
 const NAV_ITEMS: { href: string; label: string }[] = [
   { href: "/", label: "首页" },
+  { href: "/sites", label: "全部站点" },
   { href: "/search", label: "搜索站点" },
   { href: "/submit-site", label: "提交新站点" },
   { href: "/points", label: "积分与邀请" },

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../lib/api";
-import { brandOf, composeTitle, NOINDEX_ROBOTS } from "../lib/seoCopy";
+import { brandOf, composeTitle } from "../lib/seoCopy";
 import { canonicalFromPath, currentPageSeo, useSeoVersion } from "../lib/seo";
 
 /**
@@ -36,7 +36,14 @@ export default function SeoUpdater() {
     t("{{brand}}提供金融与 Web3 站点导航：官网入口、APP 下载、教程与真实用户评价。", { brand });
   const keywords = page.keywords || settings?.seo_keywords || "";
   const canonical = page.canonical || canonicalFromPath(pathname);
-  const robots = page.robots || (canonical ? "index,follow" : NOINDEX_ROBOTS);
+  // robots 兜底：读取 head 中已有的 robots meta（服务端/Next 生成的 index,follow），
+  // 仅当 canonical 明确存在时兜底 index，且只在页面显式声明 noindex 时写入 noindex，
+  // 避免首帧把服务器已有的 index 翻转成 noindex（ahrefs「Noindex page in sitemap」误报）。
+  const existingRobots =
+    typeof document !== "undefined"
+      ? document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content
+      : undefined;
+  const robots = page.robots || existingRobots || (canonical ? "index,follow" : "index,follow");
   const ogType = page.ogType ?? "website";
   const image = page.image || settings?.logo || "";
 

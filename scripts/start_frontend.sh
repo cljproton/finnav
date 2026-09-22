@@ -41,6 +41,11 @@ fi
 if [ -n "$BACKEND_ORIGIN" ]; then
   export BACKEND_ORIGIN
 fi
+# 服务端 SSR 直连地址（BACKEND_API_URL），默认由 next.config.mjs 按环境决定；
+# 本地 prod 模式需显式指向 127.0.0.1:8000，否则会解析到 Docker 内部的 backend 主机名。
+if [ -n "${BACKEND_API_URL:-}" ]; then
+  export BACKEND_API_URL
+fi
 if [ "$MODE" = "prod" ]; then
   npm run build
   nohup npm run start -- -H "$HOST" -p "$PORT" >"$LOG_DIR/frontend.log" 2>&1 &

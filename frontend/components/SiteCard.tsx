@@ -23,9 +23,10 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
   const fav = isFavorite(site.id);
   const router = useRouter();
 
-  const from = window.location.pathname.startsWith("/search")
+  const pathname = typeof window !== "undefined" ? window.location.pathname : "/";
+  const from = pathname.startsWith("/search")
     ? "/search"
-    : window.location.pathname.startsWith("/favorites")
+    : pathname.startsWith("/favorites")
     ? "/favorites"
     : "/";
 
@@ -56,7 +57,7 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
       <div className="fn-flex-1 fn-min-w-0 fn-flex fn-flex-col fn-gap-1">
         <div className="fn-flex fn-items-center fn-gap-1.5 fn-mb-0.5">
           <InternalLink
-            href={`/site/${site.id}?from=${encodeURIComponent(window.location.pathname)}`}
+            href={`/site/${site.id}?from=${encodeURIComponent(pathname)}`}
             style={{ minWidth: 0, flexShrink: 1 }}
           >
             <Typography.Text

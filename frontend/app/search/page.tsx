@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { fetchSettings } from "../../lib/serverFetch";
+import { fetchSettings, serverFetchJSON } from "../../lib/serverFetch";
 import { searchTitle, searchDescription } from "../../lib/seoCopy";
 import { serverI18n } from "../../lib/i18nServer";
 import SearchClient from "../../components/pages/SearchClient";
+import type { SitePage } from "../../lib/types";
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<{ q?: string }> }): Promise<Metadata> {
   try {
@@ -29,14 +30,13 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   }
 }
 
-function SearchClientWrapper() {
+export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const params = await searchParams;
+  const q = params.q?.trim();
+  const initialSitePage = q ? null : (await serverFetchJSON<SitePage>("/sites/").catch(() => null));
   return (
     <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
-      <SearchClient />
+      <SearchClient initialSitePage={initialSitePage ?? undefined} />
     </Suspense>
   );
-}
-
-export default function SearchPage() {
-  return <SearchClientWrapper />;
 }

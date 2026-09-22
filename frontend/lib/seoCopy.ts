@@ -279,6 +279,30 @@ export function experiencesDescription(t: Translate, siteName: string): string {
   );
 }
 
+/* ---------- 全站索引页 ---------- */
+
+export function sitesIndexTitle(
+  t: Translate,
+  settings: SeoSettingsLike | null | undefined,
+  page: number,
+): string {
+  const parts = [t("全部站点"), page > 1 ? t("第 {{page}} 页", { page }) : null, brandTagline(t)];
+  return composeTitle(t, brandOf(settings), ...parts);
+}
+
+export function sitesIndexDescription(
+  t: Translate,
+  settings: SeoSettingsLike | null | undefined,
+  totalCount: number,
+): string {
+  const brand = brandOf(settings);
+  const countText = totalCount ? t("共 {{count}} 个", { count: totalCount }) : t("收录多个");
+  return t(
+    "{{brand}}全部站点索引：{{countText}}金融与 Web3 网站与 APP，按活跃度排序，提供官网入口、APP 下载、新手教程与真实用户评价，支持分页浏览。",
+    { brand, countText },
+  );
+}
+
 /* ---------- 个人中心类页面（统一 noindex，仅补全元信息） ---------- */
 
 export function accountTitle(t: Translate, settings: SeoSettingsLike | null | undefined, label: string): string {
