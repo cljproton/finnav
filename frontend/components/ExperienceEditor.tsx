@@ -500,7 +500,7 @@ export default function ExperienceEditor({
             placeholder={t("请输入经验内容")}
             autoSize
             variant="borderless"
-            style={{ ...borderlessStyle, fontSize: 15, lineHeight: 24, width: "100%", padding: "0 0 4px" }}
+            style={{ ...borderlessStyle, fontSize: 15, lineHeight: "24px", width: "100%", padding: "0 0 4px" }}
           />
 
           <div
@@ -695,7 +695,7 @@ export default function ExperienceEditor({
             </div>
           ) : null}
 
-          {error ? <div style={{ fontSize: 13, marginTop: 12, lineHeight: 18, color: "var(--fn-error)" }}>{error}</div> : null}
+          {error ? <div style={{ fontSize: 13, marginTop: 12, lineHeight: "18px", color: "var(--fn-error)" }}>{error}</div> : null}
 
           <Button
             type="primary"

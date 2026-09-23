@@ -40,7 +40,9 @@ export function normalizeLanguage(lng: string | null | undefined): AppLanguage {
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: detectInitialLanguage(),
+  // SSR 无 navigator，首帧语言固定英文可保证服务端/客户端输出一致，避免 hydration mismatch；
+  // 真实语言在水合后由 restoreSavedLanguage() 恢复（见 providers.tsx）。
+  lng: "en",
   fallbackLng: "zh",
   interpolation: { escapeValue: false },
   react: { useSuspense: false },
@@ -50,7 +52,7 @@ i18n.use(initReactI18next).init({
 export async function restoreSavedLanguage(): Promise<AppLanguage> {
   try {
     const saved = localStorage.getItem(LANG_STORAGE_KEY);
-    if (!saved) return i18n.language as AppLanguage;
+    if (!saved) return detectInitialLanguage(); // 无缓存 -> 跟随设备语言，中文用户水合后切中文
     const lang = normalizeLanguage(saved);
     if (lang !== i18n.language) {
       await i18n.changeLanguage(lang);

@@ -56,7 +56,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="zh-CN" className="scroll-smooth">
+    <html lang="en" className="scroll-smooth">
       <head>
         <link
           rel="preconnect"

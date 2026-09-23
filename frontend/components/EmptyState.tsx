@@ -27,7 +27,7 @@ export default function EmptyState({
         {title}
       </Typography.Text>
       {message && (
-        <Typography.Text className="fn-mt-2 fn-text-sm fn-text-center fn-text-tertiary fn-leading-relaxed" style={{ lineHeight: 18 }}>
+        <Typography.Text className="fn-mt-2 fn-text-sm fn-text-center fn-text-tertiary fn-leading-relaxed" style={{ lineHeight: "18px" }}>
           {message}
         </Typography.Text>
       )}

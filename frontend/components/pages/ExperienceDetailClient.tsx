@@ -324,7 +324,7 @@ export default function ExperienceDetailClient() {
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "var(--fn-text-secondary)" }}>
                 {t("正文")}
               </div>
-              <div style={{ fontSize: 15, lineHeight: 24, whiteSpace: "pre-wrap", color: "var(--fn-text)" }}>
+              <div style={{ fontSize: 15, lineHeight: "24px", whiteSpace: "pre-wrap", color: "var(--fn-text)" }}>
                 {item.content}
               </div>
 

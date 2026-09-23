@@ -51,8 +51,8 @@ function TutorialItem({
         alignItems: "center",
         paddingLeft: 14,
         paddingRight: 14,
-        paddingTop: 12,
-        paddingBottom: 12,
+        paddingTop: 8,
+        paddingBottom: 8,
         borderRadius: 10,
         border: "1px solid var(--fn-border)",
         backgroundColor: "var(--fn-surface)",
@@ -76,7 +76,7 @@ function TutorialItem({
           style={{
             fontSize: 14,
             fontWeight: 600,
-            lineHeight: 20,
+            lineHeight: "20px",
             color: "var(--fn-text)",
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -86,7 +86,7 @@ function TutorialItem({
         >
           {tutorial.title}
         </div>
-        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 12, marginTop: 6 }}>
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }}>
           <span style={{ fontSize: 12, color: "var(--fn-text-tertiary)" }}>
             {tutorial.username_masked}
           </span>

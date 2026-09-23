@@ -52,7 +52,7 @@ function ReviewItem({ review }: { review: SiteReview }) {
         <ReviewStars score={review.score} />
       </div>
       {review.comment ? (
-        <p style={{ fontSize: 14, lineHeight: 20, color: "var(--fn-text)", marginTop: 6, marginBottom: 0 }}>
+        <p style={{ fontSize: 14, lineHeight: "20px", color: "var(--fn-text)", marginTop: 6, marginBottom: 0 }}>
           {review.comment}
         </p>
       ) : null}

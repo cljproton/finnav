@@ -35,7 +35,7 @@ export function DeleteConfirmModal({ visible, onClose, onConfirm, name }: Delete
       <div className="fn-text-lg fn-font-bold fn-text-primary fn-mb-2.5" style={{ fontSize: 17, fontWeight: 700 }}>
         {t("删除")}
       </div>
-      <div className="fn-text-sm fn-text-tertiary fn-mb-4 fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 20 }}>
+      <div className="fn-text-sm fn-text-tertiary fn-mb-4 fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "20px" }}>
         {t("确认删除「{{name}}」？已驳回的提交将直接删除。", { name })}
       </div>
     </Modal>

@@ -52,7 +52,7 @@ export function ConfirmModal({
       <div className="fn-text-lg fn-font-bold fn-text-primary fn-mb-2.5" style={{ fontSize: 17, fontWeight: 700 }}>
         {title}
       </div>
-      <div className="fn-text-sm fn-text-tertiary fn-mb-4 fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 20 }}>
+      <div className="fn-text-sm fn-text-tertiary fn-mb-4 fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "20px" }}>
         {message}
       </div>
     </Modal>

@@ -160,7 +160,7 @@ function WaterfallCard({
         style={{
           fontSize: 14,
           fontWeight: 600,
-          lineHeight: 19,
+          lineHeight: "19px",
           color: "var(--fn-text)",
           paddingLeft: 10,
           paddingRight: 10,
@@ -478,7 +478,7 @@ export default function SiteExperiencesClient() {
             style={{ display: "flex", flexDirection: "column", gap: 14 }}
             onScroll={handleScroll}
           >
-            <div style={{ fontSize: 13, lineHeight: 19, marginTop: 4, color: "var(--fn-text-tertiary)" }}>
+            <div style={{ fontSize: 13, lineHeight: "19px", marginTop: 4, color: "var(--fn-text-tertiary)" }}>
               {t("发布你的实战经验，其他人需积分购买解锁")}
             </div>
 

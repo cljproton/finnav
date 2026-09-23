@@ -362,7 +362,7 @@ export default function TutorialShareEditor({
         </div>
 
         <div style={{ paddingTop: 8 }}>
-          <div style={{ fontSize: 13, lineHeight: 20, marginBottom: 16, color: "var(--fn-text-secondary)" }}>
+          <div style={{ fontSize: 13, lineHeight: "20px", marginBottom: 16, color: "var(--fn-text-secondary)" }}>
             {t("分享你的教程链接，标题会自动获取，你只需要确认一下就好啦。审核通过后就会公开展示给其他用户。")}
           </div>
 
@@ -484,7 +484,7 @@ export default function TutorialShareEditor({
                   </button>
                 </div>
                 {preview.fallback ? (
-                  <div style={{ fontSize: 12, lineHeight: 18, marginTop: 6, color: "var(--fn-text-secondary)" }}>
+                  <div style={{ fontSize: 12, lineHeight: "18px", marginTop: 6, color: "var(--fn-text-secondary)" }}>
                     {t("暂时没能自动获取标题，你可以手动填写，或留空由我们提交时再试一次")}
                   </div>
                 ) : (
@@ -493,7 +493,7 @@ export default function TutorialShareEditor({
                       fontSize: 14,
                       fontWeight: 600,
                       marginTop: 6,
-                      lineHeight: 20,
+                      lineHeight: "20px",
                       color: "var(--fn-text)",
                       display: "-webkit-box",
                       WebkitLineClamp: 2,
@@ -564,7 +564,7 @@ export default function TutorialShareEditor({
           ) : null}
 
           {submitError ? (
-            <div style={{ fontSize: 13, lineHeight: 18, marginBottom: 12, color: "var(--fn-error)" }}>{submitError}</div>
+            <div style={{ fontSize: 13, lineHeight: "18px", marginBottom: 12, color: "var(--fn-error)" }}>{submitError}</div>
           ) : null}
 
           <Button

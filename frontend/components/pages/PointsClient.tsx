@@ -238,7 +238,7 @@ function TransferCard() {
           {t("积分转赠")}
         </span>
       </div>
-      <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 16 }}>
+      <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "16px" }}>
         {t("免手续费，最低 {{min}} 积分", { min: MIN_TRANSFER_AMOUNT })}
       </span>
 
@@ -312,7 +312,7 @@ function TransferCard() {
 
       {tab === "voucher" && (
         <div>
-          <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 16 }}>
+          <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "16px" }}>
             {t("生成后可将兑换码发给任意账号核销，生成时从余额扣除，不退还")}
           </span>
           <span className="fn-text-sm fn-text-secondary fn-mt-3.5 fn-mb-1.5" style={{ fontSize: 13, marginTop: 14, marginBottom: 6 }}>
@@ -349,7 +349,7 @@ function TransferCard() {
 
       {tab === "redeem" && (
         <div>
-          <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 16 }}>
+          <span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "16px" }}>
             {t("输入好友给你的兑换码，面额到账")}
           </span>
           <span className="fn-text-sm fn-text-secondary fn-mt-3.5 fn-mb-1.5" style={{ fontSize: 13, marginTop: 14, marginBottom: 6 }}>
@@ -473,7 +473,7 @@ export default function PointsClient() {
             <span className="fn-text-md fn-font-semibold fn-text-center fn-text-primary" style={{ fontSize: 16, fontWeight: 600, textAlign: "center" }}>
               {t("登录后查看积分与邀请奖励")}
             </span>
-            <span className="fn-text-sm fn-text-center fn-text-tertiary fn-leading-relaxed fn-mt-2" style={{ fontSize: 13, marginTop: 8, textAlign: "center", lineHeight: 16 }}>
+            <span className="fn-text-sm fn-text-center fn-text-tertiary fn-leading-relaxed fn-mt-2" style={{ fontSize: 13, marginTop: 8, textAlign: "center", lineHeight: "16px" }}>
               {t("提交站点、分享教程、提交 APP 链接，审核通过即得积分")}
             </span>
             <Button onClick={() => setAuthVisible(true)} className="fn-mt-5" style={{ marginTop: 20, paddingTop: 14, paddingBottom: 14, paddingLeft: 32, paddingRight: 32, borderRadius: 10, backgroundColor: "var(--fn-primary)" }} type="primary">
@@ -503,7 +503,7 @@ export default function PointsClient() {
                   {t("邀请好友得积分")}
                 </span>
               </div>
-<span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: 16 }}>
+<span className="fn-text-sm fn-text-tertiary fn-leading-relaxed" style={{ fontSize: 13, lineHeight: "16px" }}>
                 {t("好友通过你的邀请链接注册，你与好友各得奖励积分")}
               </span>
               <div className="fn-mt-3.5 fn-flex fn-items-center fn-justify-between fn-py-2.5 fn-px-3 fn-rounded-md fn-bg-brand-light" style={{ marginTop: 14, display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 10, paddingBottom: 10, paddingLeft: 12, paddingRight: 12, borderRadius: 10, backgroundColor: "var(--fn-primary-light)" }}>
