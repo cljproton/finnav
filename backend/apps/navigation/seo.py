@@ -23,6 +23,9 @@ def _site_base_url(request) -> str:
         return setting.share_base_url
     scheme = request.headers.get('X-Forwarded-Proto') or request.scheme
     host = request.get_host()
+    # 反代场景：Host 头可能带上游端口（如后端直连 80），与 https 组合成非法地址
+    if scheme == 'https' and host.endswith(':80'):
+        host = host[: -len(':80')]
     return f'{scheme}://{host}'
 
 

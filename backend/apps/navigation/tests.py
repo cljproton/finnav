@@ -36,7 +36,7 @@ from .models import (
     TwoFactor,
     UserProfile,
 )
-from .services import LogoFetchError, fetch_page_title_info
+from .services import LogoResolveError, fetch_page_title_info
 
 
 def _tags(*names):
@@ -209,9 +209,9 @@ class SitesTestCase(TestCase):
 
     def test_site_detail(self):
         with mock.patch(
-            'apps.navigation.services.fetch_and_cache_logo'
+            'apps.navigation.services.resolve_site_logo_url'
         ) as fetch:
-            fetch.side_effect = LogoFetchError("mock offline")
+            fetch.side_effect = LogoResolveError("mock offline")
             resp = self.client.get(f'/api/sites/{self.uniswap.id}/')
             self.assertEqual(resp.status_code, 200)
             site = resp.json()
@@ -244,9 +244,9 @@ class SiteExtendedFieldsTestCase(TestCase):
         )
         site.tags.set(_tags('dex'))
         with mock.patch(
-            'apps.navigation.services.fetch_and_cache_logo'
+            'apps.navigation.services.resolve_site_logo_url'
         ) as fetch:
-            fetch.side_effect = LogoFetchError("mock offline")
+            fetch.side_effect = LogoResolveError("mock offline")
             resp = self.client.get(f'/api/sites/{site.id}/')
             self.assertEqual(resp.status_code, 200)
             data = resp.json()
@@ -291,9 +291,9 @@ class SiteExtendedFieldsTestCase(TestCase):
                     )
                 )
                 with mock.patch(
-                    'apps.navigation.services.fetch_and_cache_logo'
+                    'apps.navigation.services.resolve_site_logo_url'
                 ) as fetch:
-                    fetch.side_effect = LogoFetchError("mock offline")
+                    fetch.side_effect = LogoResolveError("mock offline")
                     resp = self.client.get(f'/api/sites/{site.id}/')
                     data = resp.json()
                 self.assertTrue(data['app_android_has_cache'])
@@ -333,9 +333,9 @@ class SiteExtendedFieldsTestCase(TestCase):
                                          'app_android_cached_at'])
 
                 with mock.patch(
-                    'apps.navigation.services.fetch_and_cache_logo'
+                    'apps.navigation.services.resolve_site_logo_url'
                 ) as fetch:
-                    fetch.side_effect = LogoFetchError("mock offline")
+                    fetch.side_effect = LogoResolveError("mock offline")
                     # 匿名：能看到有缓存入口，但拿不到真实下载地址
                     resp = self.client.get(f'/api/sites/{site.id}/')
                     data = resp.json()
@@ -350,9 +350,9 @@ class SiteExtendedFieldsTestCase(TestCase):
                 )
                 self.client.force_authenticate(user)
                 with mock.patch(
-                    'apps.navigation.services.fetch_and_cache_logo'
+                    'apps.navigation.services.resolve_site_logo_url'
                 ) as fetch:
-                    fetch.side_effect = LogoFetchError("mock offline")
+                    fetch.side_effect = LogoResolveError("mock offline")
                     resp2 = self.client.get(f'/api/sites/{site.id}/')
                     data2 = resp2.json()
                 self.assertTrue(data2['app_android_has_cache'])
@@ -2196,84 +2196,42 @@ class ResumeDownloadTestCase(TestCase):
             server.shutdown()
 
 
-class LogoFetchTestCase(TestCase):
-    """站点 logo 按需自动获取并缓存到本站。"""
+class LogoUrlResolveTestCase(TestCase):
+    """站点 Logo 只解析链接：写入 logo_url，且不在本站存放任何图片文件。"""
 
-    class _Handler(BaseHTTPRequestHandler):
-        payload = b''
+    class _SiteHandler(BaseHTTPRequestHandler):
+        """首页声明 <link rel="icon">，被声明的路径返回 PNG。"""
+
+        icon_path = '/static/favicon.png'
+        hits = None
 
         def do_GET(self):
-            data = self.payload
-            self.send_response(200)
-            self.send_header('Content-Type', 'image/x-icon')
-            self.send_header('Content-Length', str(len(data)))
+            if self.hits is not None:
+                self.hits.append(self.path)
+            if self.path == '/':
+                body = (
+                    '<html><head>'
+                    f'<link rel="icon" href="{self.icon_path}">'
+                    '</head><body>fav</body></html>'
+                ).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if self.path == self.icon_path:
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/png')
+                self.send_header('Content-Length', '2')
+                self.end_headers()
+                self.wfile.write(b'\x89P')
+                return
+            self.send_response(404)
             self.end_headers()
-            self.wfile.write(data)
 
         def log_message(self, format, *args):
             pass
-
-    @classmethod
-    def _server(cls, payload):
-        cls._Handler.payload = payload
-        server = ThreadingHTTPServer(('127.0.0.1', 0), cls._Handler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        return server
-
-    def setUp(self):
-        # 本地回环测试服务器绕过 SSRF 校验
-        self._ssrf_patcher = mock.patch(
-            'apps.navigation.services._ensure_public_host', return_value=None
-        )
-        self._ssrf_patcher.start()
-        self.addCleanup(self._ssrf_patcher.stop)
-        self.client = APIClient()
-        self.category = Category.objects.create(name='DeFi', slug='defi')
-        self.media_root = tempfile.mkdtemp()
-
-    def tearDown(self):
-        shutil.rmtree(self.media_root, ignore_errors=True)
-
-    def test_detail_triggers_fetch_and_caches_logo(self):
-        from io import BytesIO
-
-        from PIL import Image
-
-        from .services import fetch_and_cache_logo
-
-        # 生成一张合法的 PNG
-        img = Image.new('RGB', (32, 32), (79, 70, 229))
-        buf = BytesIO()
-        img.save(buf, format='PNG')
-        payload = buf.getvalue()
-
-        base = tempfile.mkdtemp()
-        media_root = tempfile.mkdtemp()
-        try:
-            server = self._server(payload)
-            origin = f'http://127.0.0.1:{server.server_port}'
-            try:
-                with override_settings(MEDIA_ROOT=media_root):
-                    site = Site.objects.create(
-                        name='Fav', url=origin + '/', category=self.category,
-                    )
-                    url = fetch_and_cache_logo(site)
-                    self.assertTrue(url)
-                    site.refresh_from_db()
-                    self.assertTrue(bool(site.logo))
-                    self.assertIsNotNone(site.logo_fetched_at)
-                    # 已缓存后应直接返回，不再触发网络
-                    with mock.patch(
-                        'apps.navigation.services._fetch_bytes'
-                    ) as fb:
-                        again = fetch_and_cache_logo(site)
-                    self.assertEqual(again, url)
-                    fb.assert_not_called()
-            finally:
-                server.shutdown()
-        finally:
-            shutil.rmtree(base, ignore_errors=True)
-            shutil.rmtree(media_root, ignore_errors=True)
 
     class _NoIconHandler(BaseHTTPRequestHandler):
         """站点无图标：根路径返回空 HTML，其余一律 404。"""
@@ -2294,15 +2252,13 @@ class LogoFetchTestCase(TestCase):
             pass
 
     class _ProviderHandler(BaseHTTPRequestHandler):
-        payload = b''
-
         def do_GET(self):
             if self.path == '/icon.png':
                 self.send_response(200)
                 self.send_header('Content-Type', 'image/png')
-                self.send_header('Content-Length', str(len(self.payload)))
+                self.send_header('Content-Length', '2')
                 self.end_headers()
-                self.wfile.write(self.payload)
+                self.wfile.write(b'\x89P')
                 return
             self.send_response(404)
             self.end_headers()
@@ -2311,93 +2267,183 @@ class LogoFetchTestCase(TestCase):
             pass
 
     @staticmethod
-    def _start(handler_cls, payload=b''):
-        handler_cls.payload = payload
+    def _start(handler_cls):
         server = ThreadingHTTPServer(('127.0.0.1', 0), handler_cls)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
 
+    def setUp(self):
+        # 本地回环测试服务器绕过 SSRF 校验
+        self._ssrf_patcher = mock.patch(
+            'apps.navigation.services._ensure_public_host', return_value=None
+        )
+        self._ssrf_patcher.start()
+        self.addCleanup(self._ssrf_patcher.stop)
+        self.client = APIClient()
+        self.category = Category.objects.create(name='DeFi', slug='defi')
+        self.media_root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media_root, ignore_errors=True)
+
+    def _site(self, name, url):
+        return Site.objects.create(name=name, url=url, category=self.category)
+
+    def _allow_loopback(self):
+        """放行回环测试地址。
+
+        生产逻辑会拒绝内网/回环主机（防 SSRF 与内网探针链接入库），
+        本地 HTTP 测试服务器是 127.0.0.1，故在流程测试里旁路该字面量校验；
+        校验本身由 test_normalize_icon_url_* 单独覆盖。
+        """
+        return mock.patch(
+            'apps.navigation.services.normalize_icon_url',
+            side_effect=lambda u: u.strip() if u else None,
+        )
+
+    def test_resolve_stores_link_and_writes_no_file(self):
+        from .services import resolve_site_logo_url
+
+        server = self._start(self._SiteHandler)
+        self.addCleanup(server.shutdown)
+        origin = f'http://127.0.0.1:{server.server_port}'
+
+        with self._allow_loopback(), override_settings(MEDIA_ROOT=self.media_root):
+            site = self._site('Fav', origin + '/')
+            url = resolve_site_logo_url(site)
+            site.refresh_from_db()
+
+            # 存的是站点自报的图标绝对链接
+            self.assertEqual(url, origin + '/static/favicon.png')
+            self.assertEqual(site.logo_url, origin + '/static/favicon.png')
+            self.assertIsNotNone(site.logo_resolved_at)
+            # 本站 media 下不产生任何文件（既没有 logos/ 也没有其它目录）
+            self.assertEqual(os.listdir(self.media_root), [])
+
+    def test_resolve_only_parses_html_when_verify_disabled(self):
+        """关闭可用性校验时只请求首页 HTML，不请求任何图片地址。"""
+        from .services import resolve_site_logo_url
+
+        hits = []
+        handler_cls = type('H', (self._SiteHandler,), {'hits': hits})
+        server = self._start(handler_cls)
+        self.addCleanup(server.shutdown)
+        origin = f'http://127.0.0.1:{server.server_port}'
+
+        with self._allow_loopback(), override_settings(
+            MEDIA_ROOT=self.media_root, SITE_LOGO_VERIFY=False
+        ):
+            site = self._site('NoVerify', origin + '/')
+            self.assertEqual(
+                resolve_site_logo_url(site), origin + '/static/favicon.png'
+            )
+        self.assertEqual(hits, ['/'], '不应请求图片地址')
+
+    def test_existing_link_skips_network(self):
+        from .services import resolve_site_logo_url
+
+        site = self._site('Has', 'https://example.com/')
+        site.logo_url = 'https://cdn.example.com/logo.png'
+        site.save(update_fields=['logo_url'])
+
+        with mock.patch(
+            'apps.navigation.services._fetch_homepage_html'
+        ) as fetch:
+            again = resolve_site_logo_url(site)
+        self.assertEqual(again, 'https://cdn.example.com/logo.png')
+        fetch.assert_not_called()
+
+    def test_resolve_disabled_by_setting(self):
+        from .services import resolve_site_logo_url
+
+        site = self._site('Off', 'https://example.com/')
+        with override_settings(SITE_LOGO_RESOLVE_ENABLED=False):
+            with mock.patch(
+                'apps.navigation.services._fetch_homepage_html'
+            ) as fetch:
+                self.assertIsNone(resolve_site_logo_url(site))
+            fetch.assert_not_called()
+
     def test_provider_fallback_when_site_has_no_icon(self):
-        from io import BytesIO
+        from .services import resolve_site_logo_url
 
-        from PIL import Image
-
-        from .services import fetch_and_cache_logo
-
-        img = Image.new('RGB', (32, 32), (220, 38, 38))
-        buf = BytesIO()
-        img.save(buf, format='PNG')
-        payload = buf.getvalue()
-
-        media_root = tempfile.mkdtemp()
         site_server = self._start(self._NoIconHandler)
-        provider_server = self._start(self._ProviderHandler, payload)
-        try:
-            with override_settings(
-                MEDIA_ROOT=media_root,
-                SITE_LOGO_PROVIDERS=[
-                    f'http://127.0.0.1:{provider_server.server_port}/icon.png'
-                ],
-            ):
-                site = Site.objects.create(
-                    name='NoIcon',
-                    url=f'http://127.0.0.1:{site_server.server_port}/',
-                    category=self.category,
-                )
-                url = fetch_and_cache_logo(site)
-                self.assertTrue(url)
-                site.refresh_from_db()
-                self.assertTrue(bool(site.logo))
-                self.assertIsNotNone(site.logo_fetched_at)
-                # 站点自身无图标，缓存来自第三方兜底
-                self.assertIn('/logos/logo-', url)
-        finally:
-            site_server.shutdown()
-            provider_server.shutdown()
-            shutil.rmtree(media_root, ignore_errors=True)
+        provider_server = self._start(self._ProviderHandler)
+        self.addCleanup(site_server.shutdown)
+        self.addCleanup(provider_server.shutdown)
+
+        with self._allow_loopback(), override_settings(
+            MEDIA_ROOT=self.media_root,
+            SITE_LOGO_PROVIDERS=[
+                f'http://127.0.0.1:{provider_server.server_port}/icon.png'
+            ],
+        ):
+            site = self._site('NoIcon', f'http://127.0.0.1:{site_server.server_port}/')
+            url = resolve_site_logo_url(site)
+            site.refresh_from_db()
+            self.assertEqual(
+                url, f'http://127.0.0.1:{provider_server.server_port}/icon.png'
+            )
+            self.assertTrue(site.logo_url)
+            self.assertIsNotNone(site.logo_resolved_at)
+            self.assertEqual(os.listdir(self.media_root), [])
 
     def test_provider_disabled_raises_when_no_site_icon(self):
-        from .services import LogoFetchError, fetch_and_cache_logo
+        from .services import LogoResolveError, resolve_site_logo_url
 
-        media_root = tempfile.mkdtemp()
         site_server = self._start(self._NoIconHandler)
-        try:
-            with override_settings(MEDIA_ROOT=media_root, SITE_LOGO_PROVIDERS=[]):
-                site = Site.objects.create(
-                    name='NoIcon',
-                    url=f'http://127.0.0.1:{site_server.server_port}/',
-                    category=self.category,
-                )
-                with self.assertRaises(LogoFetchError):
-                    fetch_and_cache_logo(site)
-                site.refresh_from_db()
-                self.assertFalse(bool(site.logo))
-                self.assertIsNone(site.logo_fetched_at)
-        finally:
-            site_server.shutdown()
-            shutil.rmtree(media_root, ignore_errors=True)
-        # 页面无 link，兜底 /favicon.ico，再走第三方图标服务
-        from .services import _icon_candidates
+        self.addCleanup(site_server.shutdown)
 
-        site = Site.objects.create(
-            name='X', url='https://example.com/', category=self.category,
+        with self._allow_loopback(), override_settings(
+            MEDIA_ROOT=self.media_root, SITE_LOGO_PROVIDERS=[]
+        ):
+            site = self._site('NoIcon', f'http://127.0.0.1:{site_server.server_port}/')
+            with self.assertRaises(LogoResolveError):
+                resolve_site_logo_url(site)
+            site.refresh_from_db()
+            self.assertFalse(bool(site.logo_url))
+            # 自动路径失败也记时间，用于节流
+            self.assertIsNotNone(site.logo_resolved_at)
+
+    def test_force_failure_does_not_write_retry_timestamp(self):
+        """手动/批量路径（force）失败不记时间，保证下次仍会重试。"""
+        from .services import LogoResolveError, resolve_site_logo_url
+
+        site_server = self._start(self._NoIconHandler)
+        self.addCleanup(site_server.shutdown)
+
+        with self._allow_loopback(), override_settings(
+            MEDIA_ROOT=self.media_root, SITE_LOGO_PROVIDERS=[]
+        ):
+            site = self._site('NoIcon', f'http://127.0.0.1:{site_server.server_port}/')
+            with self.assertRaises(LogoResolveError):
+                resolve_site_logo_url(site, force=True)
+            site.refresh_from_db()
+            self.assertIsNone(site.logo_resolved_at)
+
+    def test_non_renderable_declaration_is_skipped(self):
+        """页面声明的地址不是图片（如 HTML 页面）时跳过，落到 /favicon.ico。"""
+        from .services import resolve_site_logo_url
+
+        handler_cls = type(
+            'H', (self._SiteHandler,), {'icon_path': '/app.html', 'hits': None}
         )
-        cands = _icon_candidates(site, html='<html><body>no icon</body></html>')
-        self.assertEqual(
-            cands,
-            [
-                'https://example.com/favicon.ico',
-                'https://www.google.com/s2/favicons?domain=example.com&sz=64',
-                'https://icons.duckduckgo.com/ip3/example.com.ico',
-            ],
-        )
+        server = self._start(handler_cls)
+        self.addCleanup(server.shutdown)
+        origin = f'http://127.0.0.1:{server.server_port}'
+
+        with self._allow_loopback(), override_settings(
+            MEDIA_ROOT=self.media_root, SITE_LOGO_PROVIDERS=[]
+        ):
+            site = self._site('Html', origin + '/')
+            # /app.html 被扩展名过滤，/favicon.ico 404 校验不通过，兜底已禁用 -> 抛错
+            with self.assertRaises(LogoResolveError):
+                resolve_site_logo_url(site)
+            site.refresh_from_db()
+            self.assertFalse(bool(site.logo_url))
 
     def test_icon_candidates_parse_link_rel(self):
         from .services import _icon_candidates
 
-        site = Site.objects.create(
-            name='X', url='https://example.com/', category=self.category,
-        )
+        site = self._site('X', 'https://example.com/')
         html = '<link rel="icon" href="/static/favicon.png">'
         cands = _icon_candidates(site, html=html)
         self.assertEqual(
@@ -2410,16 +2456,196 @@ class LogoFetchTestCase(TestCase):
             ],
         )
 
+    def test_icon_candidates_handle_relative_and_protocol_relative(self):
+        from .services import _icon_candidates
+
+        site = self._site('X', 'https://example.com/docs/index.html')
+        html = (
+            '<LINK HREF="//cdn.example.com/a.png" REL="SHORTCUT ICON">'
+            '<link href="b.svg" rel="apple-touch-icon">'
+            '<link rel="stylesheet" href="/s.css">'
+        )
+        cands = _icon_candidates(site, html=html)
+        self.assertEqual(cands[0], 'https://cdn.example.com/a.png')
+        # 文档相对地址以站点 URL 为基准补全（RFC 3986）
+        self.assertEqual(cands[1], 'https://example.com/docs/b.svg')
+        self.assertEqual(cands[2], 'https://example.com/favicon.ico')
+        # 样式表不是图标，不应进候选
+        self.assertNotIn('https://example.com/s.css', cands)
+
+    def test_icon_candidates_caps_declared_links(self):
+        from .services import LOGO_MAX_CANDIDATES, _icon_candidates
+
+        site = self._site('X', 'https://example.com/')
+        html = ''.join(
+            f'<link rel="icon" href="/i{n}.png">' for n in range(LOGO_MAX_CANDIDATES + 3)
+        )
+        cands = _icon_candidates(site, html=html)
+        # 页面自报图标被截断（限制出网请求数），随后是 /favicon.ico
+        self.assertEqual(cands[0], 'https://example.com/i0.png')
+        self.assertEqual(
+            cands[LOGO_MAX_CANDIDATES], 'https://example.com/favicon.ico'
+        )
+
     def test_icon_candidates_providers_disabled(self):
         # SITE_LOGO_PROVIDERS=[] 时完全禁用第三方兜底
         from .services import _icon_candidates
 
-        site = Site.objects.create(
-            name='X', url='https://example.com/', category=self.category,
-        )
+        site = self._site('X', 'https://example.com/')
         with override_settings(SITE_LOGO_PROVIDERS=[]):
             cands = _icon_candidates(site, html='<html></html>')
         self.assertEqual(cands, ['https://example.com/favicon.ico'])
+
+    def test_normalize_icon_url_rejects_unsafe_links(self):
+        from .services import normalize_icon_url
+
+        for bad in (
+            'javascript:alert(1)',
+            'data:image/png;base64,AAAA',
+            'file:///etc/passwd',
+            '//evil.com/x.png',
+            'http://127.0.0.1/x.png',
+            'http://localhost/x.png',
+            'http://169.254.169.254/latest/meta-data',
+            'http://192.168.1.1/x.png',
+            'https://internal.local/x.png',
+            'ftp://example.com/x.png',
+            '',
+            None,
+        ):
+            with self.subTest(bad=bad):
+                self.assertIsNone(normalize_icon_url(bad))
+
+    def test_normalize_icon_url_accepts_public_links(self):
+        from .services import normalize_icon_url
+
+        self.assertEqual(
+            normalize_icon_url('  https://example.com/favicon.ico '),
+            'https://example.com/favicon.ico',
+        )
+        # 无扩展名的公共图标服务链接（Google s2 favicons）也允许
+        self.assertEqual(
+            normalize_icon_url('https://www.google.com/s2/favicons?domain=x.com&sz=64'),
+            'https://www.google.com/s2/favicons?domain=x.com&sz=64',
+        )
+        # 超长链接拒绝入库
+        self.assertIsNone(normalize_icon_url('https://e.com/' + 'x' * 600))
+
+    def test_should_retry_logo_throttling(self):
+        from django.utils import timezone
+
+        from .services import should_retry_logo
+
+        site = self._site('T', 'https://example.com/')
+        # 从未解析过 -> 值得重试
+        self.assertTrue(should_retry_logo(site))
+        # 刚尝试过（无论成功失败）-> 节流窗口内不再出网
+        site.logo_resolved_at = timezone.now()
+        self.assertFalse(should_retry_logo(site))
+        # 超过默认 24h 窗口 -> 再试
+        site.logo_resolved_at = timezone.now() - timezone.timedelta(days=2)
+        self.assertTrue(should_retry_logo(site))
+        # 窗口可配置
+        site.logo_resolved_at = timezone.now() - timezone.timedelta(seconds=90)
+        self.assertFalse(should_retry_logo(site))
+        with override_settings(SITE_LOGO_RETRY_SECONDS=60):
+            self.assertTrue(should_retry_logo(site))
+        # 已有链接 -> 不重试
+        site.logo_url = 'https://example.com/favicon.ico'
+        self.assertFalse(should_retry_logo(site))
+        # 全局关闭解析 -> 不重试
+        site.logo_url = None
+        with override_settings(SITE_LOGO_RESOLVE_ENABLED=False):
+            self.assertFalse(should_retry_logo(site))
+
+
+class LogoUrlAdminTestCase(TestCase):
+    """后台 Logo 链接：单字段保存、URL 校验、预览与重新解析 action。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_user = User.objects.create_superuser(
+            username='admin', email='admin@example.com', password='adminpass'
+        )
+        self.category = Category.objects.create(name='DeFi', slug='defi')
+        self.site = Site.objects.create(
+            name='Uniswap', url='https://uniswap.org', category=self.category,
+        )
+        self.url = f'/admin/navigation/site/{self.site.id}/field-save/'
+        self.client.force_login(self.admin_user)
+
+    def _save(self, value):
+        return self.client.post(
+            self.url, data={'field': 'logo_url', 'value': value}
+        )
+
+    def test_save_valid_logo_url(self):
+        resp = self._save('https://uniswap.org/favicon.ico')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['ok'])
+        self.site.refresh_from_db()
+        self.assertEqual(self.site.logo_url, 'https://uniswap.org/favicon.ico')
+        # 手工指定后标记为已解析，避免自动解析再覆盖
+        self.assertIsNotNone(self.site.logo_resolved_at)
+
+    def test_save_rejects_unsafe_logo_url(self):
+        for bad in (
+            'javascript:alert(1)',
+            'data:image/png;base64,AAAA',
+            'http://127.0.0.1/x.png',
+            'http://localhost/x.png',
+            'http://169.254.169.254/latest',
+        ):
+            with self.subTest(bad=bad):
+                resp = self._save(bad)
+                self.assertEqual(resp.status_code, 400)
+                self.site.refresh_from_db()
+                self.assertIsNone(self.site.logo_url)
+
+    def test_save_empty_value_clears_logo_url(self):
+        self.site.logo_url = 'https://uniswap.org/favicon.ico'
+        self.site.save(update_fields=['logo_url'])
+        resp = self._save('')
+        self.assertEqual(resp.status_code, 200)
+        self.site.refresh_from_db()
+        self.assertFalse(bool(self.site.logo_url))
+
+    def test_logo_field_no_longer_accepts_file_upload(self):
+        """本站不再存放 Logo 文件：旧的 multipart 上传方式已移除。"""
+        upload = SimpleUploadedFile('logo.png', b'\x89PNG\r\n', content_type='image/png')
+        resp = self.client.post(
+            f'/admin/navigation/site/{self.site.id}/field-save/',
+            data={'field': 'logo_url', 'file': upload},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.site.refresh_from_db()
+        self.assertIsNone(self.site.logo_url)
+
+    def test_change_page_shows_url_input_not_file_input(self):
+        resp = self.client.get(f'/admin/navigation/site/{self.site.id}/change/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'data-save="logo_url"')
+        self.assertContains(resp, '本站不存放图片文件')
+        self.assertNotContains(resp, 'type="file" accept="image/*" data-save="logo"')
+
+    def test_change_page_renders_logo_preview_from_link(self):
+        self.site.logo_url = 'https://uniswap.org/favicon.ico'
+        self.site.save(update_fields=['logo_url'])
+        resp = self.client.get(f'/admin/navigation/site/{self.site.id}/change/')
+        self.assertContains(resp, 'src="https://uniswap.org/favicon.ico"')
+
+    def test_resolve_logo_urls_action(self):
+        with mock.patch(
+            'apps.navigation.services.resolve_site_logo_url',
+            return_value='https://uniswap.org/favicon.ico',
+        ) as resolve:
+            resp = self.client.post(
+                '/admin/navigation/site/',
+                {'action': 'resolve_logo_urls', '_selected_action': [str(self.site.id)]},
+            )
+            self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resolve.call_count, 1)
+        self.assertTrue(resolve.call_args.kwargs.get('force'))
 
 
 class UserSyncTestCase(TestCase):
@@ -2501,7 +2727,7 @@ class UserSyncTestCase(TestCase):
 
 
 class LogoAsyncTestCase(TransactionTestCase):
-    """详情页图标后台异步拉取：不阻塞请求、缓存就绪后二次返回、并发防重。
+    """详情页图标链接后台异步解析：不阻塞请求、就绪后二次返回、并发防重。
 
     使用 TransactionTestCase：后台线程走独立 DB 连接，需要数据已提交才能读取。
     """
@@ -2512,17 +2738,31 @@ class LogoAsyncTestCase(TransactionTestCase):
         self.site = Site.objects.create(
             name='Uniswap', url='https://uniswap.org', category=self.category,
         )
+        # 后台线程复用不到用例内的 mock 补丁环境，这里直接挡掉出网与 DNS
+        patcher = mock.patch(
+            'apps.navigation.services._fetch_homepage_html',
+            return_value='<html><head><link rel="icon" href="https://uniswap.org/favicon.ico">'
+                         '</head></html>',
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        verify = mock.patch(
+            'apps.navigation.services._ensure_public_host', return_value=None
+        )
+        verify.start()
+        self.addCleanup(verify.stop)
 
-    def test_detail_does_not_block_on_logo_fetch(self):
-        fetch_started = threading.Event()
+    def test_detail_does_not_block_on_logo_resolve(self):
+        resolve_started = threading.Event()
         release = threading.Event()
 
-        def slow_fetch(site):
-            fetch_started.set()
+        def slow_resolve(site, force=False):
+            resolve_started.set()
             release.wait(5)
+            return None
 
         with mock.patch(
-            'apps.navigation.services.fetch_and_cache_logo', side_effect=slow_fetch
+            'apps.navigation.services.resolve_site_logo_url', side_effect=slow_resolve
         ):
             result = {}
 
@@ -2531,48 +2771,41 @@ class LogoAsyncTestCase(TransactionTestCase):
 
             t = threading.Thread(target=do_get)
             t.start()
-            # 后台拉取已启动且被阻塞
-            self.assertTrue(fetch_started.wait(3), '后台图标拉取未启动')
-            # 请求线程应立即返回，不会等待 fetch 完成
+            # 后台解析已启动且被阻塞
+            self.assertTrue(resolve_started.wait(3), '后台图标链接解析未启动')
+            # 请求线程应立即返回，不会等待解析完成
             t.join(2)
-            self.assertFalse(t.is_alive(), '详情请求被 logo 拉取阻塞')
+            self.assertFalse(t.is_alive(), '详情请求被 logo 链接解析阻塞')
             self.assertEqual(result['resp'].status_code, 200)
             release.set()
             t.join(5)
 
-    def test_logo_eventually_cached_and_served(self):
+    def test_logo_url_eventually_resolved_and_served(self):
         import time
 
-        from io import BytesIO
-
-        from PIL import Image
-
-        img = Image.new('RGB', (32, 32), (79, 70, 229))
-        buf = BytesIO()
-        img.save(buf, format='PNG')
-        payload = buf.getvalue()
-
+        self.site.logo_resolved_at = None
+        self.site.save(update_fields=['logo_resolved_at'])
         media_root = tempfile.mkdtemp()
         try:
             with override_settings(MEDIA_ROOT=media_root):
-                # mock 需在后台 worker 调用 _fetch_bytes 期间保持生效，故轮询放在 with 内
-                with mock.patch(
-                    'apps.navigation.services._fetch_bytes',
-                    return_value=(payload, 'image/png'),
-                ):
-                    resp = self.client.get(f'/api/sites/{self.site.id}/')
-                    self.assertEqual(resp.status_code, 200)
-                    deadline = time.time() + 5
+                resp = self.client.get(f'/api/sites/{self.site.id}/')
+                self.assertEqual(resp.status_code, 200)
+                self.assertIsNone(resp.json()['logo'])
+                deadline = time.time() + 5
+                self.site.refresh_from_db()
+                while not self.site.logo_url and time.time() < deadline:
+                    time.sleep(0.05)
                     self.site.refresh_from_db()
-                    while not self.site.logo_fetched_at and time.time() < deadline:
-                        time.sleep(0.05)
-                        self.site.refresh_from_db()
-                self.assertIsNotNone(self.site.logo_fetched_at)
-                self.assertTrue(bool(self.site.logo))
-                # 缓存就绪后，详情接口直接返回 logo
+                self.assertEqual(self.site.logo_url, 'https://uniswap.org/favicon.ico')
+                self.assertIsNotNone(self.site.logo_resolved_at)
+                # 链接就绪后，详情接口直接返回 logo（外链地址）
                 resp2 = self.client.get(f'/api/sites/{self.site.id}/')
                 self.assertEqual(resp2.status_code, 200)
-                self.assertTrue(resp2.json()['logo'])
+                self.assertEqual(
+                    resp2.json()['logo'], 'https://uniswap.org/favicon.ico'
+                )
+                # 本站不存放任何 Logo 图片文件
+                self.assertEqual(os.listdir(media_root), [])
         finally:
             shutil.rmtree(media_root, ignore_errors=True)
 
@@ -2581,23 +2814,24 @@ class LogoAsyncTestCase(TransactionTestCase):
 
         calls = []
 
-        def slow_fetch(site):
+        def slow_resolve(site, force=False):
             calls.append(site.id)
             time.sleep(0.3)
+            return None
 
         with mock.patch(
-            'apps.navigation.services.fetch_and_cache_logo', side_effect=slow_fetch
+            'apps.navigation.services.resolve_site_logo_url', side_effect=slow_resolve
         ):
             r1 = self.client.get(f'/api/sites/{self.site.id}/')
             r2 = self.client.get(f'/api/sites/{self.site.id}/')
             self.assertEqual(r1.status_code, 200)
             self.assertEqual(r2.status_code, 200)
-            # 等待后台拉取启动
+            # 等待后台解析启动
             deadline = time.time() + 2
             while not calls and time.time() < deadline:
                 time.sleep(0.05)
         time.sleep(0.5)  # 等后台线程结束
-        self.assertEqual(len(calls), 1, '同一站点并发详情只应触发一次后台拉取')
+        self.assertEqual(len(calls), 1, '同一站点并发详情只应触发一次后台解析')
 
 
 class BackupRestoreTestCase(TestCase):
@@ -2611,10 +2845,10 @@ class BackupRestoreTestCase(TestCase):
         media_root = tempfile.mkdtemp()
         try:
             with override_settings(MEDIA_ROOT=media_root):
-                logo_dir = os.path.join(media_root, 'logos')
-                os.makedirs(logo_dir, exist_ok=True)
-                with open(os.path.join(logo_dir, 'x.png'), 'wb') as fh:
-                    fh.write(b'fake-logo')
+                exp_dir = os.path.join(media_root, 'experiences')
+                os.makedirs(exp_dir, exist_ok=True)
+                with open(os.path.join(exp_dir, 'x.png'), 'wb') as fh:
+                    fh.write(b'fake-image')
                 archive = build_backup_archive()
                 raw = archive.read()
                 self.assertGreater(len(raw), 0)
@@ -2622,8 +2856,8 @@ class BackupRestoreTestCase(TestCase):
                 zf = zipfile.ZipFile(BytesIO(raw))
                 names = zf.namelist()
                 self.assertIn('data.json', names)
-                self.assertIn('media/logos/x.png', names)
-                self.assertEqual(zf.read('media/logos/x.png'), b'fake-logo')
+                self.assertIn('media/experiences/x.png', names)
+                self.assertEqual(zf.read('media/experiences/x.png'), b'fake-image')
         finally:
             shutil.rmtree(media_root, ignore_errors=True)
 
@@ -2681,7 +2915,7 @@ class CaptchaTestCase(TestCase):
         from .models import AppSetting
 
         self.setting = AppSetting.objects.create(
-            require_email_verification=True, head_scripts='<script>var x=1;</script>'
+            require_email_verification=True
         )
 
     def _captcha_token(self, answer='ABC1'):
@@ -2826,9 +3060,7 @@ class CaptchaTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data['require_email_verification'])
-        self.assertEqual(
-            data['head_scripts'], '<script>var x=1;</script>'
-        )
+        self.assertIn('adsense_publisher_id', data)
 
 
 class DownloadCountTestCase(TestCase):
@@ -4174,7 +4406,7 @@ class ReviewCenterTestCase(TestCase):
     def test_approve_site_submission(self):
         sub = self._pending_site_submission()
         self.client.force_login(self.admin)
-        with mock.patch('apps.navigation.services.ensure_logo_async'):
+        with mock.patch('apps.navigation.services.ensure_logo_url_async'):
             resp = self._post_action('site', sub.pk, 'approve')
         self.assertEqual(resp.status_code, 302)
         sub.refresh_from_db()
@@ -4253,7 +4485,7 @@ class ReviewCenterTestCase(TestCase):
     def test_action_idempotent_on_already_processed(self):
         sub = self._pending_site_submission()
         self.client.force_login(self.admin)
-        with mock.patch('apps.navigation.services.ensure_logo_async'):
+        with mock.patch('apps.navigation.services.ensure_logo_url_async'):
             self._post_action('site', sub.pk, 'approve')
         before = Site.objects.count()
         resp = self._post_action('site', sub.pk, 'approve')

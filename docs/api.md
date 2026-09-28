@@ -117,7 +117,7 @@ body `{ "score": 8.0, "comment": "很好用（可选）" }`
   "name": "Uniswap",
   "description": "去中心化交易所",
   "url": "https://uniswap.org",
-  "logo": "http://localhost:8000/media/logos/uniswap.png",
+  "logo": "https://uniswap.org/favicon.ico",
   "category": 1,
   "category_name": "DeFi",
   "tags": ["swap", "dex"],
@@ -144,7 +144,7 @@ body `{ "score": 8.0, "comment": "很好用（可选）" }`
 
 字段说明：
 
-- `logo`: 图片绝对 URL；未上传时为 `null`
+- `logo`: 站点图标链接（第三方站点自有地址，本站不存放图片文件）；未解析时为 `null`
 - `tags`: 字符串数组
 - `text_tutorials` / `video_tutorials` / `agent_links`: 链接数组，每项为 `{ "name": "展示名", "url": "链接" }`；无内容时为空数组 `[]`。三种链接均可有多个
 - `app_android_url`: 后台配置的安卓 APP 原始下载链接；未配置时为空字符串 `""`
@@ -169,4 +169,4 @@ body `{ "score": 8.0, "comment": "很好用（可选）" }`
 - 注册用户（邮箱）可对站点打星（0-5、半星递进）+ 可选评论；每个站点汇总展示平均星级与评分人数。
 - 后台「拉取安卓 APP」为**异步任务**：变更页点击后由前端轮询进度（`/admin/navigation/site/{id}/app-pull/{status|start|cancel}/`，仅登录管理员可用），可随时「取消」中断；中断或出错不会残留 `.part` 文件。
 - 站点详情页支持一键转发（分享站点名称/描述/链接）。
-- 管理后台: Django admin (AdminLTE 主题) `{API_BASE_URL}/admin/`。概览页分类统计各站点访问情况，并按「访问量 + 平均星级 + 评分数」综合排序 TOP10；管理员可自由添加/编辑分类与站点、上传 logo、上传 APP 安装包、维护教程/视频教程与代办链接。
+- 管理后台: Django admin (AdminLTE 主题) `{API_BASE_URL}/admin/`。概览页分类统计各站点访问情况，并按「访问量 + 平均星级 + 评分数」综合排序 TOP10；管理员可自由添加/编辑分类与站点、**填写 Logo 链接**（本站不存放图片文件）、上传 APP 安装包、维护教程/视频教程与代办链接。

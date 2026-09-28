@@ -65,7 +65,7 @@ A finance / Web3 website navigation app: frontend built with Next.js as a static
 - Data dashboard: per-site visit stats with a TOP10 ranking by visits + average rating + rating count; visit-trend chart and download-overview pages
 - Review center: unified review of site submissions, tutorial shares and APP-link submissions
 - Backup / restore: one-click zip backup from the UI; `backup` / `restore` management commands
-- Sites & categories: freely manage, upload logos and APP packages; logos accept PNG / JPG / WebP / SVG, with SVG auto-converted to PNG (cairosvg, falling back to the original file on failure)
+- Sites & categories: freely manage, **only enter Logo image links (no files stored on this site)**, and APP packages; previously supported local logo uploads removed (trademark compliance + zero storage cost); links resolve from site `<link rel="icon">` with third-party fallback services
 - Global settings: site title / subtitle / icon, SEO, announcement bar, footer copyright, `<head>` injection scripts, items-per-page, email-verification toggle, 2FA toggle, share base URL (share-link prefix)
 - Upgrade-notes page: records version changes and upgrade caveats
 
@@ -113,7 +113,7 @@ Start / stop / restart / check the dev servers with one command:
 
 - Frontend: Next.js + React 19 + Ant Design + TanStack Query + i18next / react-i18next
   - Note: always import AntD components via sub-paths (e.g. `@ant-design/react-native/es/button`), never `from "@ant-design/react-native"` — the barrel entry cannot be bundled under RNGH v3 (it depends on the removed `DrawerLayout`)
-- Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg (SVG logo → PNG)
+- Backend: Django 5.2 LTS (with `gettext` i18n) + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow (captcha & APP icon handling)
 
 ## Backend (backend/)
 
@@ -128,7 +128,7 @@ python3 -m venv .venv
 ```
 
 - API contract: `docs/api.md`; API root `/api/`, health check `GET /api/health/`
-- Admin: http://localhost:8000/admin/ (add/edit categories and sites, upload logos)
+- Admin: http://localhost:8000/admin/ (add/edit categories and sites, **enter Logo links**, upload APP packages)
 - Config: copy `.env.example` to `.env` to override `DEBUG` / `SECRET_KEY` / `ALLOWED_HOSTS` and DB options; real env vars take precedence over `.env`
 - Database: SQLite by default (zero config). Switch with `DB_ENGINE=mysql|postgres` — see the `DB_*` docs in `backend/.env.example`
 - Tests: `.venv/bin/python manage.py test`

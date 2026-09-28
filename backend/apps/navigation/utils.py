@@ -24,7 +24,7 @@ def build_public_media_url(request, media_field) -> Optional[str]:
 
     Args:
         request: DRF request 对象（来自 serializer context）
-        media_field: 模型的 FileField/ImageField 实例（如 obj.logo, obj.image）
+        media_field: 模型的 FileField/ImageField 实例（如 obj.image、AppSetting.logo）
 
     Returns:
         公开 URL 字符串，或 None（当字段为空时）

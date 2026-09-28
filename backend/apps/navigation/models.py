@@ -61,9 +61,14 @@ class Site(models.Model):
     name = models.CharField(max_length=100, verbose_name='站点名称')
     description = models.TextField(verbose_name='站点描述')
     url = models.URLField(verbose_name='网址')
-    logo = models.ImageField(upload_to='logos/', blank=True, null=True, verbose_name='Logo')
-    logo_fetched_at = models.DateTimeField(
-        blank=True, null=True, verbose_name='Logo 自动获取时间'
+    # Logo 只存链接、不在本站存放图片文件（避免第三方商标侵权与服务器存储开销）。
+    # 值由 services.resolve_site_logo_url 解析站点页面 <link rel="icon"> 得到，
+    # 前端直接以 <img src=外链> 热链渲染，尺寸/圆角由前端 CSS 决定。
+    logo_url = models.URLField(
+        max_length=500, blank=True, null=True, verbose_name='Logo 链接'
+    )
+    logo_resolved_at = models.DateTimeField(
+        blank=True, null=True, verbose_name='Logo 链接解析时间'
     )
     category = models.ForeignKey(
         Category,

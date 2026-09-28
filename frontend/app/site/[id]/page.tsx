@@ -69,7 +69,11 @@ export async function generateMetadata({ params }: DetailsPageProps): Promise<Me
         description,
         type: "article",
         url: `/site/${siteId}`,
-        images: site.logo ? [{ url: site.logo }] : undefined,
+        images: site.logo
+          ? [{ url: site.logo }]
+          : settings?.logo
+            ? [{ url: settings.logo }]
+            : undefined,
       },
     };
   } catch {

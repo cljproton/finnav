@@ -37,3 +37,9 @@ logs/
 
 # 杂项
 prod.txt
+
+# 站点发布工作区（finnav-publish-site skill 产出：manifest / 调研 / 报告 / 一次性补丁）
+.publish/
+
+# 手工整理的教程清单草稿
+tutorials.json

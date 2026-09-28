@@ -291,22 +291,6 @@
                     });
             }
 
-            function saveLogo(input) {
-                var file = input.files[0];
-                if (!file) { feedbackFor(input, 'err', '请先选择 Logo 文件'); return; }
-                feedbackFor(input, '', '上传中…');
-                var fd = new FormData();
-                fd.append('field', 'logo');
-                fd.append('file', file);
-                fetch(fieldSaveUrl, {method: 'POST', headers: CSRF, body: fd})
-                    .then(jsonOrHttpGet)
-                    .then(function (res) {
-                        if (res && res.ok) { feedbackFor(input, 'ok', '已上传 ✓'); location.reload(); return; }
-                        feedbackFor(input, 'err', '上传失败');
-                    })
-                    .catch(function () { feedbackFor(input, 'err', '网络错误'); });
-            }
-
             function bindAutoSave() {
                 document.querySelectorAll('[data-save]').forEach(function (input) {
                     var field = input.getAttribute('data-save');
@@ -319,8 +303,6 @@
                         input.addEventListener('change', function () {
                             doSave(field, input.checked ? 'true' : 'false', input);
                         });
-                    } else if (type === 'file') {
-                        input.addEventListener('change', function () { saveLogo(input); });
                     } else {
                         input.addEventListener('input', function () { debounceSave(field, input); });
                         input.addEventListener('change', function () { debounceSave(field, input); });
@@ -517,14 +499,15 @@
         <div class="sf-wrap">
             <h2>Logo</h2>
             <div class="sf-row">
-                {% if original.logo %}
-                    <img class="sf-logo-img" src="{{ original.logo.url }}" alt="logo">
+                {% if original.logo_url %}
+                    <img class="sf-logo-img" src="{{ original.logo_url }}" alt="logo" loading="lazy" referrerpolicy="no-referrer">
                 {% endif %}
-                <label class="sf-label" for="sf-logo">上传 / 替换 Logo（选择文件后自动上传）</label>
+                <label class="sf-label" for="sf-logo-url">Logo 图片链接（本站不存放图片文件，仅引用对方地址；留空则显示首字母色块）</label>
                 <div class="sf-input-wrap">
-                    <input id="sf-logo" class="sf-input" type="file" accept="image/*" data-save="logo">
+                    <input id="sf-logo-url" class="sf-input" type="url" value="{{ original.logo_url|default_if_none:'' }}" placeholder="https://example.com/favicon.ico" data-save="logo_url">
                 </div>
                 <span class="sf-fb"></span>
+                <p class="sf-hint">留空保存即可清空；也可在列表页勾选站点后使用「重新解析所选站点的 Logo 链接」自动获取站点自报的图标地址。</p>
             </div>
         </div>
 

@@ -286,7 +286,7 @@ class SiteAdmin(admin.ModelAdmin):
                        'app_android_status', 'app_android_integrity_status',
                        'app_android_sha256', 'app_android_verified_at',
                        'app_android_integrity_ok', 'created_at', 'updated_at')
-    actions = ['verify_app_integrity']
+    actions = ['verify_app_integrity', 'resolve_logo_urls']
 
     @admin.action(description='校验所选站点的安卓缓存完整性 (SHA-256)')
     def verify_app_integrity(self, request, queryset):
@@ -324,10 +324,38 @@ class SiteAdmin(admin.ModelAdmin):
             messages.SUCCESS if not bad else messages.WARNING,
         )
 
+    @admin.action(description='重新解析所选站点的 Logo 链接（覆盖已有链接）')
+    def resolve_logo_urls(self, request, queryset):
+        """解析站点页面 <link rel="icon"> 并写入 Logo 链接（只存链接，不下载图片）。"""
+        from .services import resolve_site_logo_url
+
+        ok = failed = 0
+        errors = []
+        for site in queryset:
+            try:
+                url = resolve_site_logo_url(site, force=True)
+                if url:
+                    ok += 1
+                else:
+                    failed += 1
+            except Exception as exc:  # noqa: BLE001
+                failed += 1
+                if len(errors) < 5:
+                    errors.append(f'{site.name}: {exc}')
+        msg = f'Logo 链接解析完成：成功 {ok}，失败 {failed}'
+        if errors:
+            msg += '；失败示例：' + '；'.join(errors)
+        self.message_user(
+            request, msg, messages.SUCCESS if not failed else messages.WARNING
+        )
+
     def logo_preview(self, obj):
-        if obj.logo:
+        """Logo 链接预览：外链热链渲染，本站不存放图片文件。"""
+        if obj.logo_url:
             return format_html(
-                '<img src="{}" style="max-height:40px;" />', obj.logo.url
+                '<img src="{}" alt="" loading="lazy" referrerpolicy="no-referrer" '
+                'style="max-height:40px;" />',
+                obj.logo_url,
             )
         return '-'
 
@@ -501,9 +529,21 @@ class SiteAdmin(admin.ModelAdmin):
             raise forms.ValidationError('标签格式不正确')
         return [str(i).strip() for i in items if str(i).strip()]
 
+    @staticmethod
+    def _validate_logo_url(value):
+        """校验手工填写的 Logo 链接，返回错误文案；合法返回 None（空值视为清空）。"""
+        from .services import normalize_icon_url
+
+        value = (value or '').strip() if isinstance(value, str) else value
+        if not value:
+            return None
+        if normalize_icon_url(value) is None:
+            return 'Logo 链接无效：仅支持 http/https 公网地址（本站不存放图片文件）'
+        return None
+
     _SAFE_FIELDS = (
         'name', 'url', 'description', 'category', 'sort_order', 'is_active',
-        'app_android_url', 'app_ios_url', 'app_google_play_url', 'logo',
+        'app_android_url', 'app_ios_url', 'app_google_play_url', 'logo_url',
         'invite_code', 'invite_link',
     ) + ('tags',)
 
@@ -511,7 +551,7 @@ class SiteAdmin(admin.ModelAdmin):
         """POST 保存单个字段（友好文本经转换后写入）。
 
         - tags：逗号/顿号/换行分隔的字符串 -> 列表
-        - logo：multipart 上传文件
+        - logo_url：Logo 图片链接（只存链接，本站不存放图片文件）
         """
         site = self._get_site_or_404(request, object_id)
         if request.method != 'POST':
@@ -542,24 +582,42 @@ class SiteAdmin(admin.ModelAdmin):
             Site.objects.filter(pk=site.pk).update(updated_at=timezone.now())
             return JsonResponse({'ok': True})
 
+        extra_fields = []
+        if field == 'logo_url':
+            if request.FILES:
+                return JsonResponse(
+                    {
+                        'ok': False,
+                        'errors': {field: [
+                            '本站不存放 Logo 图片文件，请改为填写图标链接'
+                        ]},
+                    },
+                    status=400,
+                )
+            err = self._validate_logo_url(value)
+            if err:
+                return JsonResponse(
+                    {'ok': False, 'errors': {field: [err]}}, status=400
+                )
+            # 手工指定链接后不再自动解析覆盖（标记为已解析）
+            if value:
+                site.logo_resolved_at = timezone.now()
+                extra_fields.append('logo_resolved_at')
+
         meta = type('Meta', (), {'model': Site, 'fields': (field,)})
         form_cls = type('SingleFieldForm', (forms.ModelForm,), {'Meta': meta})
-        form = form_cls(
-            {field: value},
-            files={'logo': request.FILES.get('file')} if field == 'logo' else None,
-            instance=site,
-        )
+        form = form_cls({field: value}, instance=site)
         if not form.is_valid():
             return JsonResponse(
                 {'ok': False, 'errors': form.errors.get_json_data()}, status=400
             )
         obj = form.save(commit=False)
-        obj.save(update_fields=[field, 'updated_at'])
+        obj.save(update_fields=[field, 'updated_at'] + extra_fields)
         return JsonResponse({'ok': True})
 
     fieldsets = (
         (None, {'fields': ('name', 'description', 'url', 'category', 'tags')}),
-        ('展示', {'fields': ('logo', 'logo_preview', 'sort_order', 'is_active')}),
+        ('展示', {'fields': ('logo_url', 'logo_preview', 'sort_order', 'is_active')}),
         (
             'APP',
             {
@@ -733,9 +791,9 @@ class SiteSubmissionAdmin(admin.ModelAdmin):
         except Exception as exc:  # noqa: BLE001
             messages.error(request, f'创建站点失败：{exc}')
             return self._redirect(request, obj)
-        from .services import ensure_logo_async
+        from .services import ensure_logo_url_async
 
-        ensure_logo_async(site.pk)
+        ensure_logo_url_async(site.pk)
         self.message_user(
             request, f'审核通过，已创建站点「{site.name}」。', messages.SUCCESS
         )

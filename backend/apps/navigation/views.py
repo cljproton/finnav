@@ -160,13 +160,14 @@ class SiteViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({'sites': sites})
 
     def retrieve(self, request, *args, **kwargs):
-        from .services import ensure_logo_async
+        from .services import ensure_logo_url_async, should_retry_logo
 
         instance = self.get_object()
-        # 站点 logo 无需人工配置：详情访问时若尚未成功获取过则后台异步抓取并缓存到本站，
-        # 不阻塞本次请求（首次返回 logo=null，前端用占位图，图标就绪后自动出现）。
-        if not instance.logo and not instance.logo_fetched_at:
-            ensure_logo_async(instance.pk)
+        # 站点 logo 无需人工配置：详情访问时若尚无图标链接，则后台异步解析站点页面
+        # <link rel="icon"> 并入库（只存链接，本站不存放图片文件），
+        # 不阻塞本次请求（首次返回 logo=null，前端用占位图，链接就绪后自动出现）。
+        if should_retry_logo(instance):
+            ensure_logo_url_async(instance.pk)
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
@@ -1232,9 +1233,9 @@ def admin_review(request):
                 except Exception as exc:  # noqa: BLE001
                     messages.error(request, f'创建站点失败：{exc}')
                     return _redirect()
-                from .services import ensure_logo_async
+                from .services import ensure_logo_url_async
 
-                ensure_logo_async(site.pk)
+                ensure_logo_url_async(site.pk)
                 messages.success(request, f'审核通过，已创建站点「{site.name}」。')
             elif action == 'reject':
                 sub.status = SiteSubmission.STATUS_REJECTED

@@ -4,7 +4,6 @@ djangorestframework-simplejwt
 django-cors-headers
 requests>=2.31
 Pillow
-cairosvg
 #django-adminlte4
 django-simpleui
 django-anymail

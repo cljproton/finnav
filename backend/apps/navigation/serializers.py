@@ -70,11 +70,11 @@ class SiteSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_logo(self, obj):
-        """返回 logo 的公开可访问绝对 URL；未上传时返回 None。"""
-        request = self.context.get('request')
-        if request is None:
-            return None
-        return build_public_media_url_or_none(request, obj.logo)
+        """返回 Logo 图标链接（第三方站点自有地址，本站不存放图片文件）。
+
+        API 键名保持 logo 不变，前端契约稳定；值语义为外链 URL，未解析时为 None。
+        """
+        return obj.logo_url or None
 
     def get_tags(self, obj):
         """返回标签名列表（Tag.Meta 默认按 sort_order, name 排序），保持 string[] 契约。"""
@@ -211,6 +211,7 @@ class AppSettingSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_logo(self, obj):
+        """返回本站自有品牌图标的公开绝对 URL（AppSetting.logo 是本站上传的文件）。"""
         request = self.context.get('request')
         if request is None:
             return None

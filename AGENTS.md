@@ -18,6 +18,7 @@ Backend (Django + DRF) and frontend (Next.js/React) for "FinNav" — a finance-s
 
 ## Conventions
 
+- **站点 Logo 只存链接**：第三方站点 Logo 属其商标资产，**严禁在本站存放图片文件**。后端 `Site.logo_url` 仅保存外链 URL（来自站点自报 `<link rel="icon">` 或第三方兜底服务），前端直接以 `<img src=外链>` 热链渲染。本地文件上传路径已全部移除；存量 96 个文件已清理；批量回填命令 `python manage.py resolve_logo_urls`。
 - Admin 2FA: login gate = global `AppSetting.twofa_enabled` AND the admin's own `TwoFactor.enabled`. Self-service config page lives at `/admin/twofa/` (entry in the top-right user dropdown, after "修改密码").
 - `apps/navigation/templates/admin/index.html` is a vendored copy of django-simpleui `2026.1.13` `templates/admin/index.html`; keep the「双因素认证」dropdown addition when re-syncing on simpleui upgrades.
 - Admin standalone pages stay self-contained (inline CSS, no simpleui dependency). Only the data dashboard `overview.html` (and its partials `dashboard_overview.html`/`visit_trends.html`/`download_overview.html`) keeps the dark theme; all other standalone pages (`backup.html`, `twofa.html`, `twofa_login.html`, `upgrade_notes.html`) and the custom change forms use the shared light `--fn-*` tokens (indigo primary `#4F46E5`, borders `#E5E7EB`, radii `--fn-radius-sm` 6px / `--fn-radius-md` 10px). Keep those pages light and token-based when editing.

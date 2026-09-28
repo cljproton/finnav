@@ -250,8 +250,26 @@ APP_CACHE_USER_AGENT = (
 # 是否携带来源站点 Referer（对部分防盗链源有效）
 APP_CACHE_ENABLE_REFERER = True
 
-# 站点图标（logo）第三方公共兜底服务。站点自身 favicon 获取失败时，
-# 依次尝试这些 {domain} 占位符 URL；置空列表则完全禁用第三方兜底。
+# ---------------------------------------------------------------------------
+# 站点图标（Logo）
+#
+# 合规要求：第三方站点 Logo 属其商标资产，本站不存放、不再分发任何 Logo 图片文件，
+# 只在 Site.logo_url 中保存图标链接，由浏览器直接热链渲染（零磁盘、零带宽）。
+# 尺寸/圆角/裁剪由前端 CSS 决定，与图片来源无关，显示效果与原来一致。
+# ---------------------------------------------------------------------------
+
+# 是否启用「自动解析 Logo 链接」（解析站点页面 <link rel="icon">，不下载图片）
+SITE_LOGO_RESOLVE_ENABLED = True
+
+# 解析失败后的重试窗口（秒）：详情接口访问时按此节流，避免频繁出网
+SITE_LOGO_RETRY_SECONDS = 86400
+
+# 是否对候选链接做轻量可用性校验（Range 请求只取 1 字节，验完即弃不落盘）
+SITE_LOGO_VERIFY = True
+
+# 第三方公共图标兜底服务：站点自身未声明可用图标时，依次采用这些
+# {domain} 占位符 URL。**返回的链接会被直接存库并由本站页面热链**，
+# 置空列表则只用站点自身图标地址。Google s2 favicons 不建议大规模使用，运营可随时清空。
 SITE_LOGO_PROVIDERS = [
     'https://www.google.com/s2/favicons?domain={domain}&sz=64',
     'https://icons.duckduckgo.com/ip3/{domain}.ico',

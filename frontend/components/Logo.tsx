@@ -25,15 +25,17 @@ interface LogoProps {
   name?: string;
   size?: number;
   style?: React.CSSProperties;
+  className?: string;
 }
 
-export const Logo: React.FC<LogoProps> = ({ uri, name, size = 48, style }) => {
+export const Logo: React.FC<LogoProps> = ({ uri, name, size = 48, style, className }) => {
   const [loadError, setLoadError] = useState(false);
   const radius = size * 0.22;
   const baseStyle: React.CSSProperties = { width: size, height: size, borderRadius: radius };
 
   const fallback = name ? (
     <div
+      className={className}
       style={{
         ...baseStyle,
         borderRadius: radius,
@@ -49,13 +51,19 @@ export const Logo: React.FC<LogoProps> = ({ uri, name, size = 48, style }) => {
       </span>
     </div>
   ) : (
-    <img src="/icon.png" style={{ ...baseStyle, objectFit: "contain", ...style }} alt="" />
+    <img
+      className={className}
+      src="/icon.png"
+      style={{ ...baseStyle, objectFit: "contain", ...style }}
+      alt=""
+    />
   );
 
   if (!uri || loadError) return fallback;
 
   return (
     <img
+      className={className}
       src={uri}
       alt={name || ""}
       style={{ ...baseStyle, objectFit: "cover", ...style }}

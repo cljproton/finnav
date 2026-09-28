@@ -2,6 +2,7 @@
 
 import { Ionicons } from "./ui/icons";
 import InternalLink from "./InternalLink";
+import { Logo } from "./Logo";
 import type { Site } from "../lib/types";
 
 interface IoniconsProps {
@@ -37,30 +38,14 @@ export default function SiteListItem({ site, index = 0, isLast = false }: SiteLi
       }}
       aria-label={`${site.name}${site.description ? `，${site.description}` : ""}${site.category_name ? `，分类：${site.category_name}` : ""}`}
     >
-      <div
+      <Logo
+        uri={site.logo}
+        name={site.name}
+        size={32}
         className="fn-flex-shrink-0 fn-flex fn-items-center fn-justify-center fn-rounded-lg fn-shadow-sm"
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: "var(--fn-radius-sm)",
-          backgroundColor: site.logo ? "transparent" : "var(--fn-primary-light)",
-          overflow: "hidden",
-        }}
+        style={{ borderRadius: "var(--fn-radius-sm)" }}
         aria-hidden="true"
-      >
-        {site.logo ? (
-          <img
-            src={site.logo}
-            alt=""
-            width={32}
-            height={32}
-            style={{ objectFit: "cover" }}
-            loading="lazy"
-          />
-        ) : (
-          <Ionicons name="globe" size={18} color="var(--fn-primary)" />
-        )}
-      </div>
+      />
 
       <div className="fn-flex-1 fn-min-w-0 fn-flex fn-flex-col fn-gap-1">
         <div className="fn-flex fn-items-center fn-gap-2">

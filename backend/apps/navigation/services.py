@@ -1,7 +1,8 @@
-"""Logo 自动获取 + 安卓 APP 拉取服务。
+"""Logo 链接解析 + 安卓 APP 拉取服务。
 
 Logo：
-  无需人工配置站点图标；按需发现并下载站点 favicon 后缓存在本站。
+  无需人工配置站点图标；按需解析站点页面 <link rel="icon"> 得到图标 URL 并入库。
+  本站不存放任何第三方图片文件（合规：避免商标侵权；成本：零磁盘零带宽）。
 
 安卓 APP 拉取服务：
 下载源支持 HTTP Range 时按多线程分片并行下载，显著提升大文件速度；
@@ -37,17 +38,12 @@ SEGMENT_ATTEMPTS = 5        # 每分片最大重试次数
 PARALLEL_MIN_BYTES = 512 * 1024  # 小于此体积不做分片
 REPORT_MIN_BYTES = 512 * 1024    # 进度上报节流（字节）
 
-LOGO_TIMEOUT = 8            # logo 下载超时（秒）
-LOGO_MAX_BYTES = 1024 * 1024     # logo 大小上限（1MB）
-LOGO_CONTENT_TYPES = {
-    'image/png',
-    'image/jpeg',
-    'image/gif',
-    'image/webp',
-    'image/x-icon',
-    'image/vnd.microsoft.icon',
-    'image/svg+xml',
-}
+LOGO_TIMEOUT = 8            # 图标链接解析时的网络超时（秒）
+LOGO_HTML_MAX_BYTES = 256 * 1024   # 站点首页只读前 256KB 用来找 <link rel="icon">
+LOGO_VERIFY_TIMEOUT = 5     # 链接可用性轻量校验超时（秒）
+LOGO_MAX_CANDIDATES = 3     # 页面自报图标最多尝试前 N 个（限制出网请求数）
+# 浏览器可渲染的图标类型：只存这些类型的链接，其余（.html/.json 等）不采用
+LOGO_RENDERABLE_EXTS = ('.png', '.svg', '.ico', '.jpg', '.jpeg', '.gif', '.webp')
 
 
 class SSRFBlocked(Exception):
@@ -145,8 +141,8 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
 _safe_opener = urllib.request.build_opener(_SafeRedirectHandler)
 
 
-class LogoFetchError(Exception):
-    """logo 获取失败（网络错误、非图片、超限等）。"""
+class LogoResolveError(Exception):
+    """Logo 链接解析失败（网络错误、页面无图标声明、链接不可用等）。"""
 
 
 TITLE_TIMEOUT = 8            # 教程标题抓取超时（秒）
@@ -290,6 +286,21 @@ def fetch_page_title(url):
     return title
 
 
+# ---------------------------------------------------------------------------
+# 站点 Logo 链接解析（只解析链接，本站不存放任何图片文件）
+#
+# 合规：第三方站点 Logo 属其商标资产，在本站存储/再分发存在侵权风险，
+#       因此本站只保存图标 URL，由浏览器直接热链渲染。
+# 成本：图片走对方 CDN，本站零磁盘、零带宽。
+# 样式：前端盒子尺寸/圆角/裁剪全由 Logo.tsx 的 CSS 决定，与图片来源无关，
+#       改用外链后显示效果与原来一致（详见 frontend/components/Logo.tsx）。
+# ---------------------------------------------------------------------------
+
+# 明确不可渲染的扩展名（页面/接口/文档地址），其余（如无扩展名的 s2 favicons）均可采用
+LOGO_BAD_EXTS = (
+    '.html', '.htm', '.php', '.aspx', '.jsp', '.json', '.txt', '.pdf', '.xml',
+)
+
 _logo_locks = {}
 _logo_lock_guard = threading.Lock()
 
@@ -303,196 +314,179 @@ def _origin_of(url):
     """从站点 URL 提取源，如 https://uniswap.org → https://uniswap.org。"""
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ('http', 'https') or not parsed.netloc:
-        raise LogoFetchError('站点网址无效')
+        raise LogoResolveError('站点网址无效')
     return f'{parsed.scheme}://{parsed.netloc}'
 
 
-def _fetch_bytes(url):
+def normalize_icon_url(url):
+    """校验并规范化图标链接，返回可入库的 URL 或 None。
+
+    只接受 http/https，且主机名不得是内网/回环/保留地址字面量 IP 或 localhost。
+    该检查纯字面量、不做 DNS 解析，可在遍历多个候选时零成本调用；
+    完整 DNS 复查（_ensure_public_host）只对最终入选的链接执行。
+    """
+    if not url:
+        return None
+    url = url.strip()
+    if not url or len(url) > 500:
+        return None
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        return None
+    host = parsed.hostname.lower()
+    if host == 'localhost' or host.endswith(('.localhost', '.local', '.internal')):
+        return None
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return url  # 普通域名，字面量检查通过
+    except Exception:
+        return None
+    # 字面量 IP 必须是公网地址，避免把内网探针地址存进库里
+    return None if _is_private_ip(host) else url
+
+
+def _is_renderable_icon(url):
+    """排除明显不是图片的地址（页面/接口/文档）。"""
+    ext = os.path.splitext(urllib.parse.urlparse(url).path)[1].lower()
+    return ext not in LOGO_BAD_EXTS
+
+
+def _fetch_homepage_html(url):
+    """读取站点首页 HTML（截断到 LOGO_HTML_MAX_BYTES），用于找 <link rel="icon">。"""
     _ensure_public_host(url)
-    req = urllib.request.Request(
-        url,
-        headers={'User-Agent': USER_AGENT},
-    )
+    req = urllib.request.Request(url, headers={'User-Agent': BROWSER_UA})
     with _safe_opener.open(req, timeout=LOGO_TIMEOUT) as resp:
-        content_type = resp.headers.get('Content-Type', '').split(';')[0].strip().lower()
-        size = int(resp.headers.get('Content-Length') or 0)
-        if size > LOGO_MAX_BYTES:
-            raise LogoFetchError('图标超过大小上限')
-        data = resp.read(LOGO_MAX_BYTES + 1)
-        if len(data) > LOGO_MAX_BYTES:
-            raise LogoFetchError('图标超过大小上限')
-        return data, content_type
-
-
-def _is_icon_content(data, content_type):
-    """校验下载内容确为图标/图片。"""
-    if content_type in LOGO_CONTENT_TYPES:
-        return True
-    if data[:4] in (b'\x89PNG', b'\xff\xd8\xff', b'GIF8') or data[:2] == b'\x00\x00':
-        return True  # PNG/JPEG/GIF 魔数，以及 .ico 常见头部
-    if b'<svg' in data[:2048].lower():
-        return True
-    return False
+        data = resp.read(LOGO_HTML_MAX_BYTES)
+    return data.decode('utf-8', errors='ignore')
 
 
 def _icon_candidates(site, html=None):
-    """返回优先尝试的图标候选 URL 列表。
+    """返回优先尝试的图标链接候选（只解析，不下载）。
 
-    顺序：站点自身 <link rel="icon"> → /favicon.ico →
+    顺序：站点自身 <link rel="icon">（最多前 LOGO_MAX_CANDIDATES 个）→ /favicon.ico →
     第三方公共图标服务兜底（SITE_LOGO_PROVIDERS，{domain} 替换为站点域名）。
+    相对/协议相对地址按 RFC 3986 以站点 URL 为基准补全。
     """
-    origin = _origin_of(site.url)
-    candidates = []
+    _origin_of(site.url)  # 校验站点 URL 合法（否则 urljoin 结果不可用）
+    declared = []
     if html:
-        # 解析 <link rel="icon|shortcut icon|apple-touch-icon" href="...">
-        for href in re.findall(r'<link[^>]+rel=["\'][^"\']*icon[^"\']*["\'][^>]*>', html):
-            m = re.search(r'href=["\']([^"\']+)["\']', href)
-            if not m:
+        # 逐个 <link> 标签取 rel 与 href，兼容 rel/href 顺序与大小写
+        for tag in re.findall(r'<link[^>]*>', html, re.IGNORECASE):
+            rel_m = re.search(r'rel\s*=\s*["\']([^"\']*)["\']', tag, re.IGNORECASE)
+            if not rel_m or 'icon' not in rel_m.group(1).lower():
                 continue
-            candidates.append(m.group(1))
-    candidates.append('/favicon.ico')
-    resolved = []
-    for c in candidates:
-        if c.startswith('http://') or c.startswith('https://'):
-            resolved.append(c)
-        elif c.startswith('//'):
-            parsed = urllib.parse.urlparse(site.url)
-            resolved.append(f'{parsed.scheme}:{c}')
-        else:
-            resolved.append(origin + (c if c.startswith('/') else '/' + c))
+            href_m = re.search(r'href\s*=\s*["\']([^"\']+)["\']', tag, re.IGNORECASE)
+            if href_m:
+                declared.append(href_m.group(1).strip())
+    declared = declared[:LOGO_MAX_CANDIDATES]
+    declared.append('/favicon.ico')
 
-    domain = urllib.parse.urlparse(site.url).netloc
+    resolved = [urllib.parse.urljoin(site.url, href) for href in declared]
+
+    site_parsed = urllib.parse.urlparse(site.url)
     providers = getattr(settings, 'SITE_LOGO_PROVIDERS', None) or []
     for tmpl in providers:
         try:
-            resolved.append(tmpl.format(domain=domain))
+            resolved.append(tmpl.format(domain=site_parsed.netloc))
         except (KeyError, IndexError, ValueError):
             continue
-    # 去重（保持顺序）
     return list(dict.fromkeys(resolved))
 
 
-def _validate_and_save(site, data, content_type):
-    """用 PIL 验证图片有效性，规范化后写入 site.logo 并返回。
-
-    SVG 图标会先经 cairosvg 转为 PNG，保证站点仅保存可被前端直接渲染的
-    PNG 文件；转换失败则回退保存原始 SVG。
-    """
-    from io import BytesIO
-
-    from django.core.files.base import ContentFile
-
-    from PIL import Image
-
-    is_svg = (
-        content_type in ('image/svg+xml', 'image/svg',
-                         'application/xml', 'text/xml',
-                         'application/svg+xml')
-        or b'<svg' in data[:2048].lower()
+def _verify_icon_link(url):
+    """轻量校验链接可访问且返回的是图片：只发 Range 请求，读完即弃，不落盘。"""
+    req = urllib.request.Request(
+        url, headers={'User-Agent': BROWSER_UA, 'Range': 'bytes=0-0'}
     )
-
-    if is_svg:
-        try:
-            import cairosvg
-            data = cairosvg.svg2png(bytestring=data)
-            content_type = 'image/png'
-        except Exception:
-            # 转换失败：保存原 SVG 兜底（前端已做错误兜底，不会白屏）。
-            site.logo.save(
-                f'logo-{site.pk}.svg',
-                ContentFile(data),
-                save=False,
-            )
-            site.logo_fetched_at = timezone.now()
-            site.save(update_fields=['logo', 'logo_fetched_at', 'updated_at'])
-            return site.logo.url
-
-    img = Image.open(BytesIO(data))
-    img.load()
-
-    ext_map = {
-        'image/png': 'PNG',
-        'image/jpeg': 'JPEG',
-        'image/gif': 'GIF',
-        'image/webp': 'WEBP',
-        'image/x-icon': 'PNG',
-        'image/vnd.microsoft.icon': 'PNG',
-    }
-    fmt = ext_map.get(content_type, img.format or 'PNG')
-    safe_fmt = fmt if fmt in ('PNG', 'JPEG', 'GIF', 'WEBP') else 'PNG'
-
-    buffer = BytesIO()
-    if img.mode not in ('RGB', 'RGBA'):
-        img = img.convert('RGBA' if img.mode == 'P' and 'transparency' in img.info else 'RGB')
-    img.save(buffer, format='PNG')
-    site.logo.save(
-        f'logo-{site.pk}.png',
-        ContentFile(buffer.getvalue()),
-        save=False,
-    )
-    site.logo_fetched_at = timezone.now()
-    site.save(update_fields=['logo', 'logo_fetched_at', 'updated_at'])
-    return site.logo.url
+    try:
+        with _safe_opener.open(req, timeout=LOGO_VERIFY_TIMEOUT) as resp:
+            status = getattr(resp, 'status', None) or resp.getcode()
+            if status not in (200, 206):
+                return False
+            ctype = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+    except Exception:
+        return False
+    # 部分站点不返回 Content-Type，放行空值与 octet-stream；明确返回 html 则判为无效
+    return not ctype or ctype.startswith('image/') or ctype == 'application/octet-stream'
 
 
-def fetch_and_cache_logo(site):
-    """按需发现并缓存站点 favicon 到本站 media。
+def should_retry_logo(site):
+    """是否值得再次出网解析图标链接：从未成功过，或距上次尝试已超过重试窗口。"""
+    if site.logo_url:
+        return False
+    if not getattr(settings, 'SITE_LOGO_RESOLVE_ENABLED', True):
+        return False
+    if site.logo_resolved_at is None:
+        return True
+    window = getattr(settings, 'SITE_LOGO_RETRY_SECONDS', 86400)
+    return (timezone.now() - site.logo_resolved_at).total_seconds() > window
 
-    - 并发保护：同一站点同时只允许一个线程拉取。
+
+def resolve_site_logo_url(site, force=False):
+    """解析站点图标链接并写入 site.logo_url（只存链接，不下载图片）。
+
+    - 并发保护：同一站点同时只允许一个线程解析。
     - 优先解析页面 <link rel="icon">，兜底 /favicon.ico 与第三方公共图标服务。
-    - 校验图片有效性，统一转 PNG 缓存。
-    - 成功才记录 logo_fetched_at；失败不写，下次访问自动重试。
+    - 成功写 logo_url 与 logo_resolved_at；自动路径失败时也写 logo_resolved_at，
+      以便按 SITE_LOGO_RETRY_SECONDS 节流，不在每次访问时重复出网。
     """
-    if site.logo:
-        return site.logo.url
+    if not getattr(settings, 'SITE_LOGO_RESOLVE_ENABLED', True):
+        return site.logo_url
+    if site.logo_url and not force:
+        return site.logo_url
     with _logo_lock(site.pk):
-        if site.logo:
-            return site.logo.url
-        site.refresh_from_db(fields=['logo', 'logo_fetched_at'])
-        if site.logo:
-            return site.logo.url
+        if site.logo_url and not force:
+            return site.logo_url
+        site.refresh_from_db(fields=['logo_url', 'logo_resolved_at'])
+        if site.logo_url and not force:
+            return site.logo_url
         try:
             html = None
             try:
-                origin = _origin_of(site.url)
-                page, _ = _fetch_bytes(origin)
-                if len(page) > 256 * 1024:
-                    page = page[:256 * 1024]
-                html = page.decode('utf-8', errors='ignore')
+                html = _fetch_homepage_html(_origin_of(site.url))
             except Exception:
                 html = None
-            candidates = _icon_candidates(site, html)
-            data, content_type = None, ''
-            last_error = None
-            for url in candidates:
+            picked = None
+            for candidate in _icon_candidates(site, html):
+                url = normalize_icon_url(candidate)
+                if not url or not _is_renderable_icon(url):
+                    continue
                 try:
-                    data, content_type = _fetch_bytes(url)
-                    if _is_icon_content(data, content_type):
-                        break
-                except Exception as exc:
-                    last_error = exc
-                    data, content_type = None, ''
-            if not data:
-                raise LogoFetchError(
-                    f'未能获取到站点图标{": " + str(last_error) if last_error else ""}'
-                )
-            return _validate_and_save(site, data, content_type)
+                    _ensure_public_host(url)  # 完整 DNS 复查（内网/保留地址拦截）
+                except Exception:
+                    continue
+                if getattr(settings, 'SITE_LOGO_VERIFY', True) and not _verify_icon_link(url):
+                    continue
+                picked = url
+                break
+            if not picked:
+                raise LogoResolveError('未找到可用的站点图标链接')
+            site.logo_url = picked
+            site.logo_resolved_at = timezone.now()
+            site.save(update_fields=['logo_url', 'logo_resolved_at', 'updated_at'])
+            return picked
         except Exception as exc:
-            if not isinstance(exc, LogoFetchError):
-                exc = LogoFetchError(str(exc))
+            if not force:
+                # 自动路径失败也记时间，避免每次访问都出网重试；
+                # 手动/批量路径（force）不记，保证下次仍会重试。
+                site.logo_resolved_at = timezone.now()
+                site.save(update_fields=['logo_resolved_at'])
+            if not isinstance(exc, LogoResolveError):
+                exc = LogoResolveError(str(exc))
             raise exc
 
 
-# ------------------- 后台异步拉取图标 -------------------
+# ------------------- 后台异步解析图标链接 -------------------
 
 _logo_inflight = set()
 
 
-def ensure_logo_async(site_id):
-    """后台异步拉取站点图标，立即返回，不阻塞请求。
+def ensure_logo_url_async(site_id):
+    """后台异步解析站点图标链接，立即返回，不阻塞请求。
 
     - 同一站点同时只允许一个后台线程（防并发详情访问线程堆积）。
-    - 失败不写 logo_fetched_at，下次访问自动重试（与同步逻辑一致）。
+    - 失败按 SITE_LOGO_RETRY_SECONDS 节流，下次访问再试。
     """
     with _logo_lock_guard:
         if site_id in _logo_inflight:
@@ -509,16 +503,17 @@ def _logo_worker(site_id):
     try:
         close_old_connections()
         site = Site.objects.get(pk=site_id)
-        if site.logo or site.logo_fetched_at:
+        if not should_retry_logo(site):
             return
-        fetch_and_cache_logo(site)
+        resolve_site_logo_url(site)
     except Exception:
-        # 失败不写 logo_fetched_at，下次访问自动重试
         pass
     finally:
         close_old_connections()
         with _logo_lock_guard:
             _logo_inflight.discard(site_id)
+
+
 
 
 class CancelRequested(Exception):

@@ -66,7 +66,7 @@
 - 数据看板：分类统计各站点访问，综合「访问量 + 平均星级 + 评分数」排序 TOP10；访问趋势图、下载概览页
 - 审核中心：站点提交 / 教程分享 / APP 链接提交的统一审核
 - 备份 / 恢复：页面一键打包备份，命令行 `backup` / `restore`（zip）
-- 站点与分类管理：自由增删改，上传 logo 与 APP 安装包；Logo 支持 PNG / JPG / WebP / SVG，SVG 自动转 PNG（cairosvg，失败则回退保存原文件）
+- 站点与分类管理：自由增删改，**只填写 Logo 图片链接（本站不存放图片文件）**，与 APP 安装包；原有本地上传已移除（避免商标侵权与存储开销）；图标链接支持站点自报 `<link rel="icon">` 与第三方兜底服务
 - 全局设置：网站标题 / 副标题 / 图标、SEO、公告栏、页脚版权、`<head>` 注入脚本、每页条数、注册邮箱验证开关、2FA 开关、转发来源域名（分享链接前缀）
 - 升级说明页：记录版本变更与升级注意事项
 
@@ -114,7 +114,7 @@ finnav/
 
 - 前端：Next.js + React 19 + Ant Design + TanStack Query + i18next / react-i18next
   - 注意：必须用子路径引入 AntD 组件（如 `@ant-design/react-native/es/button`），不可 `from "@ant-design/react-native"`——该 barrel 入口在 RNGH v3 下无法打包（依赖已移除的 `DrawerLayout`）
-- 后端：Django 5.2 LTS（含 `gettext` 国际化） + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow + cairosvg（SVG 图标转 PNG）
+- 后端：Django 5.2 LTS（含 `gettext` 国际化） + Django REST Framework + djangorestframework-simplejwt + django-simpleui + django-cors-headers + Pillow（验证码与 APP 图标处理）
 
 ## 后端（backend/）
 
@@ -129,7 +129,7 @@ python3 -m venv .venv
 ```
 
 - API 文档/契约：`docs/api.md`；根路径 `/api/`，健康检查 `GET /api/health/`
-- 管理后台：http://localhost:8000/admin/ （添加/编辑分类、站点，上传 logo）
+- 管理后台：http://localhost:8000/admin/ （添加/编辑分类、站点，**填写 Logo 链接**，上传 APP 安装包）
 - 配置覆盖：复制 `.env.example` 为 `.env`，可覆盖 `DEBUG` / `SECRET_KEY` / `ALLOWED_HOSTS` 及数据库选项；真实环境变量优先于 `.env`
 - 数据库：默认 SQLite（零配置）。可用 `DB_ENGINE=mysql|postgres` 切换，详见 `backend/.env.example` 中的 `DB_*` 变量说明
 - 测试：`.venv/bin/python manage.py test`
