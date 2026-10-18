@@ -152,6 +152,21 @@ class SitesTestCase(TestCase):
         names = [s['name'] for s in resp.json()['results']]
         self.assertEqual(names, ['Aave', 'Uniswap'])
 
+    def test_sites_expose_category_icon_from_backend(self):
+        """站点接口下发后台配置的分类图标（前端不再按 slug 写死映射）。"""
+        resp = self.client.get('/api/sites/', {'q': 'uniswap'})
+        row = resp.json()['results'][0]
+        self.assertEqual(row['category_icon'], '🦄')
+        self.assertEqual(row['category_slug'], 'defi')
+
+    def test_sites_category_icon_null_when_unset(self):
+        """分类未配置图标时下发 null，由前端 fallback。"""
+        self.defi.icon = None
+        self.defi.save(update_fields=['icon'])
+        resp = self.client.get('/api/sites/', {'q': 'uniswap'})
+        row = resp.json()['results'][0]
+        self.assertIsNone(row['category_icon'])
+
     def test_sites_ordering_by_name(self):
         resp = self.client.get('/api/sites/', {'ordering': 'name'})
         names = [s['name'] for s in resp.json()['results']]
@@ -1770,6 +1785,36 @@ class CategoryAdminTestCase(TestCase):
             f'/admin/navigation/category/{self.category.id}/change/'
         ).content.decode()
         self.assertNotIn('id_sites-TOTAL_FORMS', page)
+
+    def test_add_page_renders(self):
+        """添加分类页面不得 500。
+
+        change_form 模板中的 {% url %} 标签在 add 页面没有 original，
+        反向解析 path 转换器的空值会抛 NoReverseMatch。
+        """
+        self.client.force_login(self.admin_user)
+        resp = self.client.get('/admin/navigation/category/add/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_create_category(self):
+        """添加分类提交后可保存成功。"""
+        self.client.force_login(self.admin_user)
+        resp = self.client.post(
+            '/admin/navigation/category/add/',
+            data={
+                'name': '辅助工具',
+                'slug': 'tools',
+                'icon': '🧰',
+                'sort_order': '11',
+                'is_active': 'on',
+                'navigation_category_sites-TOTAL_FORMS': '0',
+                'navigation_category_sites-INITIAL_FORMS': '0',
+                'navigation_category_sites-MIN_NUM_FORMS': '0',
+                'navigation_category_sites-MAX_NUM_FORMS': '1000',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Category.objects.filter(slug='tools').exists())
 
     def test_add_moves_existing_site_into_category_and_activates(self):
         self.client.force_login(self.admin_user)

@@ -7,6 +7,8 @@ export interface Site {
   category: number;
   category_name: string;
   category_slug: string;
+  /** 分类图标（emoji），由后台 Category.icon 提供；为空时前端用默认图标兜底。 */
+  category_icon: string | null;
   tags: string[];
   sort_order: number;
   app_android_url: string;

@@ -121,6 +121,9 @@
             color: var(--fn-primary);
         }
     </style>
+    {# 仅在编辑已有分类时渲染：add 页面没有 original，下面的 URL 标签会因
+   反向解析 path 转换器空值而抛 NoReverseMatch（HTTP 500）。 #}
+    {% if original %}
     <script>
         (function () {
             var addUrl = '{% url "admin:navigation_category_site_add" original.pk %}';
@@ -306,6 +309,7 @@
             }
         })();
     </script>
+    {% endif %}
 {% endblock %}
 
 {% block after_related_objects %}

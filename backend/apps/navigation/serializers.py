@@ -37,6 +37,10 @@ class SiteSerializer(serializers.ModelSerializer):
     app_android_sha256 = serializers.SerializerMethodField()
     category_name = serializers.CharField(source='category.name', read_only=True)
     category_slug = serializers.SlugField(source='category.slug', read_only=True)
+    # 分类图标由后台 Category.icon 提供（前端不再按 slug 写死映射）；为空时输出 null。
+    category_icon = serializers.CharField(
+        source='category.icon', read_only=True, allow_null=True
+    )
     tags = serializers.SerializerMethodField()
 
     class Meta:
@@ -50,6 +54,7 @@ class SiteSerializer(serializers.ModelSerializer):
             'category',
             'category_name',
             'category_slug',
+            'category_icon',
             'tags',
             'sort_order',
             'app_android_url',

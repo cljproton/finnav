@@ -10,7 +10,6 @@ import type { Site } from "../lib/types";
 import { useFavorites } from "../lib/favorites";
 import ExternalLink from "./ExternalLink";
 import InternalLink from "./InternalLink";
-import { getCategoryIcon } from "../lib/categoryIcons";
 
 interface SiteCardProps {
   site: Site;
@@ -34,7 +33,8 @@ export default function SiteCard({ site, showFavorite = true }: SiteCardProps) {
     router.replace(`/site/${site.id}?from=${encodeURIComponent(from)}`);
   };
 
-  const categoryIcon = getCategoryIcon(site.category_slug);
+  // 分类图标由后台 Category.icon 下发，前端不再按 slug 写死映射
+  const categoryIcon = site.category_icon || "🏷️";
 
   return (
     <Card
