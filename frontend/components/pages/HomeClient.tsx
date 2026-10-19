@@ -12,12 +12,21 @@ import ErrorState from "../ErrorState";
 import EmptyState from "../EmptyState";
 import BackToTopButton from "../BackToTopButton";
 import { Logo } from "../Logo";
+import SeoHeading from "../SeoHeading";
 import { Ionicons } from "../../components/ui/icons";
 import InternalLink from "../InternalLink";
 import { useScrollToTop } from "../../lib/hooks/useScrollToTop";
-import type { Category, SitePage } from "../../lib/types";
+import type { Category, SitePage, SiteSettings } from "../../lib/types";
 
-export default function HomeClient({ initialSitePage, initialCategories }: { initialSitePage?: SitePage; initialCategories?: Category[] }) {
+export default function HomeClient({
+  settings,
+  initialSitePage,
+  initialCategories,
+}: {
+  settings?: SiteSettings | null;
+  initialSitePage?: SitePage;
+  initialCategories?: Category[];
+}) {
   const { t, i18n } = useTranslation();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -79,6 +88,35 @@ export default function HomeClient({ initialSitePage, initialCategories }: { ini
 
   const { ref: scrollRef, showButton } = useScrollToTop({ threshold: 200 });
 
+  // 首页可见 H1：服务端渲染（文案来自后台副标题），补上原缺失的标题层级。
+  const pageHeading = (
+    <div
+      className="fn-px-5"
+      style={{
+        paddingInline: 20,
+        paddingTop: 8,
+        paddingBottom: 4,
+        maxWidth: 720,
+        margin: "0 auto",
+        width: "100%",
+      }}
+    >
+      <SeoHeading
+        level={1}
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.35,
+          color: "var(--fn-text)",
+          textAlign: "center",
+        }}
+      >
+        {(settings?.site_subtitle || "").trim() || t("金融与 Web3 站点导航")}
+      </SeoHeading>
+    </div>
+  );
+
   // Hero section (only on all-sites view, not filtered)
   const hero = useMemo(
     () =>
@@ -135,6 +173,7 @@ export default function HomeClient({ initialSitePage, initialCategories }: { ini
           ref={scrollRef}
           style={{ scrollBehavior: "auto" }}
         >
+          {pageHeading}
           {hero}
           {categorySection}
           <div className="fn-site-grid fn-p-5" style={{ padding: 20 }}>
@@ -153,6 +192,7 @@ export default function HomeClient({ initialSitePage, initialCategories }: { ini
           ref={scrollRef}
           style={{ scrollBehavior: "auto" }}
         >
+          {pageHeading}
           {hero}
           {categorySection}
           <div className="fn-p-5" style={{ padding: 20 }}>
@@ -176,6 +216,7 @@ export default function HomeClient({ initialSitePage, initialCategories }: { ini
         ref={scrollRef}
         style={{ scrollBehavior: "auto" }}
       >
+        {pageHeading}
         {hero}
         {categorySection}
         {selectedSlug ? (

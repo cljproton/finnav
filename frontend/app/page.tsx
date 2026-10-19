@@ -8,18 +8,24 @@ import type { Category, SitePage } from "../lib/types";
 
 export async function generateMetadata(): Promise<Metadata> {
   try {
-    const settings = await fetchSettings();
+    // 站点总数取自 /sites/ 的 count，与 sitemap、列表页保持同一数据源。
+    const [settings, sitePage] = await Promise.all([
+      fetchSettings(),
+      serverFetchJSON<SitePage>("/sites/").catch(() => null),
+    ]);
     const t = serverI18n();
     const title = homeTitle(t, settings);
-    const description = homeDescription(t, settings, settings?.sites_per_page);
+    const description = homeDescription(t, settings, sitePage?.count ?? undefined);
     return {
       title: { absolute: title },
       description,
       robots: "index,follow",
+      alternates: { canonical: "/" },
       openGraph: {
         title,
         description,
         type: "website",
+        url: "/",
       },
     };
   } catch {
@@ -60,7 +66,11 @@ export default async function HomePage() {
         }}
       />
       <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
-        <HomeClient initialSitePage={sitePage ?? undefined} initialCategories={categories ?? undefined} />
+        <HomeClient
+          settings={settings}
+          initialSitePage={sitePage ?? undefined}
+          initialCategories={categories ?? undefined}
+        />
       </Suspense>
     </>
   )
