@@ -15,7 +15,8 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
     return {
       title: { absolute: title },
       description,
-      robots: "index,follow",
+      // 站内搜索结果页是无限 URL 变体，不提交索引，但允许爬虫继续跟踪页内链接。
+      robots: "noindex,follow",
       openGraph: {
         title,
         description,
@@ -26,6 +27,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
     return {
       title: "搜索站点",
       description: "搜索金融与 Web3 站点",
+      robots: "noindex,follow",
     };
   }
 }

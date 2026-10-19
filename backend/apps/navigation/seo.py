@@ -49,8 +49,9 @@ def robots_txt(request):
 def sitemap_xml(request):
     """GET /seo/sitemap.xml  站点地图。
 
-    首页 + 搜索页 + 全部启用站点详情页，lastmod 取站点更新时间，
-    优先按活跃度排序。
+    首页 + 全部启用站点详情页，lastmod 取站点更新时间，优先按活跃度排序。
+
+    不收录搜索页：站内搜索结果页是无限 URL 变体，前端已设 noindex。
 
     注意：子页（/site/{id}/reviews|tutorials|experiences）为登录态薄内容，
     且无独立静态 SEO 渲染，列入 sitemap 会被 Ahrefs 判为「Non-canonical page
@@ -64,11 +65,6 @@ def sitemap_xml(request):
             f'{base}/',
             setting.updated_at.strftime('%Y-%m-%d') if setting.updated_at else '',
             '1.0',
-        ),
-        (
-            f'{base}/search',
-            setting.updated_at.strftime('%Y-%m-%d') if setting.updated_at else '',
-            '0.8',
         ),
     ]
     sites = (

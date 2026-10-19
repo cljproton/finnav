@@ -1398,7 +1398,8 @@ class SeoTestCase(TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.content.decode()
         self.assertIn('<loc>https://finnav.app/</loc>', body)
-        self.assertIn('<loc>https://finnav.app/search</loc>', body)
+        # 搜索页为站内结果页（前端已 noindex），不再列入 sitemap
+        self.assertNotIn('<loc>https://finnav.app/search</loc>', body)
         self.assertIn(
             f'<loc>https://finnav.app/site/{active.pk}</loc>', body
         )
