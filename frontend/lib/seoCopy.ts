@@ -109,15 +109,41 @@ export function platformLabels(t: Translate, site: SeoSiteLike): string[] {
   return labels;
 }
 
-export function siteTitle(t: Translate, settings: SeoSettingsLike | null | undefined, site: SeoSiteLike): string {
-  return composeTitle(
-    t,
-    brandOf(settings),
-    t("{{name}}官网", { name: site.name }),
-    t("APP下载"),
-    t("新手教程"),
-    t("用户评价"),
-  );
+/**
+ * 站点详情页标题：只承诺页面里真实存在的内容。
+ *
+ * 早期所有站点共用「官网 - APP下载 - 新手教程 - 用户评价」，但 295 个站点里
+ * 只有个位数有教程/评价，标题与正文不符会被判为标题党/薄页。这里按可用内容
+ * 逐级降级，保证标题描述的是页面上真有的模块。
+ */
+export function siteTitle(
+  t: Translate,
+  settings: SeoSettingsLike | null | undefined,
+  site: SeoSiteLike,
+  counts?: { tutorials?: number; experiences?: number },
+): string {
+  const hasTutorials = (counts?.tutorials ?? 0) > 0;
+  const hasExperiences = (counts?.experiences ?? 0) > 0;
+  const hasRatings = (site.rating_count ?? 0) > 0;
+  const hasPlatforms = platformLabels(t, site).length > 0;
+
+  let label: string;
+  if (hasTutorials && hasRatings) {
+    label = t("{{name}}官网入口、APP下载、新手教程与用户评价", { name: site.name });
+  } else if (hasTutorials) {
+    label = t("{{name}}官网入口、APP下载与新手教程", { name: site.name });
+  } else if (hasExperiences) {
+    label = t("{{name}}官网入口、APP下载与实战经验", { name: site.name });
+  } else if (hasPlatforms) {
+    label = t("{{name}}官网入口与 APP 下载渠道", { name: site.name });
+  } else {
+    label = t("{{name}}官网与使用指南（{{category}}）", {
+      name: site.name,
+      category: site.category_name || t("金融/Web3"),
+    });
+  }
+
+  return composeTitle(t, brandOf(settings), label);
 }
 
 export function siteDescription(
@@ -127,7 +153,8 @@ export function siteDescription(
   counts?: { tutorials?: number; experiences?: number },
 ): string {
   const brand = brandOf(settings);
-  const desc = (site.description || "").trim();
+  // 站点描述常以句号结尾，直接与下文用「，」拼接会出现「。，」双标点，先去掉句末标点。
+  const desc = (site.description || "").trim().replace(/[。．！？!?.]+$/, "");
   const platforms = platformLabels(t, site);
   const parts = [
     t("{{name}}{{category}}站点导航页", {
@@ -135,9 +162,11 @@ export function siteDescription(
       category: site.category_name ? `（${site.category_name}）` : "",
     }),
     desc || null,
-    t("汇总官网入口与{{platforms}}下载渠道", {
-      platforms: platforms.length ? platforms.join("、") : t("各平台"),
-    }),
+    platforms.length
+      ? t("汇总官网入口与{{platforms}}下载渠道", {
+          platforms: platforms.join("、"),
+        })
+      : t("汇总官网入口与官方发布信息"),
     counts?.tutorials
       ? t("以及 {{count}} 篇用户教程", { count: counts.tutorials })
       : null,
