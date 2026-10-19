@@ -37,10 +37,6 @@ async function fetchCounts(
   };
 }
 
-export async function generateStaticParams() {
-  return [{ id: "1" }];
-}
-
 export async function generateMetadata({ params }: DetailsPageProps): Promise<Metadata> {
   const { id } = await params;
   const siteId = Number(id);
@@ -48,16 +44,16 @@ export async function generateMetadata({ params }: DetailsPageProps): Promise<Me
     return { robots: "noindex,follow" };
   }
   try {
-    const [settings, site, counts] = await Promise.all([
-      fetchSettings(),
-      fetchSite(siteId),
-      fetchCounts(siteId),
-    ]);
+    const site = await fetchSite(siteId);
     if (!site) {
       return { robots: "noindex,follow" };
     }
+    const [settings, counts] = await Promise.all([
+      fetchSettings(),
+      fetchCounts(siteId),
+    ]);
     const t = serverI18n();
-    const title = siteTitle(t, settings, site);
+    const title = siteTitle(t, settings, site, counts);
     const description = siteDescription(t, settings, site, counts);
     return {
       title: { absolute: title },
@@ -83,15 +79,15 @@ export async function generateMetadata({ params }: DetailsPageProps): Promise<Me
 }
 
 function SiteDetailClientWrapper({
-  initialSite,
+  site,
   relatedSites,
 }: {
-  initialSite?: Site;
+  site: Site;
   relatedSites: Site[];
 }) {
   return (
     <Suspense fallback={<div style={{ padding: 20, textAlign: "center" }}>加载中…</div>}>
-      <SiteDetailClient initialSite={initialSite} initialRelatedSites={relatedSites} />
+      <SiteDetailClient initialSite={site} initialRelatedSites={relatedSites} />
     </Suspense>
   );
 }
@@ -103,15 +99,18 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
     notFound();
   }
 
-  const [settings, site, counts] = await Promise.all([
-    fetchSettings(),
-    fetchSite(siteId),
-    fetchCounts(siteId),
-  ]);
+  // 站点不存在（后端 404）才返回真正的 404；后端超时/5xx 继续抛错，
+  // 由 Next 返回 5xx，避免把有效页面误标成 404。
+  const site = await fetchSite(siteId);
+  if (!site) {
+    notFound();
+  }
+
+  const settings = await fetchSettings();
 
   // 服务端预取同分类站点，写入静态 HTML 作为交叉内链（爬虫可见）。
   let relatedSites: Site[] = [];
-  if (site?.category_slug) {
+  if (site.category_slug) {
     const relatedPage = await serverFetchJSON<SitePage>(
       `/sites/?category=${encodeURIComponent(site.category_slug)}`,
     ).catch(() => null);
@@ -122,15 +121,15 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
 
   const base = settings?.share_base_url || process.env.NEXT_PUBLIC_DEFAULT_DOMAIN || 'https://fn.9418666.xyz'
   const platforms: string[] = []
-  if (site?.app_android_url || site?.app_android_has_cache) platforms.push('Android')
-  if (site?.app_ios_url || site?.app_google_play_url) platforms.push('iOS')
+  if (site.app_android_url || site.app_android_has_cache) platforms.push('Android')
+  if (site.app_ios_url || site.app_google_play_url) platforms.push('iOS')
 
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: site?.name,
-    url: site?.url,
-    description: site?.description,
+    name: site.name,
+    url: site.url,
+    description: site.description,
     publisher: {
       '@type': 'Organization',
       name: settings?.site_title || 'FinNav',
@@ -151,7 +150,7 @@ export default async function SiteDetailPage({ params }: DetailsPageProps) {
           __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c'),
         }}
       />
-      <SiteDetailClientWrapper initialSite={site ?? undefined} relatedSites={relatedSites} />
+      <SiteDetailClientWrapper site={site} relatedSites={relatedSites} />
     </>
   )
 }
