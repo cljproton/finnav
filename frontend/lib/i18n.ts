@@ -40,9 +40,9 @@ export function normalizeLanguage(lng: string | null | undefined): AppLanguage {
 
 i18n.use(initReactI18next).init({
   resources,
-  // SSR 无 navigator，首帧语言固定英文可保证服务端/客户端输出一致，避免 hydration mismatch；
-  // 真实语言在水合后由 restoreSavedLanguage() 恢复（见 providers.tsx）。
-  lng: "en",
+  // SSR 无 navigator：默认语言固定中文，保证爬虫拿到的是中文正文（也与 <html lang="zh-CN"> 一致）。
+  // 英文用户在组件挂载后由 restoreSavedLanguage() 切到 en，重新渲染发生在水合之后，不产生 mismatch。
+  lng: "zh",
   fallbackLng: "zh",
   interpolation: { escapeValue: false },
   react: { useSuspense: false },
