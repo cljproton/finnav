@@ -41,7 +41,14 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
 # 开发环境允许所有 Host；生产环境应改为具体域名。
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get('ALLOWED_HOSTS', '*').split(',') if host.strip()]
+
+# 容器健康检查（docker healthcheck）走回环地址，Host 头是 127.0.0.1/localhost；
+# 不放行会直接 400 导致容器 unhealthy。仅追加回环地址，不放开任何外部访问。
+for _loopback_host in ('localhost', '127.0.0.1', '[::1]'):
+    if _loopback_host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(_loopback_host)
+del _loopback_host
 
 # CSRF trusted origins – configured via environment variable.
 # Example: CSRF_TRUSTED_ORIGINS=https://fn.example.com,https://another.example.com

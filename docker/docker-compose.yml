@@ -52,7 +52,8 @@ services:
       # /tmp 用命名卷（在线备份 zip 可能较大，不用 tmpfs 以免占满内存）
       - backend-tmp:/tmp
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=4).status == 200 else 1)"]
+      # ProxyHandler({}) 忽略容器内可能被注入的 HTTP_PROXY（否则 127.0.0.1 会被送去代理失败）
+      test: ["CMD", "python", "-c", "import sys,urllib.request as u; op=u.build_opener(u.ProxyHandler({})); sys.exit(0 if op.open('http://127.0.0.1:8000/api/health/', timeout=4).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -91,6 +92,8 @@ services:
       - BACKEND_ORIGIN=http://backend:8000
       - BACKEND_API_URL=http://backend:8000/api
       - NEXT_PUBLIC_DEFAULT_DOMAIN=${SEO_ORIGIN:-https://fn.9418666.xyz}
+      # Next standalone 的 bind 地址；Docker 默认 HOSTNAME=容器ID 会让它只监听容器 IP
+      - HOSTNAME=0.0.0.0
     # 只读根文件系统下仅开放必要可写路径
     tmpfs:
       - /tmp:size=64m,mode=1777

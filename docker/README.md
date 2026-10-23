@@ -176,3 +176,29 @@ docker compose run --rm --no-deps -e DEBUG=True --entrypoint bash backend
 - `docker/.env` 权限保持 `600`（`deploy_finnav.sh` 已自动设置），不要提交进 git；
 - 数据目录只给 `APP_UID` 可写：`chmod 750 data`；
 - 定期 `docker compose pull && docker compose up -d` 获取带安全补丁的新镜像。
+
+### 排障：容器显示 unhealthy 但站点访问正常
+
+健康检查探测的是**容器内回环地址**，与外部访问路径不同，先看探测记录：
+
+```bash
+docker inspect docker-backend-1  --format '{{json .State.Health.Log}}' | tail -c 600
+docker inspect docker-frontend-1 --format '{{json .State.Health.Log}}' | tail -c 600
+```
+
+两个已知坑：
+
+1. **frontend**：Next.js standalone 用 `HOSTNAME` 环境变量作为 bind 地址，Docker 默认注入
+   `HOSTNAME=<容器ID>`，会只监听容器 IP（`172.x.x.x:3000`），容器内 `127.0.0.1:3000`
+   探测失败 → unhealthy，但外部经端口映射访问正常。
+   镜像与 compose 均已设 `HOSTNAME=0.0.0.0`，若仍是旧镜像请 `docker compose pull`。
+2. **backend**：探测请求的 `Host` 头是 `127.0.0.1:8000`，若不在 `ALLOWED_HOSTS` 内，
+   Django 直接返回 400 → unhealthy。`config/settings.py` 会自动追加
+   `localhost / 127.0.0.1 / [::1]`，旧镜像需升级。
+
+临时验证探测本身是否通：
+
+```bash
+docker exec docker-frontend-1 node -e "fetch('http://127.0.0.1:3000/').then(r=>console.log(r.status)).catch(e=>console.log('ERR',e.message))"
+docker exec docker-backend-1 python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/api/health/',timeout=4).status)"
+```

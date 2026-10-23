@@ -20,8 +20,11 @@ RUN npm run build
 FROM node:22.23.4-alpine3.24 AS runner
 WORKDIR /app
 
+# Next standalone 用 HOSTNAME 作为 bind 地址；Docker 默认把它设成容器 ID，
+# 会导致只监听容器 IP、容器内 127.0.0.1 探测失败（healthcheck unhealthy）。
 ENV NODE_ENV=production \
     PORT=3000 \
+    HOSTNAME=0.0.0.0 \
     NEXT_TELEMETRY_DISABLED=1
 
 # 复制构建产物（属主交给 node，运行期无需 root）
