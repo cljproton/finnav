@@ -38,7 +38,7 @@ def _s(name, url, description, tags=()):
 SITES_BY_CATEGORY = {
     'defi': [
         _s('Uniswap', 'https://uniswap.org', '全球最流行的去中心化交易所（DEX），自动做市商模式的先驱。',
-           ('dex', 'swap', 'amm'),
+           ('dex', 'swap', 'amm')),
         _s('Aave (AAVE)', 'https://aave.com', '领先的去中心化借贷协议，支持存入资产赚取利息或抵押借款。',
            ('lending', '借贷')),
         _s('Curve Finance', 'https://curve.fi', '专为稳定币设计的低滑点兑换协议，也是稳定币流动性主力。',

@@ -121,6 +121,8 @@ docker compose exec backend python manage.py seed_demo
   健康检查 `GET /api/health/`。
 - **前端调用方式**：Web 端以相对路径 `/api` 请求，经 Next.js rewrites 反代后端，
   实现同源访问（不硬拼 `:8000` 端口，天然兼容外层域名/HTTPS）。
+- **SSR 取数**：Next 服务端渲染时直连 `http://backend:8000/api`，请求 Host 为 `backend`，
+  compose 会自动往 `ALLOWED_HOSTS` 末尾追加 `backend`（`.env` 不必手写）。
 - 后端各路径的绝对地址（如 logo/APP 下载链接）由 `request.build_absolute_uri` 借助
   反代透传的 `Host`/`X-Forwarded-Proto` 生成，自动落到同一个对外端口。
 

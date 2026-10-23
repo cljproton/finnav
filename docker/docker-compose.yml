@@ -29,8 +29,9 @@ services:
       # 生产环境建议关闭 DEBUG
       DEBUG: "${DEBUG:-False}"
       # 必填：缺失时 compose 直接报错退出，避免用不安全默认值裸奔
+      # 末尾追加 backend：前端 SSR 取数走 http://backend:8000（Host: backend），需被放行
       SECRET_KEY: "${SECRET_KEY:?docker/.env 缺少 SECRET_KEY（参考 docker/.env.example）}"
-      ALLOWED_HOSTS: "${ALLOWED_HOSTS:?docker/.env 缺少 ALLOWED_HOSTS（请填具体域名，勿用 *）}"
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:?docker/.env 缺少 ALLOWED_HOSTS（请填具体域名，勿用 *）},backend"
       # CSRF 可信来源（逗号分隔，含 scheme，如 https://fn.example.com）
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       # Email（可选）：设置 RESEND_API_KEY 才启用邮件，否则验证码打印到后端日志
