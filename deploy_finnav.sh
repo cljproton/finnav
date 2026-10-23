@@ -8,6 +8,8 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 set -euo pipefail
+# 生成的 docker/.env 含密钥，默认权限收紧
+umask 077
 
 # ---------- 0. 通用工具函数 ----------
 rand_secret() {
@@ -236,6 +238,10 @@ mkdir -p "$PROJECT_DIR/docker"
 # 生成随机 SECRET_KEY
 SECRET_KEY=$(rand_secret)
 
+# 容器内运行用户 UID/GID（必须与后面 chown docker/data 的值一致）
+APP_UID="${APP_UID:-1000}"
+APP_GID="${APP_GID:-1000}"
+
 # 构建 ALLOWED_HOSTS
 if $USE_HTTPS; then
     ALLOWED_HOSTS="$DOMAIN,localhost,127.0.0.1"
@@ -303,6 +309,10 @@ DB_CONN_MAX_AGE=$DB_CONN_MAX_AGE
 # 对外端口
 PORT=$PORT
 
+# 容器运行用户（docker/data 属主需与之一致）
+APP_UID=$APP_UID
+APP_GID=$APP_GID
+
 # 镜像仓库
 BACKEND_IMAGE=$BACKEND_IMAGE
 FRONTEND_IMAGE=$FRONTEND_IMAGE
@@ -313,7 +323,8 @@ SEO_TITLE=$SEO_TITLE
 SEO_DESCRIPTION=$SEO_DESCRIPTION
 EOF
 
-echo "✅ 已生成 $DOCKER_ENV"
+chmod 600 "$DOCKER_ENV"
+echo "✅ 已生成 $DOCKER_ENV（权限 600）"
 
 # ---------- 5. Nginx 反向代理配置 (仅 HTTPS) ----------
 if $USE_HTTPS; then
@@ -383,13 +394,18 @@ fi
 # ---------- 6. 启动 Docker Compose ----------
 echo "🚀 拉取镜像并启动服务…"
 cd "$PROJECT_DIR/docker"
+
+# 数据目录归 APP_UID 所有：容器内以非 root 运行，属主不一致会写不了 SQLite
+mkdir -p data
+chown -R "${APP_UID}:${APP_GID}" data
+
 docker compose pull
 docker compose up -d
 
-# 等待健康检查
+# 等待健康检查（镜像内不装 curl，改用 python 探测）
 echo "⏳ 等待后端健康检查通过…"
 for i in {1..30}; do
-    if docker compose exec -T backend curl -fsS http://localhost:8000/api/health/ >/dev/null 2>&1; then
+    if docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=4)" >/dev/null 2>&1; then
         echo "✅ 后端健康检查通过"
         break
     fi

@@ -9,14 +9,21 @@ backend/.env
 
 # Node / Expo
 frontend/node_modules/
-frontend/.expo/
+frontend/.next/
+frontend/out/
 frontend/dist/
 frontend/web-build/
+frontend/build/
+frontend/test-results/
+frontend/.expo/
 frontend/.env
 npm-debug.log*
 
-# 容器运行数据（数据库 / 上传文件）
+# 容器运行数据（数据库 / 上传文件 / 本地环境变量）
 docker/data/
+docker/.env
+**/.env
+**/.env.*
 
 # Global
 .git/
@@ -24,6 +31,8 @@ docker/data/
 .dockerignore
 AGENTS.md
 docs/
+.publish/
 logs/
 .run/
+tutorials.json
 opencode_his

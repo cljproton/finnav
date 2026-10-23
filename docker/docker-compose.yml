@@ -3,14 +3,34 @@ services:
     build:
       context: ..
       dockerfile: docker/backend/Dockerfile
+      args:
+        APP_UID: "${APP_UID:-1000}"
+        APP_GID: "${APP_GID:-1000}"
     image: "${BACKEND_IMAGE:-finnav-backend}"
     pull_policy: missing
     restart: unless-stopped
+    # ---- 运行期加固（两服务共用）----
+    # 根文件系统只读 + 丢弃全部 capability + 禁止提权，容器逃逸/提权面最小化
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: "${BACKEND_MEM_LIMIT:-512m}"
+    cpus: "${BACKEND_CPUS:-1.0}"
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    stop_grace_period: 30s
     environment:
       # 生产环境建议关闭 DEBUG
       DEBUG: "${DEBUG:-False}"
-      SECRET_KEY: "${SECRET_KEY:-please-change-this-secret-key}"
-      ALLOWED_HOSTS: "${ALLOWED_HOSTS:-*}"
+      # 必填：缺失时 compose 直接报错退出，避免用不安全默认值裸奔
+      SECRET_KEY: "${SECRET_KEY:?docker/.env 缺少 SECRET_KEY（参考 docker/.env.example）}"
+      ALLOWED_HOSTS: "${ALLOWED_HOSTS:?docker/.env 缺少 ALLOWED_HOSTS（请填具体域名，勿用 *）}"
       # CSRF 可信来源（逗号分隔，含 scheme，如 https://fn.example.com）
       CSRF_TRUSTED_ORIGINS: "${CSRF_TRUSTED_ORIGINS:-}"
       # Email（可选）：设置 RESEND_API_KEY 才启用邮件，否则验证码打印到后端日志
@@ -27,13 +47,21 @@ services:
       DB_CONN_MAX_AGE: "${DB_CONN_MAX_AGE:-60}"
       MEDIA_ROOT: "/srv/data/media"
     volumes:
+      # 唯一可写数据目录（属主需为 APP_UID，见 docker/README.md「安全加固」）
       - ./data:/srv/data
+      # /tmp 用命名卷（在线备份 zip 可能较大，不用 tmpfs 以免占满内存）
+      - backend-tmp:/tmp
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=4).status == 200 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
 
   frontend:
     build:
@@ -42,12 +70,47 @@ services:
     image: "${FRONTEND_IMAGE:-finnav-frontend}"
     pull_policy: missing
     restart: unless-stopped
+    read_only: true
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: "${FRONTEND_MEM_LIMIT:-512m}"
+    cpus: "${FRONTEND_CPUS:-1.0}"
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     # Next.js 服务器模式：内部端口 3000，通过 rewrites 代理 /api /media /admin /static 到后端
     environment:
       - BACKEND_ORIGIN=http://backend:8000
       - BACKEND_API_URL=http://backend:8000/api
       - NEXT_PUBLIC_DEFAULT_DOMAIN=${SEO_ORIGIN:-https://fn.9418666.xyz}
+    # 只读根文件系统下仅开放必要可写路径
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - frontend-cache:/app/.next/cache
     ports:
+      # 仅绑定回环地址：外部流量必须经宿主机 Nginx（HTTPS）转发
       - "127.0.0.1:${PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILE:-3}"
+
+volumes:
+  backend-tmp:
+  frontend-cache:

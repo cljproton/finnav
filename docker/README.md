@@ -22,6 +22,9 @@ cp .env.example .env     # 首次部署，按需修改（密钥/端口等）
 docker compose up -d --build
 ```
 
+> 首次启动/从旧版本升级前，先把数据目录属主改成容器运行用户（默认 UID 1000），
+> 否则非 root 容器写不了 SQLite：`sudo chown -R 1000:1000 data`（详见第九节）。
+
 启动后所有入口都在同一端口（默认 80）：
 
 | 入口 | 地址 |
@@ -82,6 +85,8 @@ docker compose down -v                      # 停止并删除数据卷（数据�
 ## 五、数据管理
 
 - 数据保存在 **`docker/data/` 目录**（与 compose 文件同级）：SQLite 数据库 `db.sqlite3` + 上传媒体 `media/`，仅后端挂载。
+- **属主**：容器以非 root（默认 UID 1000）运行，`docker/data` 必须归同一 UID 所有，否则写入失败：
+  `sudo chown -R 1000:1000 data`（UID 由 `docker/.env` 的 `APP_UID/APP_GID` 决定）。
 - 数据库引擎：默认 SQLite。如需 MySQL / PostgreSQL，在 `docker/.env` 中设置
   `DB_ENGINE=mysql` 或 `postgres` 并填写 `DB_NAME / DB_USER / DB_PASSWORD / DB_HOST / DB_PORT`，
   使用**外部数据库实例**（不内置 DB 容器，`docker/data` 仅存 `media/` 与 SQLite）。
@@ -108,17 +113,66 @@ docker compose exec backend python manage.py seed_demo
 
 ## 八、架构与反向代理
 
-- **frontend**（nginx，对外 :80）：
-  - 托管 Next.js Web 静态站（SPA 路由回退到 `index.html`）；
-  - `location /api/`、`/admin/`、`/static/`、`/media/` → 反代到 `${BACKEND_URL}`
-    （即 `http://backend:8000`，经 envsubst 注入）；
-  - nginx 模板经官方镜像 envsubst 渲染，`NGINX_ENVSUBST_FILTER=BACKEND_URL` 只替换该变量，
-    避免误改 `$host`/`$uri` 等内置变量。
+- **frontend**（Next.js standalone，对外 :80）：
+  - Next.js standalone 服务器直接托管 Web 前端（`output: 'standalone'`，非静态导出）；
+  - `rewrites` 把 `/api/`、`/admin/`、`/static/`、`/media/` 反代到 `http://backend:8000`；
 - **backend**：Python 3.12 + Django + DRF，`gunicorn` 内网监听 8000（不对外发布），
   WhiteNoise 提供静态文件；媒体 `/media/` 在生产环境也由 Django 提供（`urls.py` 挂载 `serve`）；
   健康检查 `GET /api/health/`。
-- **前端调用方式**：Next.js 静态导出构建，`config.ts` 在生产构建下
-  （`NODE_ENV=production`）将 `API_BASE_URL` 保持空串，Web 端以相对路径 `/api` 请求，
-  经 nginx 反代后端，实现同源访问（不再硬拼 `:8000` 端口，天然兼容外层域名/HTTPS）。
+- **前端调用方式**：Web 端以相对路径 `/api` 请求，经 Next.js rewrites 反代后端，
+  实现同源访问（不硬拼 `:8000` 端口，天然兼容外层域名/HTTPS）。
 - 后端各路径的绝对地址（如 logo/APP 下载链接）由 `request.build_absolute_uri` 借助
-  nginx 透传的 `Host`/`X-Forwarded-Proto` 生成，自动落到同一个对外端口。
+  反代透传的 `Host`/`X-Forwarded-Proto` 生成，自动落到同一个对外端口。
+
+## 九、安全加固
+
+容器按「最小权限」运行，默认配置已包含：
+
+| 项 | 配置 | 说明 |
+| --- | --- | --- |
+| 非 root | 镜像内 `USER app` / `USER node`（UID 1000） | 进程被攻破也只有普通用户权限 |
+| 只读根文件系统 | `read_only: true` | 运行期仅 `/srv/data`、`/tmp`、`/app/.next/cache` 可写 |
+| 能力裁剪 | `cap_drop: [ALL]` + `no-new-privileges` | 无 setuid 提权、无 raw socket/chown 等能力 |
+| 资源上限 | `mem_limit` / `cpus` / `pids_limit` | 防 OOM 与 fork bomb 拖垮宿主机 |
+| 日志轮转 | `json-file`，`10m × 3` | 防日志打满磁盘 |
+| 端口收敛 | 仅绑定 `127.0.0.1:${PORT}` | 外部必须经宿主机 Nginx（HTTPS）进入 |
+| 配置必填 | `SECRET_KEY` / `ALLOWED_HOSTS` 无默认值 | 漏配时 `docker compose` 直接报错，而非静默用不安全默认值 |
+
+可调项见 `docker/.env`：`APP_UID/APP_GID`、`BACKEND_MEM_LIMIT/BACKEND_CPUS`、
+`FRONTEND_MEM_LIMIT/FRONTEND_CPUS`、`LOG_MAX_SIZE/LOG_MAX_FILE`。
+
+> 在线备份/恢复会把 zip 读进内存（已排除可重建的 `app_cache/`），若上传媒体体积较大，
+> 请调高 `BACKEND_MEM_LIMIT`（如 `1g`），否则可能被 OOM kill。
+
+### 从旧版本升级（必做）
+
+旧容器以 root 运行，`docker/data` 属主是 root；切到非 root 后必须先改属主，否则启动报
+`unable to open database file`：
+
+```bash
+sudo chown -R 1000:1000 data          # 与 docker/.env 的 APP_UID/APP_GID 保持一致
+docker compose up -d --build          # 或 docker compose pull && docker compose up -d
+```
+
+升级后自检：
+
+```bash
+docker compose exec backend id                                  # 应为 uid=1000(app)
+docker compose exec backend touch /srv/backend/x                # 应报 Read-only file system
+docker compose exec backend sh -c 'ls -l /srv/data'             # 属主 app
+```
+
+### 调试提示
+
+只读根文件系统下若需临时排查，用 override 文件放开（不要改主 compose）：
+
+```bash
+docker compose run --rm --no-deps -e DEBUG=True --entrypoint bash backend
+```
+
+### 其他建议
+
+- 宿主机只暴露 80/443，`PORT` 保持绑定 `127.0.0.1`；
+- `docker/.env` 权限保持 `600`（`deploy_finnav.sh` 已自动设置），不要提交进 git；
+- 数据目录只给 `APP_UID` 可写：`chmod 750 data`；
+- 定期 `docker compose pull && docker compose up -d` 获取带安全补丁的新镜像。
